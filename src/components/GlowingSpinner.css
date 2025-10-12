@@ -1,0 +1,7 @@
+.glow-spinner-overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 55%, transparent); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(2px); }
+.glow-spinner-container { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.glow-spinner-ring { width: 56px; height: 56px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--accent) 20%, transparent); border-top-color: var(--accent); animation: spin 0.85s linear infinite; box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent); }
+.glow-spinner-text { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); text-shadow: 0 0 4px color-mix(in srgb, var(--accent) 50%, transparent); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+

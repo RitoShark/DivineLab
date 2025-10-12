@@ -1,0 +1,1054 @@
+@font-face {
+  font-family: 'Jetbrains Mono';
+  src: url(./font/JetBrainsMono-Regular.ttf);
+}
+
+@font-face {
+  font-family: 'Bitcount Prop';
+  src: url(./font/BitcountPropSingle-VariableFont_CRSV,ELSH,ELXP,slnt,wght.ttf);
+}
+
+@font-face {
+  font-family: 'PressStart2P';
+  src: url(./font/PressStart2P-Regular.ttf);
+}
+
+:root {
+  --accent: #56fb24;
+  --accent-purple: #009758;
+  --accent-purple-light: #006b3e;
+  --accent-success: #10B981;
+  --accent-failure: #EF4444;
+  --app-font-family: 'Jetbrains Mono';
+
+  --text-primary: #F3F4F6;
+  --text-secondary: #D1D5DB;
+  --text-muted: #9CA3AF;
+
+  --bg-100: #0F0F0F;
+  --bg-200: #1A1A1A;
+  --bg-300: #262626;
+  --bg-400: #404040;
+  --shadow: #00000080;
+  --purple-glow: #8B5CF620;
+}
+
+
+
+html,
+body {
+  position: relative;
+  overflow: auto;
+  background-color: var(--bg-100);
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+}
+
+.Pointer {
+  cursor: pointer;
+}
+
+.Main {
+  max-height: 100vh;
+  margin-left: 3.75rem;
+  width: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: auto;
+}
+
+.Tab {
+  flex: auto;
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.Blank-Obj {
+  box-sizing: border-box;
+  border: dashed 2px var(--bg-300);
+  cursor: default;
+}
+
+button:enabled,
+select:enabled,
+.Color-Block {
+  cursor: pointer;
+}
+
+option {
+  text-indent: 0;
+  text-align: left;
+}
+
+* {
+  font-size: small;
+  font-family: var(--app-font-family);
+  outline: none;
+}
+
+button,
+.Label {
+  user-select: none;
+}
+
+strong {
+  color: var(--accent);
+}
+
+mark {
+  background-color: transparent;
+  color: var(--accent-failure)
+}
+
+b {
+  color: var(--accent-success);
+}
+
+.Input-Group {
+  display: flex;
+  height: 2rem;
+}
+
+.Input-Group>input[type="number"],
+.Input-Group>input[type="text"],
+.Input-Group>button,
+.Input-Group>select,
+.Input-Group>.Label {
+  margin: 0.1rem;
+  padding-inline: 1rem;
+  background-color: var(--bg-200);
+  border-radius: 0.4rem;
+  border: none;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.Input-Group>.Reduced-Padding {
+  padding-inline: 0rem;
+}
+
+.Input-Group>input[type="color"] {
+  margin: 0.1rem;
+}
+
+.Input-Group>input {
+  width: 10px;
+}
+
+.Input-Group>button:disabled {
+  color: var(--bg-300);
+}
+
+.Input-Group>button:disabled:hover {
+  background: var(--bg-200);
+  cursor: default;
+}
+
+.Input-Group>button:hover {
+  background: var(--bg-300)
+}
+
+.Input-Group>button {
+  min-width: fit-content;
+  background-color: var(--bg-200);
+}
+
+.Blend-Mode {
+  position: relative;
+  width: 2rem;
+  min-width: 1px;
+  margin: 0.1rem;
+  padding-inline: 0.1rem;
+  background-color: var(--bg-300);
+  border: none;
+  border-radius: 0.4rem;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.Blend-Mode:disabled {
+  background-image: linear-gradient(45deg, var(--bg-300) 25%, var(--bg-200) 25%, var(--bg-200) 50%, var(--bg-300) 50%, var(--bg-300) 75%, var(--bg-200) 75%, var(--bg-200) 100%);
+}
+
+.Sample {
+  display: flex;
+  padding: 0.3rem;
+}
+
+.Sample input,
+.Sample button,
+.Sample .Label {
+  background-color: #00000033;
+}
+
+.Sample button:hover {
+  background: #00000088;
+}
+
+.Sample button {
+  background-color: #00000033;
+}
+
+.Menu {
+  background-color: var(--bg-300);
+}
+
+.Menu button {
+  padding-inline: 1rem;
+  padding-block: 0.5rem;
+  background-color: var(--bg-300);
+  border-radius: 0.4rem;
+  border: none;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.Label {
+  display: flex;
+  padding-inline: 0.75rem;
+  align-items: center;
+  padding-block: auto;
+  overflow-y: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input.Filter {
+  color: var(--accent-success);
+  background-color: var(--bg-300);
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+.Radio,
+.CheckBox {
+  position: relative;
+  min-width: 36px;
+  height: 24px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--bg-100);
+  border-radius: 0.4rem;
+  transition-timing-function: ease-in-out;
+  transition: 0.25s;
+  margin: auto;
+}
+
+.Input-Group>.CheckBox,
+.Input-Group>.CheckBox {
+  background-color: var(--bg-200);
+}
+
+.Type {
+  /* filter: grayscale(1) brightness(1); */
+  cursor: pointer;
+  accent-color: #64656d;
+  overflow: hidden;
+}
+
+.Type:hover {
+  /* filter: grayscale(1) brightness(2); */
+  accent-color: #64656d;
+}
+
+input[type="checkbox"].Type {
+  accent-color: #64656d !important;
+}
+
+input[type="checkbox"].Type:hover {
+  accent-color: #64656d !important;
+}
+
+input[type="checkbox"].Type:checked {
+  accent-color: #64656d !important;
+}
+
+.Input-Group .Special-Input {
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-purple-light));
+  color: var(--text-primary);
+  box-shadow: 0 4px 15px var(--purple-glow);
+  transition: all 0.3s ease;
+}
+
+.Input-Group .Special-Input:hover {
+  background: linear-gradient(135deg, var(--accent-purple-light), var(--accent));
+  color: var(--bg-100);
+  box-shadow: 0 6px 20px var(--purple-glow);
+  transform: translateY(-1px);
+}
+
+#Recolor_Selected_Button {
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-purple-light)) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 4px 15px var(--purple-glow);
+  transition: all 0.3s ease;
+}
+
+#Recolor_Selected_Button:hover {
+  background: linear-gradient(135deg, var(--accent-purple-light), var(--accent)) !important;
+  box-shadow: 0 6px 20px var(--purple-glow);
+  transform: translateY(-1px);
+}
+
+.Radio:hover,
+.CheckBox:hover {
+  cursor: pointer;
+}
+
+.Radio:before,
+.CheckBox:before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 0.4rem;
+  top: 0;
+  left: 0;
+  background: var(--text-secondary);
+  transform: scale(0.75);
+  transition-timing-function: ease-in-out;
+  transition: 0.25s;
+}
+
+.CheckBox:checked:before,
+.Radio:checked:before {
+  transition-timing-function: ease-in-out;
+  transition: 0.25s;
+  background-color: var(--accent);
+  left: 14px;
+}
+
+input[type="range"].Range {
+  -webkit-appearance: none;
+  flex: 1;
+  height: 1.75rem;
+  background: linear-gradient(to right, var(--bg-200) 0%, var(--bg-200) 100%);
+  background-size: 100% 10px;
+  background-repeat: no-repeat;
+  background-position: center;
+  overflow: hidden;
+  outline: none;
+}
+
+input[type="range"].Range::-webkit-slider-thumb {
+  cursor: pointer;
+  -webkit-appearance: none;
+  width: 1.75rem;
+  border-radius: 0.4rem;
+  height: 1.75rem;
+  background: var(--text-secondary);
+  position: relative;
+  box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"].Range::-webkit-slider-thumb:hover {
+  background: var(--accent);
+}
+
+.HUE {
+  background: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%) !important;
+}
+
+.SAT {
+  background: linear-gradient(to right, #808080, #ff0000) !important;
+}
+
+.LIGHT {
+  background: linear-gradient(to right, #000000, #ff8080, #fff) !important;
+}
+
+#BlendModeSlider {
+  -webkit-appearance: none;
+  height: 1.75rem;
+  background: linear-gradient(to right, var(--bg-200) 0%, var(--bg-200) 100%);
+  background-size: 100% 10px;
+  background-repeat: no-repeat;
+  background-position: center;
+  overflow: hidden;
+  outline: none;
+}
+
+#BlendModeSlider::-webkit-slider-thumb {
+  cursor: pointer;
+  -webkit-appearance: none;
+  width: 1.75rem;
+  border-radius: 0.4rem;
+  height: 1.75rem;
+  background: var(--text-secondary);
+  position: relative;
+  box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.3);
+}
+
+#BlendModeSlider::-webkit-slider-thumb:hover {
+  background: var(--text-secondary);
+}
+
+.HUE,
+.SAT,
+.LIGHT {
+  border-radius: 0.4rem;
+  height: 1.8rem;
+}
+
+progress {
+  border-radius: 0.4rem;
+  height: auto;
+  flex: 1;
+  margin: 0.1rem;
+  padding: 0.1rem;
+  background-color: var(--bg-200);
+}
+
+progress::-webkit-progress-bar {
+  background-image: linear-gradient(45deg, var(--bg-300) 25%, var(--bg-200) 25%, var(--bg-200) 50%, var(--bg-300) 50%, var(--bg-300) 75%, var(--bg-200) 75%, var(--bg-200) 100%);
+  background-size: 25px 25px;
+  border-radius: 0.4rem;
+  width: auto;
+  margin-inline: 0.1rem;
+}
+
+progress::-webkit-progress-value {
+  background-color: var(--accent);
+  border-radius: 0.4rem;
+  margin-inline: 0.1rem;
+}
+
+progress.Progress-Complete::-webkit-progress-value {
+  background-color: var(--accent-success);
+}
+
+progress.Progress-Delete::-webkit-progress-value {
+  background-color: var(--accent-failure);
+}
+
+#Slider-Input {
+  margin-block-end: 0.5rem;
+}
+
+
+#Gradient-Indicator {
+  height: 0.75rem;
+  border-radius: 0.4rem;
+  margin-block: 0.4rem;
+  box-sizing: border-box;
+  border: 1px solid var(--bg-300);
+}
+
+.Time,
+.Color {
+  flex: 1;
+  min-width: 1rem;
+}
+
+.Color {
+  height: 19px;
+  box-sizing: border-box;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  border: 1px solid var(--bg-300);
+}
+
+#Pop-Up {
+  /* margin:0.75rem; */
+  z-index: 10;
+  position: absolute;
+  top: 7rem;
+  margin-left: 0.5rem;
+  padding: 2rem;
+  width: calc(100% - 11rem);
+  max-height: 230px;
+  overflow-y: scroll;
+  border-radius: 0.4rem;
+  background-color: var(--bg-300);
+}
+
+#Color-Picker {
+  z-index: 25;
+  position: absolute;
+  /* top:10rem; */
+  margin-left: 0.5rem;
+  padding: 2rem;
+  width: calc(100% - 11rem);
+  max-height: 230px;
+  overflow-y: scroll;
+  border-radius: 0.4rem;
+  background-color: var(--bg-300);
+}
+
+.Time {
+  border: none;
+  color: var(--text-primary);
+  text-align: center;
+  border-radius: 0.4rem;
+  justify-content: center;
+  box-sizing: border-box;
+  background-color: var(--bg-200);
+}
+
+.Time::placeholder {
+  color: var(--bg-200);
+}
+
+.Time:disabled {
+  opacity: 60%;
+}
+
+.Time:disabled::placeholder {
+  color: black;
+}
+
+.Input {
+  min-width: 50px;
+}
+
+input[type="color"] {
+  -webkit-appearance: none;
+  border: none;
+  width: 24px;
+  height: 24px;
+  background: none;
+  margin: 0px;
+  padding: 0px;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  margin: 0px;
+  padding: 0px;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  margin: 0px;
+  border-radius: 0.4rem;
+}
+
+.Float-Right {
+  float: right;
+}
+
+#Vertical-Menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  width: 12rem;
+  background: var(--bg-200);
+}
+
+.NavBar {
+  overflow: hidden;
+  z-index: 100;
+  height: 100%;
+  position: fixed;
+  box-shadow: 0 0 0.5rem var(--shadow);
+  background-color: var(--bg-200);
+  width: 3.75rem;
+  transition: width 200ms ease-in-out;
+}
+
+.NavBar:hover {
+  width: 14rem
+}
+
+.TabTitle {
+  flex: 1;
+  margin: auto;
+  margin-left: 1rem;
+  display: block;
+}
+
+.Icon {
+  height: 1.5rem;
+  width: 1.5rem;
+  display: grid;
+  place-items: center;
+}
+
+.NavBar .Icon {
+  height: 2rem;
+  width: 2rem;
+  aspect-ratio: 1;
+}
+
+.NavButton:enabled .Icon {
+  transition: transform 100ms ease-in-out;
+  filter: grayscale(1);
+}
+
+.NavButton {
+  display: flex;
+  white-space: nowrap;
+  background: none;
+  text-align: start;
+  padding-inline: 0.75rem;
+  padding-block: 0.75rem;
+  margin: 0.1rem;
+  border: none;
+  border-radius: 0.4rem;
+  color: var(--text-primary);
+}
+
+.NavButton:last-of-type {
+  margin-top: auto;
+}
+
+.NavButton:enabled:hover,
+.NavButton:disabled {
+  background: linear-gradient(135deg, var(--bg-300), var(--bg-400));
+  box-shadow: 0 2px 10px var(--purple-glow);
+}
+
+.NavButton:hover:enabled .Icon {
+  transform: rotate(7deg) scale(1.1);
+  filter: grayscale(0) drop-shadow(0 0 5px var(--accent));
+}
+
+/* For disabled buttons (current tab) - show accent color immediately */
+.NavButton:disabled .Icon {
+  filter: grayscale(0) drop-shadow(0 0 5px var(--accent));
+}
+
+
+
+#Skin-Ideas.Tab,
+#port.Tab,
+#paint.Tab # .Tab {
+  overflow: hidden;
+}
+
+#port {
+  display: grid;
+  gap: 0.1rem;
+  column-gap: 1rem;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "a a"
+    ". ."
+    "b b";
+}
+
+#  {
+  display: flex;
+}
+
+#Skin-Ideas,
+#Unlink-List,
+#Idea-List {
+  flex: 1;
+}
+
+#Origin-List,
+#Redirect-List {
+  scrollbar-gutter: stable;
+  word-wrap: break-word;
+  hyphens: none;
+}
+
+#Unlink-List,
+#Origin-List,
+#Redirect-List,
+#Idea-List,
+.Usage-Information {
+  color: var(--text-primary);
+  padding: 0 0 0 1rem;
+  border-radius: 0.4rem;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  background-color: var(--bg-200);
+}
+
+#Idea-List .Idea:nth-child(2n) {
+  background: var(--bg-300);
+}
+
+#Idea-Count {
+  color: var(--accent)
+}
+
+#Unlink-List {
+  padding-block: 1rem;
+}
+
+.Idea {
+  padding: 0.5rem;
+  border-radius: 0.4rem;
+}
+
+#Particle-List,
+#Saved-Color-List {
+  background-color: var(--bg-200);
+  border-radius: 0.4rem;
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+
+.Donor-Container,
+.Target-Container {
+  border-radius: 0.4rem;
+  outline: solid 0.3rem var(--bg-200);
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+
+.Saved-Color-Item {
+  height: 1.6rem;
+}
+
+.Material-Div,
+.Particle-Div {
+  margin: 0.5rem;
+  color: var(--text-primary);
+  border: 2px solid;
+  border-radius: 0.4rem;
+  border-color: var(--bg-300);
+}
+
+#Title {
+  overflow: hidden;
+  overflow-x: auto;
+}
+
+#Title::-webkit-scrollbar,
+.Label::-webkit-scrollbar {
+  cursor: pointer;
+  position: absolute;
+  height: 0.4rem;
+  bottom: 10px;
+}
+
+.ScrollX {
+  overflow-x: auto;
+}
+
+.Particle-Title-Div {
+  height: 2rem;
+  border-radius: 0.2rem 0.2rem 0 0;
+  background: var(--bg-300);
+  height: 2rem;
+  padding-inline-start: 0.2rem;
+  padding-block: 0.2rem;
+}
+
+.Emitter-Div {
+  margin: 0.2rem;
+  height: 2rem;
+  padding-inline-start: 0.2rem;
+}
+
+.Emitter-Div button {
+  Color: var(--accent);
+  background: var(--bg-accent);
+  border: none;
+  border-radius: 0.4rem;
+  margin: 0.1rem
+}
+
+.Prop-Block,
+.Prop-Block-Secondary {
+  height: 1.84616rem;
+  position: relative;
+  display: flex;
+  margin: auto;
+  margin-inline: 0.15rem;
+  padding: auto;
+  text-align: center;
+  border-radius: 0.4rem;
+}
+
+.Prop-Block {
+  width: 7.8rem;
+}
+
+.Prop-Block-Secondary {
+  width: 2.9rem;
+}
+
+.ColorHelp {
+  padding: 0px !important;
+  margin-right: 0px !important;
+  margin-left: 0.8rem !important;
+  width: 1.5rem;
+}
+
+
+.dropbtn {
+  color: white;
+  border: none;
+  height: 100%;
+  background-color: transparent;
+}
+
+div.dropdown {
+  position: relative;
+  padding: 0;
+  margin: 0.1rem;
+  padding-inline: 1rem;
+  background-color: var(--bg-200);
+  border-radius: 0.4rem;
+  border: none;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+div.dropdown:hover {
+  background-color: var(--bg-300);
+}
+
+/* Dropdown Content (Hidden by Default) */
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: var(--bg-200);
+  border-radius: 0.4rem;
+  width: 100%;
+  transform: translate(-1rem);
+  overflow: hidden;
+  box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
+
+/* Links inside the dropdown */
+.dropdown-content button {
+  display: grid !important;
+  place-items: center;
+  background-color: transparent;
+  width: 100%;
+  border: none;
+  color: var(--text-primary);
+  height: 2rem;
+  text-decoration: none;
+  display: block;
+}
+
+/* Change color of dropdown links on hover */
+.dropdown-content button:hover {
+  background-color: var(--bg-300);
+}
+
+/* Show the dropdown menu on hover */
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+
+.Flex-Col {
+  display: flex;
+  flex-direction: column;
+}
+
+.Hidden {
+  display: none;
+}
+
+.Flex {
+  display: flex;
+}
+
+.Flex-1 {
+  flex: 1;
+}
+
+.Flex-2 {
+  flex: 2;
+}
+
+.Flex-3 {
+  flex: 3;
+}
+
+.Flex-5 {
+  flex: 5;
+}
+
+.Flex-7 {
+  flex: 7;
+}
+
+.Flex-Auto {
+  flex: auto;
+}
+
+.Ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.Margin {
+  margin: 1rem;
+}
+
+.Margin-Inline {
+  margin-inline: 1rem;
+}
+
+.Margin-Block {
+  margin-block: 1rem;
+}
+
+.Margin-Top {
+  margin-block-start: 0.5rem;
+}
+
+.Margin-Bottom {
+  margin-block-end: 0.5rem;
+}
+
+.Margin-Left {
+  margin-inline-start: 1rem;
+}
+
+.Margin-Right {
+  margin-inline-end: 1rem;
+}
+
+.Float-Bottom {
+  margin-top: auto;
+}
+
+
+
+#Dim {
+  top: 0px;
+  left: 0px;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  background-color: #00000055;
+  border-radius: 0.4rem;
+}
+
+.Modal {
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-inline: 5rem;
+  margin-block: 2.5rem;
+  max-height: calc(100vh - 7.5rem);
+  padding: 1rem;
+  background-color: var(--bg-100);
+  border-radius: 0.4rem;
+}
+
+#BinContainer {
+  background-color: var(--bg-200);
+  border-radius: 0.4rem;
+  overflow: hidden;
+}
+
+#Primary,
+#Secondary {
+  overflow-y: scroll;
+  border: 2px solid;
+  border-radius: 0.4rem;
+}
+
+#Primary {
+  border-color: var(--accent);
+}
+
+#Secondary {
+  border-color: var(--accent);
+}
+
+#Color-Container {
+  display: grid;
+}
+
+.AlertContent {
+  background-color: var(--bg-200);
+  overflow-y: scroll;
+  overflow-x: hidden;
+  word-wrap: break-word;
+  padding-inline-start: 1rem;
+  padding-block: 1rem;
+  border-radius: 0.4rem;
+}
+
+.Text {
+  color: var(--text-primary);
+}
+
+.Sample {
+  height: 2rem;
+  margin: 0.5rem;
+  border-radius: 0.4rem;
+}
+
+.AlertModalBG {
+  position: absolute;
+  z-index: 100;
+  background-color:
+    var(--shadow);
+  inset: 0;
+}
+
+.AlertModal {
+  color: var(--text-secondary);
+  position: absolute;
+  border-radius: 0.4rem;
+  background-color: var(--bg-100);
+  inset: 7rem;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.InputModal {
+  position: absolute;
+  border-radius: 0.4rem;
+  background-color: var(--bg-100);
+  top: 50vh;
+  inset-inline: 15rem;
+  gap: 1rem;
+  padding: 1rem;
+  transform: translate(0, -50%);
+}
+
+.IconButton {
+  height: 3rem;
+  width: 3rem;
+  background-color: var(--bg-300);
+  border: none;
+  border-radius: 0.4rem;
+}
+
+/* #Dim{
+  position: absolute;
+  inset-inline: 5rem;
+  inset-block: 2.5rem;
+  transform: translate(2.5rem);
+  background-color: var(--bg-accent);
+  border-radius: 0.4rem;
+} */
+
+::-webkit-scrollbar {
+  width: 1.5rem;
+}
+
+::-webkit-scrollbar-track {
+  background: none;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 1.5rem;
+  border-radius: 0.4rem;
+  background: var(--accent);
+}
+
+.Confirm-0 {
+  --gap: 0.2rem;
+  outline: var(--gap) dotted var(--accent-failure);
+}
+
+.Confirm-1 {
+  outline: var(--gap) dashed var(--accent-failure);
+}
+
+.Confirm-2 {
+  outline: var(--gap) solid var(--accent-failure);
+}
+

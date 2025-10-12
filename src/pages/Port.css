@@ -1,0 +1,638 @@
+/* port Component Styles */
+
+/* Override Material-UI styles to match the original design */
+.MuiPaper-root {
+  background-color: var(--surface-2) !important;
+  border: 1px solid var(--bg) !important;
+}
+
+.MuiTypography-root {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+.MuiButton-root {
+  font-family: 'JetBrains Mono', monospace !important;
+  text-transform: none !important;
+}
+
+/* Main Container */
+.port-container {
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: small;
+}
+
+/* Input Groups */
+.input-group {
+  display: flex;
+  height: 2rem;
+  margin: 0.2rem 0;
+}
+
+.input-group > input[type="number"],
+.input-group > input[type="text"],
+.input-group > button,
+.input-group > select,
+.input-group > .label {
+  margin: 0.01rem;
+  padding-inline: 0.25rem;
+  background-color: var(--surface-2);
+  border-radius: 0.4rem;
+  border: 1px solid var(--bg);
+  text-align: center;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: small;
+}
+
+.input-group > input {
+  width: 10px;
+  flex: 1;
+}
+
+.input-group > button:disabled {
+  color: #404040;
+}
+
+.input-group > button:disabled:hover {
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.input-group > button:hover {
+  background: #3a3747;
+  border-color: var(--accent);
+}
+
+.input-group > button {
+  min-width: fit-content;
+  background-color: var(--surface-2);
+  cursor: pointer;
+}
+
+.input-group .special-input {
+  background: linear-gradient(135deg, var(--accent-muted), var(--accent));
+  color: var(--surface);
+  font-weight: bold;
+}
+
+.input-group .special-input:hover {
+  background: linear-gradient(135deg, var(--accent), var(--accent-muted));
+  transform: translateY(-1px);
+}
+
+/* Labels */
+.label {
+  user-select: none;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: small;
+}
+
+/* Filter Inputs */
+.filter-input {
+  overflow-x: auto;
+}
+
+.filter-input input {
+  width: 100%;
+}
+
+/* Containers */
+.target-container,
+.donor-container {
+  border-radius: 0.4rem;
+  border: 1px solid var(--surface-2);
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex: 1;
+  background: var(--surface);
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Explicit scrollbars for containers that opt-in */
+.with-scrollbars {
+  overflow-y: auto;
+}
+
+/* Visible custom scrollbars */
+.target-container::-webkit-scrollbar,
+.donor-container::-webkit-scrollbar {
+  width: 10px;
+}
+
+.target-container::-webkit-scrollbar-thumb,
+.donor-container::-webkit-scrollbar-thumb {
+  background: #6b7280; /* gray-500 */
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.target-container::-webkit-scrollbar-thumb:hover,
+.donor-container::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af; /* gray-400 */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.target-container::-webkit-scrollbar-track,
+.donor-container::-webkit-scrollbar-track {
+  background: #1f2937; /* gray-800 */
+}
+
+/* Particle Divs */
+.particle-div,
+.material-div {
+  margin: 0.2rem 0;
+  color: var(--accent-muted);
+  border: 5px solid;
+  border-radius: 0.4rem;
+  border-color: var(--glass-border);
+  background: var(--surface);
+}
+
+/* Stronger accent for ported system tiles when combined with inline styles */
+/* ported-highlight no longer used for glow; using solid green background inline to match VFXHub */
+
+/* Particle Title Div */
+.particle-title-div {
+  height: 2rem;
+  border-radius: 0.2rem 0.2rem 0 0;
+  background: var(--surface-2);
+  padding-inline-start: 0.2rem;
+  padding-block: 0.2rem;
+  display: flex;
+  align-items: center;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: small;
+  border-bottom: 1px solid var(--bg);
+}
+
+/* Emitter Div */
+.emitter-div {
+  margin: 0.1rem 0.2rem;
+  height: 1.8rem;
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border-radius: 0.2rem;
+  border-bottom: 1px solid rgba(221, 31, 31, 0.1);
+}
+
+.emitter-div:last-child {
+  border-bottom: none;
+}
+
+.emitter-div button {
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--bg);
+  border-radius: 0.4rem;
+  margin: 0.1rem;
+  padding: 0.2rem 0.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: small;
+  cursor: pointer;
+}
+
+.emitter-div button:hover {
+  border-color: var(--accent);
+  background: #3a3747;
+}
+
+/* Prop Blocks */
+.prop-block,
+.prop-block-secondary {
+  height: 1.84616rem;
+  position: relative;
+  display: flex;
+  margin: auto;
+  margin-inline: 0.25rem;
+  padding: auto;
+  text-align: center;
+  border-radius: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: small;
+  border: 1px solid var(--bg);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.prop-block {
+  width: 7.8rem;
+}
+
+.prop-block-secondary {
+  width: 2.9rem;
+}
+
+.prop-block:hover, .prop-block-secondary:hover {
+  transform: scale(1.1);
+  border-color: var(--accent-muted);
+}
+
+/* Flex Utilities */
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.flex-3 {
+  flex: 3;
+}
+
+/* Scrollbar Styling */
+.target-container::-webkit-scrollbar,
+.donor-container::-webkit-scrollbar {
+  /* Hide by default unless explicitly opted-in */
+  display: none;
+}
+
+.target-container:not(.with-scrollbars),
+.donor-container:not(.with-scrollbars) {
+  /* Hide native scrollbars when not opted-in */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* When opted-in, show themed scrollbars */
+.with-scrollbars::-webkit-scrollbar {
+  display: initial;
+}
+
+/* Ellipsis */
+.ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Strong and Mark */
+strong {
+  color: var(--accent);
+}
+
+mark {
+  background-color: var(--accent-muted);
+  color: var(--surface);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.2rem;
+}
+
+/* Texture Preview Button - MUCH BIGGER with extended hover area */
+.texture-preview-btn {
+  background: var(--surface-2);
+  color: var(--accent-muted);
+  border: 1px solid var(--bg);
+  border-radius: 0.4rem;
+  width: 64px;
+  height: 64px;
+  font-size: 32px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.5rem;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  min-width: 64px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  position: relative;
+}
+
+/* Extended hover area using pseudo-element - much bigger for stability */
+.texture-preview-btn::before {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: -16px;
+  right: -16px;
+  bottom: -16px;
+  z-index: -1;
+}
+
+.texture-preview-btn:hover {
+  background: #3a3747;
+  border-color: var(--accent);
+  transform: scale(1.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+
+/* Texture Hover Preview - compact size with glassy appearance */
+.texture-hover-preview {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: 260px;
+  max-height: 280px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.texture-hover-content {
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  max-width: 100%;
+  max-height: 100%;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.texture-hover-header {
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.texture-hover-header span {
+  font-weight: bold;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+}
+
+.texture-hover-close {
+  position: absolute;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  right: 8px;
+  top: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.texture-hover-close:hover {
+  background: #c82333;
+  transform: scale(1.1);
+}
+
+.texture-hover-body {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 1rem;
+  text-align: center;
+}
+
+.texture-hover-image {
+  width: 200px;
+  height: 140px;
+  object-fit: contain;
+  display: block;
+  border-radius: 4px;
+}
+
+.texture-hover-path {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  word-break: break-all;
+  opacity: 0.9;
+  max-height: 4em;
+  overflow: hidden;
+  line-height: 1.2;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: pre-wrap;
+}
+
+.texture-hover-error {
+  margin-top: 8px;
+  color: #f87171;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+}
+
+/* Remove old modal styles since we're using hover preview now */
+.texture-preview-modal,
+.texture-preview-content,
+.texture-preview-header,
+.texture-preview-body,
+.converting-texture,
+.spinner,
+.texture-image-container,
+.texture-preview-image,
+.texture-path,
+.texture-error {
+  display: none;
+}
+
+/* Button Container */
+.modal-button-container {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+/* Content Container */
+.modal-content-container {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.modal-section {
+  flex: 1;
+  background-color: var(--surface-2);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--bg);
+}
+
+.modal-section-title {
+  margin: 0 0 0.5rem 0;
+  color: var(--accent-muted);
+  font-size: 1.1rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.modal-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.modal-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background-color: var(--surface);
+  border-radius: 0.25rem;
+  border: 1px solid var(--bg);
+}
+
+.modal-item-text {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Delete Button */
+.delete-btn {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 0.2rem;
+  width: 25px;
+  height: 25px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.delete-btn:hover {
+  background: #b91c1c;
+}
+
+/* Updated Emitter Div */
+.emitter-div {
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.2rem;
+  margin: 0.125rem 0;
+  background: var(--surface);
+  border: 1px solid var(--glass-border);
+}
+
+.emitter-div:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+/* Selection Styles */
+.selected-system {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px rgba(236, 185, 106, 0.3);
+}
+
+.selection-indicator {
+  color: var(--accent);
+  font-weight: bold;
+  margin-left: 0.5rem;
+}
+
+/* Updated Emitter Div for better alignment */
+.emitter-div {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 0.2rem;
+  margin: 0.125rem 0;
+  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  min-height: 2.5rem;
+  gap: 0.75rem;
+  position: relative;
+  overflow: visible;
+}
+
+.emitter-div:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+/* Port Button */
+.port-btn {
+  background: var(--accent-muted);
+  color: var(--surface);
+  border: none;
+  border-radius: 0.4rem;
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.75rem;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  min-width: 36px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  position: relative;
+}
+
+.port-btn:hover:not(:disabled) {
+  background: var(--accent);
+  transform: scale(1.1);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+
+.port-btn:disabled {
+  background: #404040;
+  color: #666;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.emitter-div .label {
+  flex: 1;
+  text-align: left;
+  padding-left: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  color: var(--accent-muted);
+} 

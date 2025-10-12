@@ -1,0 +1,87 @@
+{
+  "name": "Enchanted Garden",
+  "description": "Nature-inspired magical colors with greens and soft pastels",
+  "colors": [
+    {
+      "name": "Magic Green",
+      "hex": "#55d4a5",
+      "rgb": [
+        85,
+        212,
+        165
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Emerald Glow",
+      "hex": "#10b981",
+      "rgb": [
+        16,
+        185,
+        129
+      ],
+      "alpha": 0.9
+    },
+    {
+      "name": "Mint Crystal",
+      "hex": "#a7f3d0",
+      "rgb": [
+        167,
+        243,
+        208
+      ],
+      "alpha": 0.8
+    },
+    {
+      "name": "Forest Dew",
+      "hex": "#6ee7b7",
+      "rgb": [
+        110,
+        231,
+        183
+      ],
+      "alpha": 0.7
+    },
+    {
+      "name": "Spring Bloom",
+      "hex": "#d1fae5",
+      "rgb": [
+        209,
+        250,
+        229
+      ],
+      "alpha": 0.6
+    },
+    {
+      "name": "Nature's Light",
+      "hex": "#ecfdf5",
+      "rgb": [
+        236,
+        253,
+        245
+      ],
+      "alpha": 0.5
+    },
+    {
+      "name": "Garden Mist",
+      "hex": "#f0fdf4",
+      "rgb": [
+        240,
+        253,
+        244
+      ],
+      "alpha": 0.4
+    },
+    {
+      "name": "Earth Crystal",
+      "hex": "#84cc16",
+      "rgb": [
+        132,
+        204,
+        22
+      ],
+      "alpha": 0.8
+    }
+  ],
+  "total_colors": 8
+}

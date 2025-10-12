@@ -1,0 +1,95 @@
+{
+  "name": "Most Used Colors",
+  "description": "Top 8 most frequently used colors in Crystal Rose skin",
+  "colors": [
+    {
+      "name": "Color 1",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.34901960784313724,
+      "usage_count": 126
+    },
+    {
+      "name": "Color 2",
+      "hex": "#ff0000",
+      "rgb": [
+        255,
+        0,
+        0
+      ],
+      "alpha": 0.6,
+      "usage_count": 25
+    },
+    {
+      "name": "Color 3",
+      "hex": "#151539",
+      "rgb": [
+        21,
+        21,
+        57
+      ],
+      "alpha": 0.2784313725490196,
+      "usage_count": 5
+    },
+    {
+      "name": "Color 4",
+      "hex": "#141438",
+      "rgb": [
+        20,
+        20,
+        56
+      ],
+      "alpha": 0.7686274509803922,
+      "usage_count": 4
+    },
+    {
+      "name": "Color 5",
+      "hex": "#00ff00",
+      "rgb": [
+        0,
+        255,
+        0
+      ],
+      "alpha": 0.0,
+      "usage_count": 3
+    },
+    {
+      "name": "Color 6",
+      "hex": "#ffe0f4",
+      "rgb": [
+        255,
+        224,
+        244
+      ],
+      "alpha": 1.0,
+      "usage_count": 3
+    },
+    {
+      "name": "Color 7",
+      "hex": "#dedede",
+      "rgb": [
+        222,
+        222,
+        222
+      ],
+      "alpha": 1.0,
+      "usage_count": 3
+    },
+    {
+      "name": "Color 8",
+      "hex": "#645be2",
+      "rgb": [
+        100,
+        91,
+        226
+      ],
+      "alpha": 1.0,
+      "usage_count": 3
+    }
+  ],
+  "total_colors": 8
+}

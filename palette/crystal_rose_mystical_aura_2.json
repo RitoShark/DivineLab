@@ -1,0 +1,87 @@
+{
+  "name": "Mystical Aura",
+  "description": "Magical aura colors with blues, cyans, and ethereal glows",
+  "colors": [
+    {
+      "name": "Mystic Blue",
+      "hex": "#43b3ff",
+      "rgb": [
+        67,
+        179,
+        255
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Crystal Cyan",
+      "hex": "#00d4ff",
+      "rgb": [
+        0,
+        212,
+        255
+      ],
+      "alpha": 0.9
+    },
+    {
+      "name": "Ethereal Blue",
+      "hex": "#7dd3fc",
+      "rgb": [
+        125,
+        211,
+        252
+      ],
+      "alpha": 0.8
+    },
+    {
+      "name": "Prismatic Light",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.7
+    },
+    {
+      "name": "Sky Glow",
+      "hex": "#a8e6ff",
+      "rgb": [
+        168,
+        230,
+        255
+      ],
+      "alpha": 0.6
+    },
+    {
+      "name": "Ice Crystal",
+      "hex": "#b3e5fc",
+      "rgb": [
+        179,
+        229,
+        252
+      ],
+      "alpha": 0.5
+    },
+    {
+      "name": "Frost White",
+      "hex": "#f0f8ff",
+      "rgb": [
+        240,
+        248,
+        255
+      ],
+      "alpha": 0.4
+    },
+    {
+      "name": "Deep Ocean",
+      "hex": "#0ea5e9",
+      "rgb": [
+        14,
+        165,
+        233
+      ],
+      "alpha": 0.8
+    }
+  ],
+  "total_colors": 8
+}

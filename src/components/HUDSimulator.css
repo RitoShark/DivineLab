@@ -1,0 +1,326 @@
+.hud-simulator-container {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  color: white;
+  font-family: 'JetBrainsMono-Regular', monospace;
+}
+
+/* Add Tailwind-like utilities for SVG styling */
+.w-full { width: 100%; }
+.h-full { height: 100%; }
+.flex-1 { flex: 1; }
+.relative { position: relative; }
+.absolute { position: absolute; }
+.overflow-hidden { overflow: hidden; }
+.bg-gray-800 { background-color: #1f2937; }
+.cursor-move { cursor: move; }
+.pointer-events-none { pointer-events: none; }
+.select-none { user-select: none; }
+.text-xs { font-size: 0.75rem; }
+.fill-gray-300 { fill: #d1d5db; }
+.fill-red-400 { fill: #f87171; }
+.font-semibold { font-weight: 600; }
+.bg-black { background-color: #000; }
+.bg-opacity-75 { background-color: rgba(0, 0, 0, 0.75); }
+.text-white { color: white; }
+.p-3 { padding: 0.75rem; }
+.rounded { border-radius: 0.25rem; }
+.text-sm { font-size: 0.875rem; }
+.max-w-xs { max-width: 20rem; }
+.mb-1 { margin-bottom: 0.25rem; }
+.space-y-1 > * + * { margin-top: 0.25rem; }
+.top-4 { top: 1rem; }
+.left-4 { left: 1rem; }
+.right-4 { right: 1rem; }
+
+/* SVG hover effects */
+.hover\:stroke-blue-400:hover { stroke: #60a5fa; }
+.transition-colors { transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out; }
+
+/* Glowing effect for selected elements */
+.selected-element-glow {
+  filter: drop-shadow(0 0 8px #f59e0b) drop-shadow(0 0 4px #f59e0b);
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px #f59e0b) drop-shadow(0 0 4px #f59e0b);
+  }
+  50% {
+    filter: drop-shadow(0 0 12px #f59e0b) drop-shadow(0 0 6px #f59e0b);
+  }
+}
+
+.hud-controls {
+  padding: 1rem;
+  background: #2a2a2a;
+  border-bottom: 1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.visibility-controls {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.visibility-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.visibility-controls label:hover {
+  background: #3a3a3a;
+}
+
+.visibility-controls input[type="checkbox"] {
+  accent-color: #0d7377;
+}
+
+.export-btn {
+  padding: 0.5rem 1rem;
+  background: #0d7377;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.export-btn:hover {
+  background: #14a085;
+}
+
+.hud-simulator {
+  flex: 1;
+  position: relative;
+  margin: 1rem auto;
+  border: 2px solid #444;
+  background: #000;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.grid-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+  opacity: 0.3;
+}
+
+.hud-element {
+  position: absolute;
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: move;
+  transition: all 0.2s ease;
+  user-select: none;
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(2px);
+}
+
+.hud-element:hover {
+  border-color: #0d7377;
+  background: rgba(13, 115, 119, 0.2);
+  transform: scale(1.02);
+  z-index: 1000 !important;
+}
+
+.hud-element.selected {
+  border-color: #14a085;
+  background: rgba(20, 160, 133, 0.3);
+  box-shadow: 0 0 10px rgba(20, 160, 133, 0.5);
+  z-index: 1001 !important;
+}
+
+.hud-element.ability {
+  border-color: #f39c12;
+}
+
+.hud-element.ability:hover {
+  border-color: #e67e22;
+  background: rgba(243, 156, 18, 0.2);
+}
+
+.hud-element.summoner {
+  border-color: #9b59b6;
+}
+
+.hud-element.summoner:hover {
+  border-color: #8e44ad;
+  background: rgba(155, 89, 182, 0.2);
+}
+
+.hud-element.levelUp {
+  border-color: #e74c3c;
+}
+
+.hud-element.levelUp:hover {
+  border-color: #c0392b;
+  background: rgba(231, 76, 60, 0.2);
+}
+
+.hud-element.text {
+  border-color: #3498db;
+}
+
+.hud-element.text:hover {
+  border-color: #2980b9;
+  background: rgba(52, 152, 219, 0.2);
+}
+
+.element-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+  pointer-events: none;
+}
+
+.ability-icon {
+  background: linear-gradient(45deg, #f39c12, #e67e22);
+  color: white;
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 8px;
+}
+
+.summoner-icon {
+  background: linear-gradient(45deg, #9b59b6, #8e44ad);
+  color: white;
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 8px;
+}
+
+.text-element {
+  background: linear-gradient(45deg, #3498db, #2980b9);
+  color: white;
+  border-radius: 2px;
+  padding: 1px 3px;
+  font-size: 6px;
+}
+
+.anchor-point {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #e74c3c;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 0 5px rgba(231, 76, 60, 0.8);
+}
+
+.selection-border {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border: 2px dashed #14a085;
+  pointer-events: none;
+  animation: dash 1s linear infinite;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.element-info {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.9);
+  border: 1px solid #444;
+  padding: 1rem;
+  border-radius: 4px;
+  min-width: 200px;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.element-info h4 {
+  margin: 0 0 0.5rem 0;
+  color: #14a085;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.element-info p {
+  margin: 0.25rem 0;
+  font-size: 12px;
+  color: #ccc;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .hud-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  
+  .visibility-controls {
+    justify-content: center;
+  }
+  
+  .hud-simulator {
+    margin: 0.5rem;
+  }
+  
+  .element-info {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+    top: auto;
+  }
+}
+
+/* Dark scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

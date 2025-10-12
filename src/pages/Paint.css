@@ -1,0 +1,290 @@
+/* paint component specific styles */
+
+/* Override Material-UI styles to match the original design */
+.MuiPaper-root {
+  background-color: var(--surface-2) !important;
+  border: 1px solid var(--bg) !important;
+}
+
+.MuiTypography-root {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+.MuiButton-root {
+  font-family: 'JetBrains Mono', monospace !important;
+  text-transform: none !important;
+}
+
+/* Color blocks in the color container */
+.Color {
+  height: 30px;
+  border: 1px solid var(--bg);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 0.4rem;
+}
+
+.Color:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px var(--shadow-light);
+  border-color: var(--accent);
+}
+
+/* Gradient indicator styling */
+#Gradient-Indicator {
+  height: 20px;
+  border-radius: 0.4rem;
+  margin-bottom: 8px;
+  border: 1px solid var(--bg);
+}
+
+/* Particle and Material divs - for when they're dynamically created */
+.Particle-Div, .Material-Div {
+  border: 2px solid var(--glass-border) !important;
+  border-radius: 0.4rem !important;
+  margin-bottom: 4px !important;  /* Changed from 4px to 8px to test */
+  background: var(--surface) !important;
+}
+
+.Particle-Title-Div {
+  padding: 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--bg);
+  border-radius: 0.2rem 0.2rem 0 0;
+}
+
+.Emitter-Div {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--error-color-transparent);
+  align-items: center;
+  gap: 8px;
+  height: 2rem;
+  margin: 0.2rem;
+  padding-inline-start: 0.2rem;
+  display: flex;
+}
+
+.Emitter-Div:last-child {
+  border-bottom: none;
+}
+
+/* Property blocks for colors */
+.Prop-Block, .Prop-Block-Secondary {
+  border: 1px solid var(--bg);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 1.84616rem;
+  position: relative;
+  display: flex;
+  margin: auto;
+  margin-inline: 0.25rem;
+  text-align: center;
+}
+
+.Prop-Block {
+  width: 7.8rem;
+}
+
+.Prop-Block-Secondary {
+  width: 2.9rem;
+}
+
+.Prop-Block:hover, .Prop-Block-Secondary:hover {
+  transform: scale(1.1);
+  border-color: var(--accent-muted);
+}
+
+/* Blank object styling */
+.Blank-Obj {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--surface-3),
+    var(--surface-3) 2px,
+    var(--surface-4) 2px,
+    var(--surface-4) 4px
+  ) !important;
+}
+
+/* Blend mode input styling */
+.Blend-Mode {
+  position: relative;
+  width: 2rem;
+  min-width: 1px;
+  margin: 0.1rem;
+  padding-inline: 0.1rem;
+  background-color: var(--bg);
+  border: none;
+  border-radius: 0.4rem;
+  text-align: center;
+  color: var(--accent-muted);
+  font-size: 12px;
+  height: 20px;
+}
+
+.Blend-Mode:disabled {
+  background-image: linear-gradient(45deg, var(--bg) 25%, var(--surface-2) 25%, var(--surface-2) 50%, var(--bg) 50%, var(--bg) 75%, var(--surface-2) 75%, var(--surface-2) 100%);
+}
+
+/* Checkbox styling */
+.CheckBox {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Ensure consistent checkbox colors across the app */
+.CheckBox:checked {
+  accent-color: var(--accent);
+}
+
+/* Material-UI checkbox consistency */
+.MuiCheckbox-root {
+  color: var(--accent2) !important;
+}
+
+.MuiCheckbox-root.Mui-checked {
+  color: var(--accent) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .MuiGrid-container {
+    flex-direction: column;
+  }
+  
+  .MuiGrid-item {
+    max-width: 100% !important;
+  }
+}
+
+/* Texture preview button styling */
+.texture-preview-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--bg);
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+.texture-preview-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  transform: scale(1.1);
+}
+
+/* Texture Hover Preview */
+.texture-hover-preview {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: 400px;
+  max-height: 350px;
+  background: var(--surface);
+  border: 1px solid var(--accent-muted);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow-medium);
+  overflow: hidden;
+}
+
+.texture-hover-content {
+  pointer-events: auto;
+  background: var(--surface-2);
+  border: 2px solid var(--bg);
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.texture-hover-header {
+  background: var(--surface);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--accent-muted);
+}
+
+.texture-hover-header span {
+  font-weight: bold;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+}
+
+.texture-hover-close {
+  position: absolute;
+  background: var(--error-color);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  right: 8px;
+  top: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.texture-hover-close:hover {
+  background: var(--error-color-dark);
+  transform: scale(1.1);
+}
+
+.texture-hover-body {
+  background: var(--surface);
+  padding: 1rem;
+  text-align: center;
+}
+
+.texture-hover-image {
+  width: 380px;
+  height: 320px;
+  object-fit: contain;
+  display: block;
+  border-radius: 4px;
+}
+
+.texture-hover-path {
+  margin-top: 8px;
+  color: var(--accent-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+  opacity: 0.8;
+}
+
+.texture-hover-error {
+  margin-top: 8px;
+  color: var(--error-color-light);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+}
+
+/* Custom scrollbar for particle list */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-muted);
+}

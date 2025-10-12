@@ -1,0 +1,100 @@
+{
+  "name": "Crystal Rose Custom Palette",
+  "description": "Hand-crafted Crystal Rose palette for VFX effects - no pure white",
+  "colors": [
+    {
+      "name": "Crystal Pink",
+      "hex": "#ffb3d9",
+      "rgb": [255, 179, 217],
+      "alpha": 0.9,
+      "usage": "Main crystal rose color for primary effects"
+    },
+    {
+      "name": "Rose Quartz",
+      "hex": "#f7a8b8",
+      "rgb": [247, 168, 184],
+      "alpha": 0.8,
+      "usage": "Soft rose for gentle magical auras"
+    },
+    {
+      "name": "Mystic Purple",
+      "hex": "#d4a5e8",
+      "rgb": [212, 165, 232],
+      "alpha": 0.7,
+      "usage": "Purple crystal effects and magical energy"
+    },
+    {
+      "name": "Crystal Blue",
+      "hex": "#43b3ff",
+      "rgb": [67, 179, 255],
+      "alpha": 0.8,
+      "usage": "Cool blue for mystical auras"
+    },
+    {
+      "name": "Ethereal Cyan",
+      "hex": "#00d4ff",
+      "rgb": [0, 212, 255],
+      "alpha": 0.6,
+      "usage": "Bright cyan for magical energy bursts"
+    },
+    {
+      "name": "Soft Lavender",
+      "hex": "#e6d3f0",
+      "rgb": [230, 211, 240],
+      "alpha": 0.5,
+      "usage": "Light purple for ethereal backgrounds"
+    },
+    {
+      "name": "Pearl Pink",
+      "hex": "#f2c2d1",
+      "rgb": [242, 194, 209],
+      "alpha": 0.6,
+      "usage": "Soft pink for gentle magical effects"
+    },
+    {
+      "name": "Crystal Green",
+      "hex": "#55d4a5",
+      "rgb": [85, 212, 165],
+      "alpha": 0.7,
+      "usage": "Nature magic and life force effects"
+    },
+    {
+      "name": "Mystic Violet",
+      "hex": "#8b5cf6",
+      "rgb": [139, 92, 246],
+      "alpha": 0.8,
+      "usage": "Deep purple for powerful magical effects"
+    },
+    {
+      "name": "Crystal Silver",
+      "hex": "#c0c0c0",
+      "rgb": [192, 192, 192],
+      "alpha": 0.4,
+      "usage": "Metallic crystal highlights"
+    },
+    {
+      "name": "Dusty Rose",
+      "hex": "#d4a5a5",
+      "rgb": [212, 165, 165],
+      "alpha": 0.5,
+      "usage": "Warm rose for ambient lighting"
+    },
+    {
+      "name": "Magical Gold",
+      "hex": "#ffd700",
+      "rgb": [255, 215, 0],
+      "alpha": 0.6,
+      "usage": "Golden accents for divine effects"
+    }
+  ],
+  "total_colors": 12,
+  "theme": "Crystal Rose VFX",
+  "usage_notes": [
+    "Use Crystal Pink and Rose Quartz for main character effects",
+    "Apply Mystic Purple and Violet for powerful magical abilities", 
+    "Use Crystal Blue and Ethereal Cyan for mystical auras",
+    "Apply Crystal Green for nature-based magical effects",
+    "Use Crystal Silver for metallic crystal highlights",
+    "Apply Magical Gold for divine/ultimate ability effects"
+  ]
+}

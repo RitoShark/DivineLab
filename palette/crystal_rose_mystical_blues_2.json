@@ -1,0 +1,87 @@
+{
+  "name": "Mystical Blues",
+  "description": "Cool blues and cyans for magical effects",
+  "colors": [
+    {
+      "name": "Color 1",
+      "hex": "#0c0c23",
+      "rgb": [
+        12,
+        12,
+        35
+      ],
+      "alpha": 0.14901960784313725
+    },
+    {
+      "name": "Color 2",
+      "hex": "#1e293b",
+      "rgb": [
+        30,
+        41,
+        59
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Color 3",
+      "hex": "#22233b",
+      "rgb": [
+        34,
+        35,
+        59
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Color 4",
+      "hex": "#243248",
+      "rgb": [
+        36,
+        50,
+        72
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Color 5",
+      "hex": "#2ba3ff",
+      "rgb": [
+        43,
+        163,
+        255
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Color 6",
+      "hex": "#027cff",
+      "rgb": [
+        2,
+        124,
+        255
+      ],
+      "alpha": 0.23921568627450981
+    },
+    {
+      "name": "Color 7",
+      "hex": "#18064f",
+      "rgb": [
+        24,
+        6,
+        79
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Color 8",
+      "hex": "#8975ff",
+      "rgb": [
+        137,
+        117,
+        255
+      ],
+      "alpha": 0.4980392156862745
+    }
+  ],
+  "total_colors": 97
+}

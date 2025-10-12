@@ -1,0 +1,87 @@
+{
+  "name": "Prismatic Spectrum",
+  "description": "Rainbow crystal effects with vibrant magical colors",
+  "colors": [
+    {
+      "name": "Crystal Red",
+      "hex": "#ff6b6b",
+      "rgb": [
+        255,
+        107,
+        107
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Crystal Orange",
+      "hex": "#ffa726",
+      "rgb": [
+        255,
+        167,
+        38
+      ],
+      "alpha": 0.9
+    },
+    {
+      "name": "Crystal Yellow",
+      "hex": "#ffeb3b",
+      "rgb": [
+        255,
+        235,
+        59
+      ],
+      "alpha": 0.8
+    },
+    {
+      "name": "Crystal Green",
+      "hex": "#66bb6a",
+      "rgb": [
+        102,
+        187,
+        106
+      ],
+      "alpha": 0.7
+    },
+    {
+      "name": "Crystal Blue",
+      "hex": "#42a5f5",
+      "rgb": [
+        66,
+        165,
+        245
+      ],
+      "alpha": 0.6
+    },
+    {
+      "name": "Crystal Indigo",
+      "hex": "#5c6bc0",
+      "rgb": [
+        92,
+        107,
+        192
+      ],
+      "alpha": 0.5
+    },
+    {
+      "name": "Crystal Violet",
+      "hex": "#ab47bc",
+      "rgb": [
+        171,
+        71,
+        188
+      ],
+      "alpha": 0.4
+    },
+    {
+      "name": "Crystal Pink",
+      "hex": "#ec407a",
+      "rgb": [
+        236,
+        64,
+        122
+      ],
+      "alpha": 0.8
+    }
+  ],
+  "total_colors": 8
+}

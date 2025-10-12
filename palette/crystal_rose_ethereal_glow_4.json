@@ -1,0 +1,87 @@
+{
+  "name": "Ethereal Glow",
+  "description": "Pure light and energy colors for divine effects",
+  "colors": [
+    {
+      "name": "Divine White",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Pure Light",
+      "hex": "#fefefe",
+      "rgb": [
+        254,
+        254,
+        254
+      ],
+      "alpha": 0.9
+    },
+    {
+      "name": "Crystal Clear",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.8
+    },
+    {
+      "name": "Pearl White",
+      "hex": "#f8fafc",
+      "rgb": [
+        248,
+        250,
+        252
+      ],
+      "alpha": 0.7
+    },
+    {
+      "name": "Moonlight",
+      "hex": "#f1f5f9",
+      "rgb": [
+        241,
+        245,
+        249
+      ],
+      "alpha": 0.6
+    },
+    {
+      "name": "Starlight",
+      "hex": "#e2e8f0",
+      "rgb": [
+        226,
+        232,
+        240
+      ],
+      "alpha": 0.5
+    },
+    {
+      "name": "Cloud White",
+      "hex": "#f1f5f9",
+      "rgb": [
+        241,
+        245,
+        249
+      ],
+      "alpha": 0.4
+    },
+    {
+      "name": "Ethereal Mist",
+      "hex": "#f8fafc",
+      "rgb": [
+        248,
+        250,
+        252
+      ],
+      "alpha": 0.3
+    }
+  ],
+  "total_colors": 8
+}

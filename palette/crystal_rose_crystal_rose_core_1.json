@@ -1,0 +1,87 @@
+{
+  "name": "Crystal Rose Core",
+  "description": "Primary crystal rose colors with soft pinks, purples, and ethereal whites",
+  "colors": [
+    {
+      "name": "Crystal Pink",
+      "hex": "#ffb3d9",
+      "rgb": [
+        255,
+        179,
+        217
+      ],
+      "alpha": 1.0
+    },
+    {
+      "name": "Rose Quartz",
+      "hex": "#f7a8b8",
+      "rgb": [
+        247,
+        168,
+        184
+      ],
+      "alpha": 0.9
+    },
+    {
+      "name": "Mystic Purple",
+      "hex": "#d4a5e8",
+      "rgb": [
+        212,
+        165,
+        232
+      ],
+      "alpha": 0.8
+    },
+    {
+      "name": "Ethereal White",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.7
+    },
+    {
+      "name": "Soft Lavender",
+      "hex": "#e6d3f0",
+      "rgb": [
+        230,
+        211,
+        240
+      ],
+      "alpha": 0.6
+    },
+    {
+      "name": "Pearl Pink",
+      "hex": "#f2c2d1",
+      "rgb": [
+        242,
+        194,
+        209
+      ],
+      "alpha": 0.5
+    },
+    {
+      "name": "Crystal Clear",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.3
+    },
+    {
+      "name": "Dusty Rose",
+      "hex": "#d4a5a5",
+      "rgb": [
+        212,
+        165,
+        165
+      ],
+      "alpha": 0.4
+    }
+  ],
+  "total_colors": 8
+}

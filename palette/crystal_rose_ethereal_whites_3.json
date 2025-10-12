@@ -1,0 +1,87 @@
+{
+  "name": "Ethereal Whites",
+  "description": "Pure whites and light grays for ethereal effects",
+  "colors": [
+    {
+      "name": "Color 1",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.34901960784313724
+    },
+    {
+      "name": "Color 2",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.6470588235294118
+    },
+    {
+      "name": "Color 3",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.6470588235294118
+    },
+    {
+      "name": "Color 4",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.7176470588235294
+    },
+    {
+      "name": "Color 5",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.6666666666666666
+    },
+    {
+      "name": "Color 6",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.8
+    },
+    {
+      "name": "Color 7",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.30980392156862746
+    },
+    {
+      "name": "Color 8",
+      "hex": "#ffffff",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "alpha": 0.30980392156862746
+    }
+  ],
+  "total_colors": 137
+}

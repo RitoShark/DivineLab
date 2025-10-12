@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App-level defaults */
+html, body, #root {
+  height: 100%;
+}
+
+
+
