@@ -123,7 +123,8 @@ temp/
 # Application specific
 skin0.json
 *.bin
-*.py
+# Only exclude specific Python files, not all .py files
+# *.py  # Commented out to allow Python source files
 *.rar
 *.zip
 *.txt
