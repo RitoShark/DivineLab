@@ -55,6 +55,11 @@ A comprehensive toolkit for League of Legends modding and visual effects editing
 - **Community Sharing**: Share and discover vfxsystems from other users
 - **Full Port Functionality**: Includes all features from the Port section
 
+### Bumpath - Mod Repathing
+- **LtMAO Integration**: Taken from LtMAO for reliable mod repathing
+- **Path Management**: Repath your mod files efficiently
+- **Compatibility**: Ensures mod compatibility across different setups
+
 ### Bineditor - Parameter Scaling
 - **Emitter & VFXSystem Selection**: Select either emitters or vfxsystems for editing
 - **Scale Operations**: Scale birthscale and scale by desired values (e.g., 2x multiplier)
@@ -64,8 +69,6 @@ A comprehensive toolkit for League of Legends modding and visual effects editing
 ### Frog Image - Batch Image Processing
 - **Folder Loading**: Load folders containing tex dds files
 - **Batch Recoloring**: Automatically recolor images in batch process
-- **Greyscale Detection**: Automatically detects and filters out greyscale images
-- **Smart Processing**: Optimized for League of Legends texture formats
 
 ### Upscale - AI-Powered Image Enhancement
 - **Upscayl Integration**: Powered by Upscayl for high-quality image upscaling
@@ -102,10 +105,6 @@ Two distinct modes:
 - **Riot Compatibility**: Handles Riot's texture naming conventions
 - **Batch Renaming**: Process multiple files at once
 
-### Bumpath - Mod Repathing
-- **LtMAO Integration**: Taken from LtMAO for reliable mod repathing
-- **Path Management**: Repath your mod files efficiently
-- **Compatibility**: Ensures mod compatibility across different setups
 
 
 ## 🔗 Links
