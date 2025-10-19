@@ -134,13 +134,19 @@ const Bumpath = () => {
       } catch (error) {
         console.error('Failed to check backend status:', error);
         setBackendRunning(false);
+        // Don't crash the page, just show that backend is not running
       }
     };
 
-    checkBackendStatus();
-    // Check every 5 seconds
+    // Add a small delay before first check to let backend initialize
+    const initialTimeout = setTimeout(checkBackendStatus, 1000);
+    // Check every 5 seconds after initial delay
     const interval = setInterval(checkBackendStatus, 5000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
   }, []);
 
   // Auto-dismiss success toast after 4 seconds
@@ -186,9 +192,16 @@ const Bumpath = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
+        timeout: 10000  // 10 second timeout
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       return await response.json();
     } catch (error) {
+      console.error(`API call to ${endpoint} failed:`, error);
       throw new Error(`API call failed: ${error.message}`);
     }
   };

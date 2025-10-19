@@ -308,6 +308,13 @@ const FrogChanger = () => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancellationToken, setCancellationToken] = useState(null);
+  const [extractVoiceover, setExtractVoiceover] = useState(false);
+  const [showPrefixModal, setShowPrefixModal] = useState(false);
+  const [customPrefix, setCustomPrefix] = useState('');
+  const [pendingRepathData, setPendingRepathData] = useState(null);
+  const [currentSkinIndex, setCurrentSkinIndex] = useState(0);
+  const [skinPrefixes, setSkinPrefixes] = useState({});
+  const [applyToAll, setApplyToAll] = useState(false);
 
   // Load champions and settings on component mount
   useEffect(() => {
@@ -315,16 +322,26 @@ const FrogChanger = () => {
     loadSettings();
   }, []);
 
+  // Load prefix for current skin when modal opens or skin index changes
+  useEffect(() => {
+    if (showPrefixModal && pendingRepathData && pendingRepathData.allSkins[currentSkinIndex]) {
+      const currentSkin = pendingRepathData.allSkins[currentSkinIndex];
+      setCustomPrefix(skinPrefixes[currentSkin.skinId] || '');
+    }
+  }, [showPrefixModal, currentSkinIndex, pendingRepathData, skinPrefixes]);
+
   const loadSettings = async () => {
     try {
       await electronPrefs.initPromise;
       setHashPath(electronPrefs.obj.BumpathHashesPath || '');
       setLeaguePath(electronPrefs.obj.FrogChangerLeaguePath || '');
       setExtractionPath(electronPrefs.obj.FrogChangerExtractionPath || '');
+      setExtractVoiceover(electronPrefs.obj.FrogChangerExtractVoiceover !== undefined ? electronPrefs.obj.FrogChangerExtractVoiceover : false);
       console.log('Loaded settings:', {
         hashPath: electronPrefs.obj.BumpathHashesPath,
         leaguePath: electronPrefs.obj.FrogChangerLeaguePath,
-        extractionPath: electronPrefs.obj.FrogChangerExtractionPath
+        extractionPath: electronPrefs.obj.FrogChangerExtractionPath,
+        extractVoiceover: electronPrefs.obj.FrogChangerExtractVoiceover
       });
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -714,7 +731,11 @@ const FrogChanger = () => {
           }
           
           const progress = `${i + 1}/${selectedSkins.length}`;
-          addConsoleLog(`${progress} Extracting ${skinName} (${championName}) - Normal & Voiceover WADs...`, 'info');
+          if (extractVoiceover) {
+            addConsoleLog(`${progress} Extracting ${skinName} (${championName}) - Normal & Voiceover WADs...`, 'info');
+          } else {
+            addConsoleLog(`${progress} Extracting ${skinName} (${championName}) - Normal WAD only (Voiceover disabled)...`, 'info');
+          }
           
           const skinKey = `${championName}_${skinId}`;
           const selectedChroma = selectedChromas[skinKey];
@@ -744,109 +765,150 @@ const FrogChanger = () => {
 
   const handleRepath = async () => {
     if (selectedSkins.length > 0) {
-      setIsRepathing(true);
-      const token = Date.now().toString();
-      setCancellationToken(token);
-      addConsoleLog(`Repathing ${selectedSkins.length} skin(s)...`, 'info');
-      try {
-        // Group skins by champion for repath
-        const skinsByChampion = {};
+      // Prepare repath data with flattened skin list
+      const skinsByChampion = {};
+      const allSkins = [];
+      
+      for (const skin of selectedSkins) {
+        let championName, skinId, skinName;
         
-        for (const skin of selectedSkins) {
-          let championName, skinId, skinName;
-          
-          if (typeof skin === 'string') {
-            // Old format - need selectedChampion
-            if (!selectedChampion) continue;
-            championName = selectedChampion.name;
-            skinName = skin;
-            const foundSkin = championSkins.find(s => s.name === skin);
-            if (!foundSkin) continue;
-            skinId = foundSkin.id;
-          } else {
-            // New format - skin object with champion info
-            championName = skin.champion.name;
-            skinId = skin.id;
-            skinName = skin.name;
-          }
-          
-          if (!skinsByChampion[championName]) {
-            skinsByChampion[championName] = [];
-          }
-          skinsByChampion[championName].push({ skinId, skinName });
-        }
-        
-        const championNames = Object.keys(skinsByChampion);
-        
-        // Process each champion separately
-        for (let i = 0; i < championNames.length; i++) {
-          // Check for cancellation (but not immediately)
-          if (isCancelling) {
-            addConsoleLog('Repath cancelled by user', 'warning');
-            break;
-          }
-          
-          const championName = championNames[i];
-          const championSkins = skinsByChampion[championName];
-          const progress = `${i + 1}/${championNames.length}`;
-          
-          addConsoleLog(`${progress} Processing ${championName} (${championSkins.length} skins)...`, 'info');
-          
-          // Use first skin for extraction
-          const firstSkin = championSkins[0];
-          const firstSkinId = firstSkin.skinId;
-          
-          addConsoleLog(`${progress} Extracting ${firstSkin.skinName} (${championName}) - Normal & Voiceover WADs for repath...`, 'info');
-        // Extract WAD file
-          await extractWadFile(championName, firstSkinId, firstSkin.skinName);
-          
-          // Check for cancellation after extraction
-          if (isCancelling) {
-            addConsoleLog('Repath cancelled by user', 'warning');
-            break;
-          }
-        
-        // Wait a moment for extraction to complete
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Now run repath using the extracted folder as source
-          const skinNameSafe = firstSkin.skinName.replace(/[^a-zA-Z0-9]/g, '_');
-          const championFileName = getChampionFileName(championName);
-          const sourceDir = `${extractionPath}\\${championFileName}_extracted_${skinNameSafe}`;
-          const outputDir = `${extractionPath}\\${championFileName}_repathed_${skinNameSafe}`;
-          
-          addConsoleLog(`${progress} Running repath for ${championName}...`, 'info');
-        // Run repath through Bumpath backend
-          const skinIds = championSkins.map(s => s.skinId);
-          const repathResult = await runBumpathRepath(sourceDir, outputDir, skinIds);
-        
-        if (repathResult.success) {
-            addConsoleLog(`${progress} Successfully repathed ${championName} to: ${outputDir}`, 'success');
-            console.log(`Successfully repathed ${championName} skins to: ${outputDir}`);
-          } else if (repathResult.cancelled) {
-            addConsoleLog(`${progress} Repath cancelled for ${championName}`, 'warning');
-            console.log(`Repath cancelled for ${championName}`);
-            break; // Stop processing remaining champions
+        if (typeof skin === 'string') {
+          // Old format - need selectedChampion
+          if (!selectedChampion) continue;
+          championName = selectedChampion.name;
+          skinName = skin;
+          const foundSkin = championSkins.find(s => s.name === skin);
+          if (!foundSkin) continue;
+          skinId = foundSkin.id;
         } else {
-            addConsoleLog(`${progress} Failed to repath ${championName}: ${repathResult.error}`, 'error');
-            console.error(`Repath failed for ${championName}: ${repathResult.error}`);
-          }
+          // New format - skin object with champion info
+          championName = skin.champion.name;
+          skinId = skin.id;
+          skinName = skin.name;
         }
         
-        addConsoleLog(`All repath operations completed!`, 'success');
-        setSelectedSkins([]);
-      } catch (error) {
-        console.error('Repath error:', error);
-        addConsoleLog(`Repath failed: ${error.message}`, 'error');
-        alert(`Repath failed: ${error.message}`);
-      } finally {
-        setIsRepathing(false);
+        if (!skinsByChampion[championName]) {
+          skinsByChampion[championName] = [];
+        }
+        skinsByChampion[championName].push({ skinId, skinName });
+        
+        // Add to flattened list for individual prefix selection
+        allSkins.push({ championName, skinId, skinName });
       }
+      
+      // Store the repath data and show prefix modal
+      setPendingRepathData({ skinsByChampion, allSkins });
+      setCurrentSkinIndex(0);
+      setSkinPrefixes({});
+      setApplyToAll(false);
+      setShowPrefixModal(true);
+    }
+  };
+
+  const executeRepath = async (finalPrefixes = null) => {
+    if (!pendingRepathData) return;
+    
+    setIsRepathing(true);
+    const token = Date.now().toString();
+    setCancellationToken(token);
+    addConsoleLog(`Repathing ${selectedSkins.length} skin(s) with individual prefixes...`, 'info');
+    
+    try {
+      const { skinsByChampion, allSkins } = pendingRepathData;
+      const championNames = Object.keys(skinsByChampion);
+      
+      // Use the passed prefixes or fall back to state
+      const prefixesToUse = finalPrefixes || skinPrefixes;
+      console.log('🔍 Using prefixes:', prefixesToUse);
+      
+      // Process each champion separately
+      for (let i = 0; i < championNames.length; i++) {
+        // Check for cancellation (but not immediately)
+        if (isCancelling) {
+          addConsoleLog('Repath cancelled by user', 'warning');
+          break;
+        }
+        
+        const championName = championNames[i];
+        const championSkins = skinsByChampion[championName];
+        const progress = `${i + 1}/${championNames.length}`;
+        
+        addConsoleLog(`${progress} Processing ${championName} (${championSkins.length} skins)...`, 'info');
+        
+        // Use first skin for extraction (all skins of same champion share the same WAD)
+        const firstSkin = championSkins[0];
+        const firstSkinId = firstSkin.skinId;
+        
+        if (extractVoiceover) {
+          addConsoleLog(`${progress} Extracting ${firstSkin.skinName} (${championName}) - Normal & Voiceover WADs for repath...`, 'info');
+        } else {
+          addConsoleLog(`${progress} Extracting ${firstSkin.skinName} (${championName}) - Normal WAD only for repath (Voiceover disabled)...`, 'info');
+        }
+        // Extract WAD file (only once per champion)
+        await extractWadFile(championName, firstSkinId, firstSkin.skinName);
+        
+        // Check for cancellation after extraction
+        if (isCancelling) {
+          addConsoleLog('Repath cancelled by user', 'warning');
+          break;
+        }
+      
+      // Wait a moment for extraction to complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Now run repath using the extracted folder as source
+        const skinNameSafe = firstSkin.skinName.replace(/[^a-zA-Z0-9]/g, '_');
+        const championFileName = getChampionFileName(championName);
+        const sourceDir = `${extractionPath}\\${championFileName}_extracted_${skinNameSafe}`;
+        const outputDir = `${extractionPath}\\${championFileName}_repathed_${skinNameSafe}`;
+        
+        // Get ALL skin IDs for this champion (not just first skin)
+        const championSkinIds = championSkins.map(s => s.skinId);
+        const prefixes = championSkinIds.map(skinId => prefixesToUse[skinId] || 'bum');
+        const uniquePrefixes = [...new Set(prefixes)];
+        
+        console.log(`🔍 Champion ${championName} ALL skin IDs:`, championSkinIds);
+        console.log(`🔍 Champion ${championName} prefixes:`, prefixes);
+        console.log(`🔍 Champion ${championName} unique prefixes:`, uniquePrefixes);
+        
+        if (uniquePrefixes.length === 1) {
+          addConsoleLog(`${progress} Running repath for ${championName} with ${championSkinIds.length} skins using prefix "${uniquePrefixes[0]}"...`, 'info');
+        } else {
+          addConsoleLog(`${progress} Running repath for ${championName} with ${championSkinIds.length} skins using mixed prefixes: ${uniquePrefixes.join(', ')}...`, 'info');
+        }
+        
+      // Run repath through Bumpath backend with ALL skin IDs for this champion
+        // If multiple skins from same champion, process them together
+        const processTogether = championSkinIds.length > 1;
+        const repathResult = await runBumpathRepath(sourceDir, outputDir, championSkinIds, uniquePrefixes[0], processTogether);
+      
+      if (repathResult.success) {
+          addConsoleLog(`${progress} Successfully repathed ${championName} (${championSkinIds.length} skins) to: ${outputDir}`, 'success');
+          console.log(`Successfully repathed ${championName} (${championSkinIds.length} skins) to: ${outputDir}`);
+        } else if (repathResult.cancelled) {
+          addConsoleLog(`${progress} Repath cancelled for ${championName}`, 'warning');
+          console.log(`Repath cancelled for ${championName}`);
+          break; // Stop processing remaining champions
+      } else {
+          addConsoleLog(`${progress} Failed to repath ${championName}: ${repathResult.error}`, 'error');
+          console.error(`Repath failed for ${championName}: ${repathResult.error}`);
+        }
+      }
+      
+      addConsoleLog(`All repath operations completed!`, 'success');
+      setSelectedSkins([]);
+    } catch (error) {
+      console.error('Repath error:', error);
+      addConsoleLog(`Repath failed: ${error.message}`, 'error');
+      alert(`Repath failed: ${error.message}`);
+    } finally {
+      setIsRepathing(false);
+      setPendingRepathData(null);
     }
   };
 
 
-  const runBumpathRepath = async (sourceDir, outputDir, selectedSkinIds) => {
+  const runBumpathRepath = async (sourceDir, outputDir, selectedSkinIds, prefix = 'bum', processTogether = false) => {
     try {
       // Use Electron IPC to call the Bumpath backend
       let result;
@@ -858,7 +920,9 @@ const FrogChanger = () => {
           selectedSkinIds: selectedSkinIds,
           hashPath: hashPath,
           ignoreMissing: true, // Auto-ignore missing files
-          combineLinked: true  // Auto-combine linked bins
+          combineLinked: true,  // Auto-combine linked bins
+          customPrefix: prefix,  // Add custom prefix parameter
+          processTogether: processTogether  // Add process together parameter
         };
         console.log('🎯 Sending Bumpath repath request:', requestData);
         result = await ipcRenderer.invoke('bumpath:repath', requestData);
@@ -875,7 +939,9 @@ const FrogChanger = () => {
             selectedSkinIds: selectedSkinIds,
             hashPath: hashPath,
             ignoreMissing: true,
-            combineLinked: true
+            combineLinked: true,
+            customPrefix: prefix,
+            processTogether: processTogether
           }),
         });
 
@@ -943,7 +1009,9 @@ const FrogChanger = () => {
     // Handle special cases first
     const specialCases = {
       'wukong': 'monkeyking',
-      'monkeyking': 'monkeyking' // In case someone searches for monkeyking directly
+      'monkeyking': 'monkeyking', // In case someone searches for monkeyking directly
+      'nunu & willump': 'nunu',
+      'nunu': 'nunu' // In case someone searches for nunu directly
     };
     
     const lowerName = championName.toLowerCase();
@@ -1087,8 +1155,8 @@ const FrogChanger = () => {
         return; // Don't throw error for cancellation
       }
       
-      // Extract all voiceover WAD files if they exist
-      if (voiceoverWadFiles.length > 0) {
+      // Extract all voiceover WAD files if they exist and voiceover extraction is enabled
+      if (voiceoverWadFiles.length > 0 && extractVoiceover) {
         console.log(`Processing ${voiceoverWadFiles.length} voiceover WAD files:`, voiceoverWadFiles);
         setExtractionProgress(prev => ({ ...prev, [skinKey]: `Normal WAD extracted, extracting ${voiceoverWadFiles.length} voiceover WAD(s)...` }));
         
@@ -1165,6 +1233,8 @@ const FrogChanger = () => {
         } else {
           setExtractionProgress(prev => ({ ...prev, [skinKey]: 'Normal WAD extracted, voiceover WADs failed' }));
         }
+      } else if (voiceoverWadFiles.length > 0 && !extractVoiceover) {
+        setExtractionProgress(prev => ({ ...prev, [skinKey]: 'Normal WAD extracted successfully! (Voiceover extraction disabled)' }));
       } else {
         setExtractionProgress(prev => ({ ...prev, [skinKey]: 'Normal WAD extracted successfully!' }));
       }
@@ -1811,130 +1881,330 @@ const FrogChanger = () => {
             className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300"
             onClick={() => setShowSettings(false)}
           />
-          <div className="relative bg-gray-900 border-2 border-green-400/30 rounded-2xl p-8 max-w-2xl w-full mx-4 animate-in zoom-in-95 duration-300 shadow-2xl shadow-green-400/20">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-green-400 to-green-600 rounded-lg flex items-center justify-center">
-                  <span className="text-black font-bold">⚙️</span>
+          <div className="relative bg-gray-900 border border-green-400/30 rounded-lg p-4 max-w-lg w-full mx-4 animate-in zoom-in-95 duration-300 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-gradient-to-r from-green-400 to-green-600 rounded flex items-center justify-center">
+                  <span className="text-black font-bold text-xs">⚙️</span>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white">
-                    Settings
-                  </h2>
-                  <p className="text-sm text-gray-400">Configure FrogChanger</p>
-                </div>
+                <h2 className="text-lg font-bold text-white">Settings</h2>
               </div>
               <button
                 onClick={() => setShowSettings(false)}
-                className="w-8 h-8 rounded-full bg-gray-800 hover:bg-red-600 text-gray-400 hover:text-white transition-all duration-200 flex items-center justify-center"
+                className="w-6 h-6 rounded-full bg-gray-800 hover:bg-red-600 text-gray-400 hover:text-white transition-all duration-200 flex items-center justify-center text-sm"
               >
                 ×
               </button>
             </div>
 
-            <div className="space-y-6">
-              <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
-                <h3 className="text-lg font-semibold text-green-400 mb-2 flex items-center gap-2">
-                  📁 League of Legends Champions Folder Path
-                </h3>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-400">Select the <strong className="text-green-400">Champions</strong> folder inside your League of Legends directory</p>
-                  <p className="text-xs text-gray-500">Example: C:\Riot Games\League of Legends\Game\DATA\FINAL\Champions</p>
-                  <div className="flex gap-3">
-                    <button 
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-green-400/25 flex items-center gap-2"
-                      onClick={async () => {
-                        try {
-                          const result = await electronPrefs.selectDirectory();
-                          if (result) {
-                            setLeaguePath(result);
-                            // Save the path to electronPrefs
-                            electronPrefs.obj.FrogChangerLeaguePath = result;
-                            await electronPrefs.save();
-                            console.log('Saved league path:', result);
-                          }
-                        } catch (error) {
-                          console.error('Error selecting directory:', error);
-                          alert('Error selecting directory. Please try again.');
-                        }
-                      }}
-                    >
-                      📁 Browse
-                    </button>
-                    <div className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-sm text-gray-300 flex items-center">
-                      {leaguePath || 'No path selected'}
+            <div className="space-y-3">
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
+                  📁 League Champions Path
+                  <div className="relative group">
+                    <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
+                      Select the Champions folder inside your League of Legends directory<br/>
+                      Example: C:\Riot Games\League of Legends\Game\DATA\FINAL\Champions
                     </div>
+                  </div>
+                </h3>
+                <div className="flex gap-2">
+                  <button 
+                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
+                    onClick={async () => {
+                      try {
+                        const result = await electronPrefs.selectDirectory();
+                        if (result) {
+                          setLeaguePath(result);
+                          electronPrefs.obj.FrogChangerLeaguePath = result;
+                          await electronPrefs.save();
+                          console.log('Saved league path:', result);
+                        }
+                      } catch (error) {
+                        console.error('Error selecting directory:', error);
+                        alert('Error selecting directory. Please try again.');
+                      }
+                    }}
+                  >
+                    📁 Browse
+                  </button>
+                  <div className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-xs text-gray-300 flex items-center truncate">
+                    {leaguePath || 'No path selected'}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
-                <h3 className="text-lg font-semibold text-green-400 mb-2 flex items-center gap-2">
-                  📁 WAD Extraction Output Path
-                </h3>
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-400">Select where extracted WAD files should be saved</p>
-                  <p className="text-xs text-gray-500">Example: C:\Users\YourName\Desktop\ExtractedWADs</p>
-                  <div className="flex gap-3">
-                    <button 
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-green-400/25 flex items-center gap-2"
-                      onClick={async () => {
-                        try {
-                          const result = await electronPrefs.selectDirectory();
-                          if (result) {
-                            setExtractionPath(result);
-                            // Save the path to electronPrefs
-                            electronPrefs.obj.FrogChangerExtractionPath = result;
-                            await electronPrefs.save();
-                            console.log('Saved extraction path:', result);
-                          }
-                        } catch (error) {
-                          console.error('Error selecting directory:', error);
-                          alert('Error selecting directory. Please try again.');
-                        }
-                      }}
-                    >
-                      📁 Browse
-                    </button>
-                    <div className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-sm text-gray-300 flex items-center">
-                      {extractionPath || 'No extraction path selected'}
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
+                  📁 WAD Output Path
+                  <div className="relative group">
+                    <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
+                      Select where extracted WAD files should be saved<br/>
+                      Example: C:\Users\YourName\Desktop\ExtractedWADs
                     </div>
+                  </div>
+                </h3>
+                <div className="flex gap-2">
+                  <button 
+                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
+                    onClick={async () => {
+                      try {
+                        const result = await electronPrefs.selectDirectory();
+                        if (result) {
+                          setExtractionPath(result);
+                          electronPrefs.obj.FrogChangerExtractionPath = result;
+                          await electronPrefs.save();
+                          console.log('Saved extraction path:', result);
+                        }
+                      } catch (error) {
+                        console.error('Error selecting directory:', error);
+                        alert('Error selecting directory. Please try again.');
+                      }
+                    }}
+                  >
+                    📁 Browse
+                  </button>
+                  <div className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-xs text-gray-300 flex items-center truncate">
+                    {extractionPath || 'No path selected'}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
-                <h3 className="text-lg font-semibold text-green-400 mb-2 flex items-center gap-2">
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
                   🔑 Hash Tables Path
-                </h3>
-                <div className="space-y-2">
-                  <div className="flex gap-3">
-                    <button 
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-blue-400/25 flex items-center gap-2"
-                      onClick={() => {
-                        // Navigate to Bumpath page
-                        window.location.hash = '#/bumpath';
-                        setShowSettings(false);
-                      }}
-                    >
-                      ⚙️ Configure in Bumpath Settings
-                    </button>
-                    <div className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-sm text-gray-300 flex items-center">
-                      {hashPath || 'No hash path configured'}
+                  <div className="relative group">
+                    <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
+                      Configure hash tables in Bumpath settings for proper file processing
                     </div>
+                  </div>
+                </h3>
+                <div className="flex gap-2">
+                  <button 
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm flex items-center gap-1"
+                    onClick={() => {
+                      window.location.hash = '#/bumpath';
+                      setShowSettings(false);
+                    }}
+                  >
+                    ⚙️ Configure
+                  </button>
+                  <div className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-xs text-gray-300 flex items-center truncate">
+                    {hashPath || 'No hash path configured'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
+                  🔊 Voiceover Extraction
+                  <div className="relative group">
+                    <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
+                      Enable or disable voiceover WAD file extraction during skin extraction
+                    </div>
+                  </div>
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      const newValue = !extractVoiceover;
+                      setExtractVoiceover(newValue);
+                      electronPrefs.obj.FrogChangerExtractVoiceover = newValue;
+                      await electronPrefs.save();
+                      console.log('Voiceover extraction setting saved:', newValue);
+                    }}
+                    className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 transition-all duration-200 ${
+                      extractVoiceover 
+                        ? 'bg-green-600 hover:bg-green-700 text-white' 
+                        : 'bg-gray-600 hover:bg-gray-700 text-gray-300'
+                    }`}
+                  >
+                    {extractVoiceover ? '✅ Enabled' : '❌ Disabled'}
+                  </button>
+                  <div className="text-xs text-gray-400">
+                    {extractVoiceover 
+                      ? 'Voiceover files will be extracted' 
+                      : 'Only normal WAD files will be extracted'
+                    }
                   </div>
                 </div>
               </div>
 
             </div>
 
-            <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-700/50">
+            <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-gray-700/50">
               <button
                 onClick={() => setShowSettings(false)}
-                className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-green-400/25"
+                className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-all duration-200"
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Prefix Modal */}
+      {showPrefixModal && pendingRepathData && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300"
+            onClick={() => {
+              setShowPrefixModal(false);
+              setPendingRepathData(null);
+            }}
+          />
+          <div className="relative bg-gray-900 border border-green-400/30 rounded-lg p-4 max-w-lg w-full mx-4 animate-in zoom-in-95 duration-300 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-gradient-to-r from-green-400 to-green-600 rounded flex items-center justify-center">
+                  <span className="text-black font-bold text-xs">🏷️</span>
+                </div>
+                <h2 className="text-lg font-bold text-white">
+                  Prefix Selection ({currentSkinIndex + 1}/{pendingRepathData.allSkins.length})
+                </h2>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPrefixModal(false);
+                  setPendingRepathData(null);
+                }}
+                className="w-6 h-6 rounded-full bg-gray-800 hover:bg-red-600 text-gray-400 hover:text-white transition-all duration-200 flex items-center justify-center text-sm"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Current Skin Info */}
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
+                  🎭 Current Skin
+                </h3>
+                <div className="text-sm text-white">
+                  <div className="font-semibold">{pendingRepathData.allSkins[currentSkinIndex]?.championName}</div>
+                  <div className="text-gray-300">{pendingRepathData.allSkins[currentSkinIndex]?.skinName}</div>
+                </div>
+              </div>
+
+              {/* Prefix Input */}
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
+                  🏷️ Entry Prefix
+                  <div className="relative group">
+                    <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
+                      Enter a custom prefix for this skin's entries<br/>
+                      Leave empty to use default "bum" prefix
+                    </div>
+                  </div>
+                </h3>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={customPrefix}
+                    onChange={(e) => setCustomPrefix(e.target.value)}
+                    placeholder="Enter custom prefix (e.g., 'custom', 'mymod', etc.)"
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-green-400"
+                    maxLength={20}
+                  />
+                  <div className="text-xs text-gray-400">
+                    Current prefix: <span className="text-green-400 font-mono">{customPrefix || 'bum'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Apply to All Option */}
+              {pendingRepathData.allSkins.length > 1 && (
+                <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="applyToAll"
+                      checked={applyToAll}
+                      onChange={(e) => setApplyToAll(e.target.checked)}
+                      className="w-4 h-4 text-green-600 bg-gray-800 border-gray-600 rounded focus:ring-green-500"
+                    />
+                    <label htmlFor="applyToAll" className="text-sm text-gray-300 cursor-pointer">
+                      Apply this prefix to all remaining skins
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between gap-2 mt-4 pt-3 border-t border-gray-700/50">
+              <button
+                onClick={() => {
+                  setShowPrefixModal(false);
+                  setPendingRepathData(null);
+                }}
+                className="px-4 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm transition-all duration-200"
+              >
+                Cancel
+              </button>
+              <div className="flex gap-2">
+                {currentSkinIndex > 0 && (
+                  <button
+                    onClick={() => {
+                      // Save current prefix
+                      const currentSkin = pendingRepathData.allSkins[currentSkinIndex];
+                      const updatedPrefixes = {
+                        ...skinPrefixes,
+                        [currentSkin.skinId]: customPrefix.trim() || 'bum'
+                      };
+                      setSkinPrefixes(updatedPrefixes);
+                      // Go to previous skin
+                      const prevIndex = currentSkinIndex - 1;
+                      setCurrentSkinIndex(prevIndex);
+                      setCustomPrefix(updatedPrefixes[pendingRepathData.allSkins[prevIndex]?.skinId] || '');
+                    }}
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-all duration-200"
+                  >
+                    ← Previous
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    // Save current prefix
+                    const currentSkin = pendingRepathData.allSkins[currentSkinIndex];
+                    const newPrefixes = {
+                      ...skinPrefixes,
+                      [currentSkin.skinId]: customPrefix.trim() || 'bum'
+                    };
+
+                    if (applyToAll) {
+                      // Apply to all remaining skins
+                      const remainingSkins = pendingRepathData.allSkins.slice(currentSkinIndex + 1);
+                      remainingSkins.forEach(skin => {
+                        newPrefixes[skin.skinId] = customPrefix.trim() || 'bum';
+                      });
+                    }
+
+                    setSkinPrefixes(newPrefixes);
+
+                    // Check if this is the last skin
+                    if (currentSkinIndex === pendingRepathData.allSkins.length - 1) {
+                      // Start repath with the final prefixes
+                      setShowPrefixModal(false);
+                      executeRepath(newPrefixes);
+                    } else {
+                      // Go to next skin
+                      const nextIndex = currentSkinIndex + 1;
+                      setCurrentSkinIndex(nextIndex);
+                      setCustomPrefix(newPrefixes[pendingRepathData.allSkins[nextIndex]?.skinId] || '');
+                      setApplyToAll(false);
+                    }
+                  }}
+                  className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-all duration-200"
+                >
+                  {currentSkinIndex === pendingRepathData.allSkins.length - 1 ? 'Start Repath' : 'Next →'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

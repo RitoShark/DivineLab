@@ -286,6 +286,11 @@ const selectByBlendMode = (blendModeFilter, blendModeSlider, particleListRef, se
       SystemListChildren[i].className === "Particle-Div") {
 
       const systemDiv = SystemListChildren[i];
+      
+      // Skip StaticMaterialDef blocks (they don't have blend modes)
+      if (systemDiv.id && systemDiv.id.startsWith('material_')) {
+        continue;
+      }
 
       for (let j = 1; j < systemDiv.children.length; j++) {
         const emitterDiv = systemDiv.children[j];
@@ -327,8 +332,13 @@ const selectByBlendMode = (blendModeFilter, blendModeSlider, particleListRef, se
     emitter.emitterDiv.children[0].checked = true;
   }
 
-  // Check system headers
+  // Check system headers (only for VFX systems, not StaticMaterialDef)
   for (const systemDiv of systemsWithSelectedEmitters) {
+    // Skip StaticMaterialDef blocks (they have different structure)
+    if (systemDiv.id && systemDiv.id.startsWith('material_')) {
+      continue;
+    }
+    
     const systemCheckbox = systemDiv.children[0].children[0];
     if (systemCheckbox && systemCheckbox.type === 'checkbox') {
       systemCheckbox.checked = true;

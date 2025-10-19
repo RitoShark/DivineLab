@@ -213,7 +213,7 @@ const THEMES = {
   // Divine Lab theme (inspired by the flask + galaxy icon)
   divineLab: {
     accent: '#f8fafc', // laboratory white (flask color)
-    accent2: '#e2e8f0', // light grey (flask liquid)
+    accent2: '#c0c5ce', // light grey (flask liquid)
     accentMuted: '#cbd5e1', // muted grey
     bg: '#020617', // much darker deep space black
     bg2: '#0f172a', // darker cosmic slate

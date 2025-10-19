@@ -42,6 +42,14 @@ try:
     if os.path.exists(pyritofile_path):
         sys.path.insert(0, os.path.dirname(pyritofile_path))
         print(f"Added pyRitoFile path: {pyritofile_path}")
+        # Debug: List contents of pyRitoFile directory
+        try:
+            pyritofile_contents = os.listdir(pyritofile_path)
+            print(f"pyRitoFile directory contents: {pyritofile_contents}")
+        except Exception as e:
+            print(f"Could not list pyRitoFile directory: {e}")
+    else:
+        print(f"pyRitoFile path not found: {pyritofile_path}")
     
     # Add LtMAO to Python path if it exists
     # Check if we're running from resources directory (production-like environment)
@@ -84,70 +92,64 @@ try:
         if os.path.exists(ltmao_path):
             sys.path.insert(0, ltmao_path)
             print(f"Added LtMAO path: {ltmao_path}")
+            # Debug: List contents of LtMAO directory
+            try:
+                ltmao_contents = os.listdir(ltmao_path)
+                print(f"LtMAO directory contents: {ltmao_contents}")
+            except Exception as e:
+                print(f"Could not list LtMAO directory: {e}")
             ltmao_found = True
             break
     
     if not ltmao_found:
         print("Warning: LtMAO not found in any expected location")
     
-    # Import pyRitoFile from the correct location in minimal-ltmao
+    # Don't import LtMAO modules at startup - import them lazily when needed
+    print("LtMAO modules will be imported when needed")
+    pyRitoFile = None
+    bin = None
+    wad = None
+    skl = None
+except ImportError as e:
+    print(f"Failed to set up LtMAO path: {e}")
+    print("LtMAO modules will be imported when needed")
+    pyRitoFile = None
+    bin = None
+    wad = None
+    skl = None
+
+# Function to import pyRitoFile modules when needed
+def import_pyritofile():
+    global pyRitoFile, bin, wad, skl
+    if pyRitoFile is not None and bin is not None and wad is not None:
+        return True  # Already imported
+    
     try:
         # Try importing from LtMAO/pyRitoFile first (minimal-ltmao structure)
         from LtMAO.pyRitoFile import bin, wad, skl
         import LtMAO.pyRitoFile as pyRitoFile
         print("pyRitoFile imported successfully from LtMAO/pyRitoFile")
-    except ImportError:
-        # Fallback to direct import
-        import pyRitoFile
-        from pyRitoFile import bin, wad
-        print("pyRitoFile imported successfully from direct import")
-except ImportError as e:
-    print(f"Failed to import pyRitoFile: {e}")
-    print("Falling back to basic functionality...")
-    # Create dummy classes for basic functionality
-    class DummyBin:
-        class BINType:
-            STRING = "STRING"
-            LIST = "LIST"
-            LIST2 = "LIST2"
-            EMBED = "EMBED"
-            POINTER = "POINTER"
-            MAP = "MAP"
-            OPTION = "OPTION"
-        
-        class BIN:
-            def __init__(self):
-                pass
-            def read(self, path):
-                return DummyBinData()
-            def write(self, path):
-                pass
-        
-        class BINHasher:
-            @staticmethod
-            def hex_to_raw(hashtables, hex_hash):
-                return f"Entry_{hex_hash}"
-    
-    class DummyWad:
-        class WADHasher:
-            @staticmethod
-            def is_hash(path):
-                return len(path) == 16 and all(c in '0123456789abcdef' for c in path.lower())
-            
-            @staticmethod
-            def raw_to_hex(path):
-                import hashlib
-                return hashlib.md5(path.encode()).hexdigest()[:16]
-    
-    class DummyBinData:
-        def __init__(self):
-            self.links = []
-            self.entries = []
-    
-    # Use dummy classes
-    bin = DummyBin()
-    wad = DummyWad()
-    print("Using dummy pyRitoFile classes")
+        return True
+    except ImportError as e1:
+        print(f"Failed to import from LtMAO.pyRitoFile: {e1}")
+        try:
+            # Fallback to direct import
+            import pyRitoFile
+            from pyRitoFile import bin, wad
+            print("pyRitoFile imported successfully from direct import")
+            return True
+        except ImportError as e2:
+            print(f"Failed to import from direct pyRitoFile: {e2}")
+            # Try importing individual modules
+            try:
+                from pyRitoFile import bin
+                from pyRitoFile import wad
+                import pyRitoFile
+                print("pyRitoFile imported successfully from individual modules")
+                return True
+            except ImportError as e3:
+                print(f"Failed to import individual pyRitoFile modules: {e3}")
+                return False
 
 # Try to import Flask, install if missing
 try:
@@ -171,18 +173,29 @@ cancellation_requested = False
 
 def unify_path(path):
     """Convert path to unified hash format using pyRitoFile"""
-    # Normalize path separators to forward slashes
-    path = path.replace('\\', '/')
-    
-    # if the path is straight up hex
-    if wad.WADHasher.is_hash(path):
-        return path
-    # if the path is hashed file 
-    basename = path.split('.')[0]
-    if wad.WADHasher.is_hash(basename):
-        return basename
-    # if the path is pure raw
-    return wad.WADHasher.raw_to_hex(path)
+    # Import pyRitoFile modules if needed
+    try:
+        if not import_pyritofile():
+            print("Warning: pyRitoFile modules not available, using fallback path")
+            # Fallback: return a simple hash of the path
+            return path.lower().replace('\\', '/')
+        
+        # Normalize path separators to forward slashes
+        path = path.replace('\\', '/')
+        
+        # if the path is straight up hex
+        if wad.WADHasher.is_hash(path):
+            return path
+        # if the path is hashed file 
+        basename = path.split('.')[0]
+        if wad.WADHasher.is_hash(basename):
+            return basename
+        # if the path is pure raw
+        return wad.WADHasher.raw_to_hex(path)
+    except Exception as e:
+        print(f"ERROR in unify_path: {e}")
+        # Fallback to simple path normalization
+        return path.lower().replace('\\', '/')
 
 def is_character_bin(path):
     """Check if path is a character BIN file"""
@@ -283,6 +296,19 @@ class StandaloneBumpathBackend:
 
     def scan(self):
         """Scan BIN files and extract asset references using pyRitoFile"""
+        # Import pyRitoFile modules if needed
+        try:
+            if not import_pyritofile():
+                error_msg = "ERROR: pyRitoFile modules not available. Cannot scan BIN files."
+                print(error_msg)
+                raise Exception(error_msg)
+        except Exception as e:
+            error_msg = f"ERROR: Failed to import pyRitoFile: {e}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            raise Exception(error_msg)
+        
         self.scanned_tree = {}
         # setting for bin entry, just a display
         self.scanned_tree['All_BINs'] = {} 
@@ -489,8 +515,8 @@ class StandaloneBumpathBackend:
                                 break
                         raise Exception(f'bumpath: Error: {entry_hash}/{short_file} is missing/not found in Source Folders.')
         
-        # clean up output
-        shutil.rmtree(output_dir, ignore_errors=True)
+        # clean up output - DISABLED for safety
+        # shutil.rmtree(output_dir, ignore_errors=True)  # REMOVED: Too dangerous, could delete user data
         
         # actual bum
         bum_files = {}
@@ -797,6 +823,8 @@ def bumpath_repath():
         hash_path = data.get('hashPath', '')
         ignore_missing = data.get('ignoreMissing', True)
         combine_linked = data.get('combineLinked', True)
+        custom_prefix = data.get('customPrefix', 'bum')
+        process_together = data.get('processTogether', False)
         
         if not all([source_dir, output_dir]):
             return jsonify({
@@ -841,26 +869,30 @@ def bumpath_repath():
             
             from LtMAO import lepath, hash_helper, bumpath
             print("LtMAO modules imported successfully for repath")
+            use_ltmao = True
         except ImportError as e:
             print(f"LtMAO modules not available: {e}")
-            return jsonify({
-                'error': 'LtMAO modules not available for Bumpath repath',
-                'details': str(e)
-            }), 500
+            print("Falling back to custom implementation...")
+            use_ltmao = False
         
-        # Set hash path if provided
-        if hash_path and os.path.exists(hash_path):
-            print(f"Setting hash path: {hash_path}")
-            hash_helper.CustomHashes.local_dir = hash_path
-        
-        # Load hash tables
-        print("Loading hash tables...")
-        hash_helper.Storage.read_all_hashes()
-        print("Hash tables loaded successfully")
-        
-        # Create Bumpath instance
-        print("Creating Bumpath instance...")
-        bum_instance = bumpath.Bum()
+        if use_ltmao:
+            # Set hash path if provided
+            if hash_path and os.path.exists(hash_path):
+                print(f"Setting hash path: {hash_path}")
+                hash_helper.CustomHashes.local_dir = hash_path
+            
+            # Load hash tables
+            print("Loading hash tables...")
+            hash_helper.Storage.read_all_hashes()
+            print("Hash tables loaded successfully")
+            
+            # Create Bumpath instance
+            print("Creating Bumpath instance...")
+            bum_instance = bumpath.Bum()
+        else:
+            # Use custom implementation
+            print("Using custom Bumpath implementation...")
+            bum_instance = bumpath  # Use the global custom instance
         
         # Add source directory
         print(f"Adding source directory: {source_dir}")
@@ -870,15 +902,72 @@ def bumpath_repath():
         global cancellation_requested
         cancellation_requested = False
 
-        # Process each selected skin individually to avoid conflicts
-        print(f"Processing {len(selected_skin_ids)} selected skins individually...")
-        
-        for i, skin_id in enumerate(selected_skin_ids):
-            # Check for cancellation before each skin
-            if cancellation_requested:
-                print(f"CANCEL: Repath operation cancelled during skin {skin_id}")
-                cancellation_requested = False  # Reset flag
-                return jsonify({
+        # Process skins based on whether they should be processed together
+        if process_together:
+            print(f"Processing {len(selected_skin_ids)} selected skins together...")
+            # Process all skins in a single operation
+            if use_ltmao:
+                skin_bum_instance = bumpath.Bum()
+            else:
+                skin_bum_instance = bumpath  # Use custom instance
+            skin_bum_instance.add_source_dirs([source_dir])
+            
+            # Reset all .bin files to False
+            for unify_file in skin_bum_instance.source_bins:
+                skin_bum_instance.source_bins[unify_file] = False
+            
+            # Set ALL selected skin .bin files to True
+            selected_count = 0
+            for unify_file in skin_bum_instance.source_bins:
+                if unify_file in skin_bum_instance.source_files:
+                    full_path, rel_path = skin_bum_instance.source_files[unify_file]
+                    # Check if this is any of the skin files we want to process
+                    if rel_path.endswith('.bin') and 'skin' in rel_path.lower():
+                        # Extract skin ID from path
+                        current_skin_id = None
+                        if '/skins/skin' in rel_path:
+                            try:
+                                skin_part = rel_path.split('/skins/skin')[1].split('.bin')[0]
+                                current_skin_id = int(skin_part)
+                            except:
+                                pass
+                        
+                        # If this is one of the skins we're processing, mark it
+                        if current_skin_id in selected_skin_ids:
+                            skin_bum_instance.source_bins[unify_file] = True
+                            selected_count += 1
+                            print(f"  Selected: {rel_path} (skin {current_skin_id})")
+            
+            print(f"Marked {selected_count} files for skins {selected_skin_ids}")
+            
+            # Scan and process all skins together
+            print(f"Scanning for skins {selected_skin_ids}...")
+            skin_bum_instance.scan()
+            
+            print(f"Found {len(skin_bum_instance.scanned_tree)} entries for skins {selected_skin_ids}")
+            
+            # Apply custom prefix to all entries if provided
+            if custom_prefix != 'bum':
+                print(f"Applying custom prefix '{custom_prefix}' to all entries...")
+                for entry_hash in skin_bum_instance.entry_prefix:
+                    skin_bum_instance.entry_prefix[entry_hash] = custom_prefix
+                print(f"Applied custom prefix '{custom_prefix}' to {len(skin_bum_instance.entry_prefix)} entries")
+            
+            # Run Bumpath bum process for all skins
+            print(f"Starting Bumpath bum process for skins {selected_skin_ids}...")
+            skin_bum_instance.bum(output_dir, ignore_missing, combine_linked)
+            print(f"Completed Bumpath bum process for skins {selected_skin_ids}")
+            
+        else:
+            # Process each selected skin individually to avoid conflicts
+            print(f"Processing {len(selected_skin_ids)} selected skins individually...")
+            
+            for i, skin_id in enumerate(selected_skin_ids):
+                # Check for cancellation before each skin
+                if cancellation_requested:
+                    print(f"CANCEL: Repath operation cancelled during skin {skin_id}")
+                    cancellation_requested = False  # Reset flag
+                    return jsonify({
                     'success': False,
                     'cancelled': True,
                     'message': 'Operation cancelled by user'
@@ -887,7 +976,10 @@ def bumpath_repath():
             print(f"\n--- Processing skin {skin_id} ({i+1}/{len(selected_skin_ids)}) ---")
             
             # Create a fresh Bumpath instance for each skin
-            skin_bum_instance = bumpath.Bum()
+            if use_ltmao:
+                skin_bum_instance = bumpath.Bum()
+            else:
+                skin_bum_instance = bumpath  # Use custom instance
             skin_bum_instance.add_source_dirs([source_dir])
             
             # Reset all .bin files to False
@@ -923,6 +1015,13 @@ def bumpath_repath():
             skin_bum_instance.scan()
             
             print(f"Found {len(skin_bum_instance.scanned_tree)} entries for skin {skin_id}")
+            
+            # Apply custom prefix to all entries if provided
+            if custom_prefix != 'bum':
+                print(f"Applying custom prefix '{custom_prefix}' to all entries...")
+                for entry_hash in skin_bum_instance.entry_prefix:
+                    skin_bum_instance.entry_prefix[entry_hash] = custom_prefix
+                print(f"Applied custom prefix '{custom_prefix}' to {len(skin_bum_instance.entry_prefix)} entries")
             
             # For multiple skins, use a temporary output directory to avoid conflicts
             if len(selected_skin_ids) > 1:
@@ -2632,15 +2731,35 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
+    print("="*80)
     print("Starting Bumpath Backend...")
     print("Using pyRitoFile for proper BIN parsing")
+    print(f"Python version: {sys.version}")
+    print(f"Running from: {__file__ if '__file__' in globals() else 'unknown'}")
+    print(f"Frozen: {getattr(sys, 'frozen', False)}")
+    print(f"Executable: {sys.executable}")
+    print("="*80)
+    
+    # Test pyRitoFile import at startup (but don't fail if it's not available)
+    try:
+        print("Testing pyRitoFile availability...")
+        import_result = import_pyritofile()
+        if import_result:
+            print("[OK] pyRitoFile modules loaded successfully")
+        else:
+            print("[WARNING] pyRitoFile modules not available - will use fallback mode")
+    except Exception as e:
+        print(f"[WARNING] pyRitoFile import test failed: {e}")
+        print("Backend will start but BIN scanning may not work properly")
     
     # Lightweight health endpoint for readiness checks
     @app.route('/health', methods=['GET'])
     def health():
-        return jsonify({'status': 'ok'}), 200
+        return jsonify({'status': 'ok', 'pyRitoFile_available': pyRitoFile is not None}), 200
 
     try:
+        print("Starting Flask server on http://127.0.0.1:5001")
+        print("Backend is ready to accept connections")
         # Use_reloader=False prevents double-start and abrupt shutdowns in packaged mode
         app.run(host='127.0.0.1', port=5001, debug=False, use_reloader=False)
     except KeyboardInterrupt:
@@ -2648,4 +2767,6 @@ if __name__ == '__main__':
         sys.exit(0)
     except Exception as e:
         print(f"ERROR: Backend error: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)

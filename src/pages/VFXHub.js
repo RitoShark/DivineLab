@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './Port.css'; // Reuse existing styles
 import themeManager from '../utils/themeManager.js';
 import electronPrefs from '../utils/electronPrefs.js';
@@ -92,6 +92,30 @@ const findProjectRoot = (startPath) => {
       } catch {}
     }, []);
 
+    // Add CSS for VFX preview click effects
+    React.useEffect(() => {
+      const style = document.createElement('style');
+      style.textContent = `
+        .vfx-preview-container:hover .vfx-preview-overlay {
+          opacity: 0.7 !important;
+        }
+        .vfx-preview-overlay {
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        .vfx-preview-container {
+          transition: transform 0.2s ease;
+        }
+        .vfx-preview-container:hover {
+          transform: scale(1.02);
+        }
+      `;
+      document.head.appendChild(style);
+      return () => {
+        document.head.removeChild(style);
+      };
+    }, []);
+
     // Match RGBA deep purple glass styling for main containers
     const glassSection = {
       background: 'var(--glass-bg)',
@@ -125,10 +149,78 @@ const findProjectRoot = (startPath) => {
   const [hasResourceResolver, setHasResourceResolver] = useState(false);
   const [hasSkinCharacterData, setHasSkinCharacterData] = useState(false);
 
+  // Modal resizing state
+  const [modalSize, setModalSize] = useState({ width: 1000, height: 700 });
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState(null);
+
+  // Preview hover state
+  const [hoveredPreview, setHoveredPreview] = useState(null);
+
   // Reflect unsaved state globally for cross-page guard
   useEffect(() => {
     try { window.__DL_unsavedBin = !fileSaved; } catch {}
   }, [fileSaved]);
+
+  // Modal resize handlers
+  const handleMouseDown = (e, handle) => {
+    e.preventDefault();
+    setIsResizing(true);
+    setResizeHandle(handle);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isResizing) return;
+    
+    const newSize = { ...modalSize };
+    
+    // Get the modal element's position from the initial mouse down event
+    const modalElement = document.querySelector('[data-modal="vfx-hub-collections"]');
+    if (!modalElement) return;
+    
+    const rect = modalElement.getBoundingClientRect();
+    
+    if (resizeHandle === 'se') { // Southeast corner
+      newSize.width = Math.max(400, Math.min(1200, e.clientX - rect.left));
+      newSize.height = Math.max(300, Math.min(800, e.clientY - rect.top));
+    } else if (resizeHandle === 'e') { // East edge
+      newSize.width = Math.max(400, Math.min(1200, e.clientX - rect.left));
+    } else if (resizeHandle === 's') { // South edge
+      newSize.height = Math.max(300, Math.min(800, e.clientY - rect.top));
+    }
+    
+    setModalSize(newSize);
+  };
+
+  const handleMouseUp = () => {
+    setIsResizing(false);
+    setResizeHandle(null);
+  };
+
+  // Add global mouse event listeners for resizing
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing, modalSize, resizeHandle]);
+
+  // Check GitHub authentication status on mount
+  useEffect(() => {
+    const checkAuthStatus = async () => {
+      try {
+        const credentials = await githubApi.getCredentials();
+        setGithubAuthenticated(!credentials.isPublicOnly);
+      } catch (error) {
+        setGithubAuthenticated(false);
+      }
+    };
+    checkAuthStatus();
+  }, []);
 
   // Warn on close if unsaved
   useEffect(() => {
@@ -163,6 +255,27 @@ const findProjectRoot = (startPath) => {
     }
   }, [targetPyContent]);
 
+  // Type dropdown state - moved before useEffect that uses it
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const typeDropdownRef = useRef(null);
+
+  // Handle click outside for type dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(event.target)) {
+        setTypeDropdownOpen(false);
+      }
+    };
+
+    if (typeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [typeDropdownOpen]);
+
   // Idle particles states
   const [showIdleParticleModal, setShowIdleParticleModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
@@ -187,6 +300,40 @@ const findProjectRoot = (startPath) => {
   const [selectedSystemForIdle, setSelectedSystemForIdle] = useState(null);
   const [selectedBoneName, setSelectedBoneName] = useState('head');
   
+  // Type options for the dropdown
+  const typeOptions = [
+    { 
+      value: 'IsAnimationPlaying', 
+      label: 'Animation Playing', 
+      description: 'Trigger when specific animation is playing' 
+    },
+    { 
+      value: 'HasBuffScript', 
+      label: 'Has Buff', 
+      description: 'Trigger when character has a specific buff' 
+    },
+    { 
+      value: 'LearnedSpell', 
+      label: 'Learned Spell', 
+      description: 'Trigger when character has learned a spell' 
+    },
+    { 
+      value: 'HasGear', 
+      label: 'Has Gear', 
+      description: 'Trigger when character has specific gear equipped' 
+    },
+    { 
+      value: 'FloatComparison', 
+      label: 'Spell Rank Comparison', 
+      description: 'Compare spell rank with a value' 
+    },
+    { 
+      value: 'BuffCounterFloatComparison', 
+      label: 'Buff Counter Comparison', 
+      description: 'Compare buff counter with a value' 
+    }
+  ];
+  
   // Backup viewer state
   const [showBackupViewer, setShowBackupViewer] = useState(false);
   const [isEditingIdle, setIsEditingIdle] = useState(false);
@@ -200,11 +347,12 @@ const findProjectRoot = (startPath) => {
   const [allVfxSystems, setAllVfxSystems] = useState([]);
   const [selectedCollection, setSelectedCollection] = useState(null);
   const [githubConnected, setGithubConnected] = useState(false);
+  const [githubAuthenticated, setGithubAuthenticated] = useState(false);
   const [isLoadingCollections, setIsLoadingCollections] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const systemsPerPage = 6;
+  const systemsPerPage = 8;
 
   // Persistent editor state
   const handleOpenPersistent = () => {
@@ -643,7 +791,15 @@ const findProjectRoot = (startPath) => {
       }
     } catch (error) {
       console.error('Error downloading VFX system:', error);
-      setStatusMessage(`Error downloading ${system.name}: ${error.message}`);
+      
+      // Check for rate limiting
+      if (error.message.includes('rate limit') || error.message.includes('429') || error.status === 429) {
+        const resetTime = error.headers?.['x-ratelimit-reset'] || Date.now() + 3600000;
+        const minutesUntilReset = Math.ceil((resetTime * 1000 - Date.now()) / 60000);
+        setStatusMessage(`GitHub rate limit exceeded. Please authenticate in Settings or wait ${minutesUntilReset} minutes.`);
+      } else {
+        setStatusMessage(`Error downloading ${system.name}: ${error.message}`);
+      }
     } finally {
       setIsProcessing(false);
       setProcessingText('');
@@ -680,17 +836,58 @@ const findProjectRoot = (startPath) => {
       setProcessingText('Loading collections...');
       setStatusMessage('Connecting to GitHub and loading VFX collections...');
 
-      // Test connection first
-      const connectionTest = await githubApi.testConnection();
+      // Test connection first (try authenticated first, allow public fallback)
+      let connectionTest = await githubApi.testConnection();
       if (!connectionTest.success) {
-        throw new Error(connectionTest.error);
+        console.warn('❌ Authenticated connection failed, allowing public access:', connectionTest.error);
+        // For public access, we'll skip the connection test and proceed
+        connectionTest = { success: true, user: 'public', repository: 'public', permissions: { read: true, write: false } };
       }
 
       setGithubConnected(true);
-      setStatusMessage('Connected to GitHub - Loading collections...');
+      setGithubAuthenticated(connectionTest.user !== 'public');
+      if (connectionTest.user === 'public') {
+        setStatusMessage('Connected to GitHub (Public Access) - Loading collections...');
+      } else {
+        setStatusMessage('Connected to GitHub - Loading collections...');
+      }
 
-      // Get collections
-      const { collections } = await githubApi.getVFXCollections();
+      // Get collections (try authenticated first, fallback to public)
+      let collections;
+      try {
+        const result = await githubApi.getVFXCollections();
+        collections = result.collections;
+        console.log('✅ Loaded collections using authenticated API');
+      } catch (authError) {
+        console.warn('❌ Authenticated API failed, trying public access:', authError.message);
+        
+        // Check for rate limiting
+        if (authError.message.includes('rate limit') || authError.message.includes('429') || authError.status === 429) {
+          const resetTime = authError.headers?.['x-ratelimit-reset'] || Date.now() + 3600000; // Default to 1 hour
+          const minutesUntilReset = Math.ceil((resetTime * 1000 - Date.now()) / 60000);
+          setStatusMessage(`GitHub rate limit exceeded. Please authenticate in Settings or wait ${minutesUntilReset} minutes.`);
+          throw new Error(`Rate limited. Try authenticating in Settings or wait ${minutesUntilReset} minutes.`);
+        }
+        
+        try {
+          const result = await githubApi.getVFXCollectionsPublic();
+          collections = result.collections;
+          console.log('✅ Loaded collections using public API');
+        } catch (publicError) {
+          console.error('❌ Both authenticated and public access failed:', publicError.message);
+          
+          // Check for rate limiting in public API too
+          if (publicError.message.includes('rate limit') || publicError.message.includes('429') || publicError.status === 429) {
+            const resetTime = publicError.headers?.['x-ratelimit-reset'] || Date.now() + 3600000;
+            const minutesUntilReset = Math.ceil((resetTime * 1000 - Date.now()) / 60000);
+            setStatusMessage(`GitHub rate limit exceeded. Please authenticate in Settings or wait ${minutesUntilReset} minutes.`);
+            throw new Error(`Rate limited. Try authenticating in Settings or wait ${minutesUntilReset} minutes.`);
+          }
+          
+          throw new Error('Unable to load VFX collections. Please check your internet connection and repository access.');
+        }
+      }
+      
       setVfxCollections(collections);
 
       // Flatten all VFX systems for easy searching
@@ -767,7 +964,15 @@ const findProjectRoot = (startPath) => {
 
     } catch (error) {
       console.error('Error downloading VFX system:', error);
-      setStatusMessage(`Error downloading VFX system: ${error.message}`);
+      
+      // Check for rate limiting
+      if (error.message.includes('rate limit') || error.message.includes('429') || error.status === 429) {
+        const resetTime = error.headers?.['x-ratelimit-reset'] || Date.now() + 3600000;
+        const minutesUntilReset = Math.ceil((resetTime * 1000 - Date.now()) / 60000);
+        setStatusMessage(`GitHub rate limit exceeded. Please authenticate in Settings or wait ${minutesUntilReset} minutes.`);
+      } else {
+        setStatusMessage(`Error downloading VFX system: ${error.message}`);
+      }
     } finally {
       setIsProcessing(false);
       setProcessingText('');
@@ -1284,12 +1489,7 @@ const findProjectRoot = (startPath) => {
       throw new Error('No target file loaded - cannot copy assets');
     }
 
-    // Check if GitHub credentials are configured
-    try {
-      await githubApi.getCredentials();
-    } catch (error) {
-      throw new Error(`GitHub configuration error: ${error.message}. Please configure your GitHub credentials in Settings.`);
-    }
+    // GitHub credentials are now optional - public access is supported
 
     const fs = window.require('fs');
     const path = window.require('path');
@@ -1330,10 +1530,10 @@ const findProjectRoot = (startPath) => {
           assetBuffer = await githubApi.getRawBinaryFile(asset.path);
           console.log(`✅ Downloaded ${assetBuffer.length} bytes for ${asset.name} using authenticated API`);
         } catch (apiError) {
-          console.warn(`❌ Failed to download via API, trying URL: ${apiError.message}`);
+          console.warn(`❌ Failed to download via API, trying public URL: ${apiError.message}`);
           
-          // Fallback to URL download if API fails
-          console.log(`🌐 Attempting URL download for: ${asset.downloadUrl}`);
+          // Fallback to public URL download if API fails
+          console.log(`🌐 Attempting public URL download for: ${asset.downloadUrl}`);
           const response = await fetch(asset.downloadUrl);
           if (!response.ok) {
             console.warn(`❌ Failed to download asset ${asset.name}: ${response.status} ${response.statusText}`);
@@ -1341,7 +1541,7 @@ const findProjectRoot = (startPath) => {
           }
           assetBuffer = await response.arrayBuffer();
           assetBuffer = Buffer.from(assetBuffer);
-          console.log(`✅ Downloaded ${assetBuffer.length} bytes for ${asset.name} using URL`);
+          console.log(`✅ Downloaded ${assetBuffer.length} bytes for ${asset.name} using public URL`);
         }
 
         // Keep original asset name and place in assets/vfxhub/
@@ -2270,19 +2470,7 @@ const findProjectRoot = (startPath) => {
       const donorSystem = donorSystems[donorSystemKey];
       setStatusMessage(`Porting VFX system: ${donorSystem.name}`);
 
-      // Add the system to target systems
-      const updatedTargetSystems = { ...targetSystems };
-      const newSystemKey = `${donorSystemKey}_ported_${Date.now()}`;
-
-      updatedTargetSystems[newSystemKey] = {
-        ...donorSystem,
-        key: newSystemKey,
-        name: `${donorSystem.name} (Ported)`,
-        ported: true,
-        portedAt: Date.now()
-      };
-
-      // Mark donor system as ported for visual feedback in donor list too
+      // Mark donor system as ported for visual feedback in donor list
       setDonorSystems(prev => ({
         ...prev,
         [donorSystemKey]: {
@@ -2292,8 +2480,8 @@ const findProjectRoot = (startPath) => {
         }
       }));
 
-      // Apply immediately so UI shows the new system at the top due to sorting
-      setTargetSystems(updatedTargetSystems);
+      // Don't create manual entry here - we'll let the re-parsing handle it
+      // This prevents duplicate entries in the UI
 
       // Insert the complete VFX system into the target file if loaded
       if (targetPyContent && donorPyContent) {
@@ -2319,27 +2507,44 @@ const findProjectRoot = (startPath) => {
               const systems = parseVfxEmitters(updatedContent);
               
               // Debug: Log existing systems before preservation
-              console.log('Existing target systems before preservation:', Object.keys(updatedTargetSystems));
+              console.log('Existing target systems before preservation:', Object.keys(targetSystems));
               console.log('Newly parsed systems:', Object.keys(systems));
               
               // Preserve existing custom systems that might not be parsed correctly
-              const preserved = { ...updatedTargetSystems };
+              const preserved = { ...targetSystems };
               
               // Update with newly parsed systems, but preserve existing ones
               Object.entries(systems).forEach(([k, v]) => {
-                // If any existing target system had the same name marked as ported, carry flags over
-                const wasPorted = Object.values(updatedTargetSystems).some(s => (s.name === v.name || s.particleName === v.particleName) && s.ported);
-                preserved[k] = wasPorted ? { ...v, ported: true, portedAt: v.portedAt || Date.now() } : v;
+                // Check if this is the system we just ported
+                const isNewlyPorted = v.name === donorSystem.name || v.particleName === donorSystem.name;
+                preserved[k] = isNewlyPorted ? { ...v, ported: true, portedAt: Date.now() } : v;
+              });
+              
+              // Remove duplicate manual entries that were created before re-parsing
+              // Keep only the parsed versions to avoid UI duplicates
+              Object.keys(preserved).forEach(key => {
+                if (key.includes('_downloaded_')) {
+                  // This is a manual entry, check if we have a parsed version
+                  const system = preserved[key];
+                  const parsedKey = Object.keys(systems).find(k => 
+                    systems[k].name === system.name || systems[k].particleName === system.particleName
+                  );
+                  if (parsedKey) {
+                    // Remove the manual entry since we have a parsed version
+                    delete preserved[key];
+                    console.log(`Removed duplicate manual entry: ${key}, keeping parsed version: ${parsedKey}`);
+                  }
+                }
               });
               
               // Ensure we don't lose any existing systems that might not have been re-parsed
-              console.log(`Preserved ${Object.keys(updatedTargetSystems).length} existing systems, parsed ${Object.keys(systems).length} systems from file`);
+              console.log(`Preserved ${Object.keys(targetSystems).length} existing systems, parsed ${Object.keys(systems).length} systems from file`);
               console.log('Final preserved systems:', Object.keys(preserved));
               setTargetSystems(preserved);
             } catch (parseErr) {
               console.warn('Re-parse after insert failed:', parseErr);
               // If parsing fails, keep the existing systems to prevent data loss
-              setTargetSystems(updatedTargetSystems);
+              setTargetSystems(targetSystems);
             }
 
             setStatusMessage(`Ported complete VFX system "${donorSystem.name}" with all emitters and ResourceResolver entry`);
@@ -2596,7 +2801,9 @@ const findProjectRoot = (startPath) => {
       );
     }
 
-    const filteredSystems = Object.values(systems).filter(system => {
+    // Convert to array and filter
+    const allSystems = Object.values(systems);
+    const filteredSystems = allSystems.filter(system => {
       if (!filterText) return true;
       const disp = (system.particleName || system.name || system.key || '').toLowerCase();
       return disp.includes(filterText.toLowerCase());
@@ -2896,19 +3103,24 @@ const findProjectRoot = (startPath) => {
         alignItems: 'center',
         justifyContent: 'center'
       }}>
-        <div style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.14)',
-          borderRadius: '10px',
-          width: '80%',
-          maxWidth: '1000px',
-          height: '80%',
-          maxHeight: '700px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
-        }}>
+        <div 
+          data-modal="vfx-hub-collections"
+          style={{
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.14)',
+            borderRadius: '10px',
+            width: `${modalSize.width}px`,
+            height: `${modalSize.height}px`,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+            position: 'relative',
+            minWidth: '400px',
+            minHeight: '300px',
+            maxWidth: '1200px',
+            maxHeight: '800px'
+          }}>
           {/* Modal Header */}
           <div style={{
             padding: '1rem',
@@ -3035,7 +3247,7 @@ const findProjectRoot = (startPath) => {
             padding: '1rem',
             overflowY: 'auto',
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
             gap: '1rem'
           }}>
             {isLoadingCollections ? (
@@ -3092,7 +3304,7 @@ const findProjectRoot = (startPath) => {
                     background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))',
                     border: '1px solid rgba(255,255,255,0.12)',
                     borderRadius: '10px',
-                    padding: '1rem',
+                    padding: '0.5rem',
                     cursor: 'pointer',
                     transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
@@ -3108,18 +3320,77 @@ const findProjectRoot = (startPath) => {
                     e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
                   }}
                 >
-                  <div style={{ height: '120px', background: 'var(--surface-2)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.5rem', overflow: 'hidden' }}>
+                  <div 
+                    className="vfx-preview-container"
+                    style={{ 
+                      height: '120px', 
+                      background: 'var(--surface-2)', 
+                      border: '1px solid rgba(255,255,255,0.12)', 
+                      borderRadius: '0.6rem', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      marginBottom: '0.5rem', 
+                      overflow: 'hidden', 
+                      position: 'relative',
+                      cursor: system.previewUrl ? 'pointer' : 'default'
+                    }}
+                    onClick={() => {
+                      if (system.previewUrl) {
+                        setHoveredPreview(system.previewUrl);
+                      }
+                    }}
+                  >
                     {system.previewUrl ? (
-                      <img 
-                        src={system.previewUrl} 
-                        alt={system.displayName || system.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        onError={(e) => {
-                          console.warn(`Failed to load preview image for ${system.displayName || system.name}:`, e.target.src);
-                          e.target.style.display = 'none';
-                          e.target.nextSibling.style.display = 'flex';
-                        }}
-                      />
+                      <>
+                        <img 
+                          src={system.previewUrl} 
+                          alt={system.displayName || system.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            console.warn(`Failed to load preview image for ${system.displayName || system.name}:`, e.target.src);
+                            console.warn(`Error details:`, e.target.src, 'Status:', e.target.complete);
+                            e.target.style.display = 'none';
+                            if (e.target.nextSibling) {
+                              e.target.nextSibling.style.display = 'flex';
+                            }
+                          }}
+                          onLoad={() => {
+                            console.log(`✅ Successfully loaded preview: ${system.displayName || system.name}`);
+                          }}
+                        />
+                        {/* Elegant overlay with magnifying glass icon */}
+                        <div
+                          className="vfx-preview-overlay"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0,0,0,0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            pointerEvents: 'none'
+                          }}
+                        >
+                          <div style={{
+                            background: 'rgba(255,255,255,0.9)',
+                            borderRadius: '50%',
+                            width: '40px',
+                            height: '40px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '18px',
+                            color: 'var(--accent)',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                          }}>
+                            🔍
+                          </div>
+                        </div>
+                      </>
                     ) : null}
                     <div style={{ fontSize: '2rem', display: system.previewUrl ? 'none' : 'flex' }}>
                       {system.demoVideo ? '🎬' : '✨'}
@@ -3135,14 +3406,14 @@ const findProjectRoot = (startPath) => {
                     <div style={{
                       fontSize: '0.7rem',
                       color: 'var(--text-2)',
-                      marginBottom: '0.5rem',
+                      marginBottom: '0',
                       height: '2.4rem',
                       overflow: 'hidden',
                       display: '-webkit-box',
                       WebkitLineClamp: 2,
                       WebkitBoxOrient: 'vertical'
                     }}>
-                      {system.description}
+                      {system.description.replace(new RegExp(`^${(system.displayName || system.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[-:]?\\s*`, 'i'), '')}
                     </div>
                   )}
                   <button
@@ -3150,7 +3421,8 @@ const findProjectRoot = (startPath) => {
                     disabled={isProcessing}
                     style={{
                       width: '100%',
-                      padding: '0.5rem',
+                      padding: '0.25rem',
+                      marginTop: '0',
                       background: isProcessing
                         ? 'rgba(160,160,160,0.2)'
                         : 'linear-gradient(180deg, color-mix(in srgb, var(--accent), transparent 78%), color-mix(in srgb, var(--accent-muted), transparent 82%))',
@@ -3239,6 +3511,160 @@ const findProjectRoot = (startPath) => {
               </button>
             </div>
           )}
+
+          {/* Full Preview Click Modal */}
+          {hoveredPreview && (
+            <>
+              {/* Backdrop for click-to-close */}
+              <div
+                style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: 'rgba(0, 0, 0, 0.5)',
+                  zIndex: 1999,
+                  backdropFilter: 'blur(4px)',
+                  WebkitBackdropFilter: 'blur(4px)'
+                }}
+                onClick={() => setHoveredPreview(null)}
+              />
+              {/* Preview Modal */}
+              <div
+                style={{
+                  position: 'fixed',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: 2000,
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  maxWidth: '80vw',
+                  maxHeight: '80vh',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  backdropFilter: 'saturate(180%) blur(20px)',
+                  WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+                  boxShadow: `
+                    0 8px 32px rgba(0, 0, 0, 0.3),
+                    0 2px 8px rgba(0, 0, 0, 0.2),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.1)
+                  `
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                width: '100%',
+                marginBottom: '15px'
+              }}>
+                <h3 style={{ margin: 0, color: 'var(--accent)', fontSize: '1.2rem' }}>
+                  Full Preview
+                </h3>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHoveredPreview(null);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    color: 'white',
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    cursor: 'pointer',
+                    fontSize: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = 'rgba(255,255,255,0.1)';
+                    e.target.style.borderColor = 'rgba(255,255,255,0.6)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = 'transparent';
+                    e.target.style.borderColor = 'rgba(255,255,255,0.3)';
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <img
+                src={hoveredPreview}
+                alt="Full preview"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '60vh',
+                  objectFit: 'contain',
+                  borderRadius: '8px'
+                }}
+                onError={(e) => {
+                  console.warn('Failed to load full preview:', e.target.src);
+                  setHoveredPreview(null);
+                }}
+              />
+              </div>
+            </>
+          )}
+
+          {/* Resize Handles */}
+          {/* Southeast corner resize handle */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              right: 0,
+              width: '12px',
+              height: '12px',
+              cursor: 'nw-resize',
+              background: 'rgba(255,255,255,0.1)',
+              borderTop: '1px solid rgba(255,255,255,0.2)',
+              borderLeft: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '0 0 10px 0'
+            }}
+            onMouseDown={(e) => handleMouseDown(e, 'se')}
+          />
+          
+          {/* East edge resize handle */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              right: 0,
+              width: '4px',
+              height: '40px',
+              cursor: 'ew-resize',
+              background: 'rgba(255,255,255,0.1)',
+              transform: 'translateY(-50%)',
+              borderRadius: '2px 0 0 2px'
+            }}
+            onMouseDown={(e) => handleMouseDown(e, 'e')}
+          />
+          
+          {/* South edge resize handle */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: '50%',
+              width: '40px',
+              height: '4px',
+              cursor: 'ns-resize',
+              background: 'rgba(255,255,255,0.1)',
+              transform: 'translateX(-50%)',
+              borderRadius: '2px 2px 0 0'
+            }}
+            onMouseDown={(e) => handleMouseDown(e, 's')}
+          />
         </div>
       </div>
     );
@@ -3262,8 +3688,22 @@ const findProjectRoot = (startPath) => {
 
         // Read file as base64 and push via GitHub API
         const fs = window.require('fs');
-        const content = fs.readFileSync(filePath).toString('base64');
+        const fileBuffer = fs.readFileSync(filePath);
+        const fileSizeMB = fileBuffer.length / (1024 * 1024);
+        
+        // Check file size limits
+        if (fileSizeMB > 25) {
+          throw new Error(`File too large: ${fileSizeMB.toFixed(1)}MB. GitHub has a 25MB limit for individual files.`);
+        }
+        
+        if (fileSizeMB > 10) {
+          console.warn(`Large file detected: ${fileSizeMB.toFixed(1)}MB. This may cause upload issues.`);
+        }
+        
+        const content = fileBuffer.toString('base64');
         const pathInRepo = `collection/previews/${cleanName}.${finalExt}`;
+        
+        console.log(`Uploading preview: ${pathInRepo} (${fileSizeMB.toFixed(1)}MB)`);
         await githubApi.updateFile(pathInRepo, content, `Add preview for ${uploadMetadata.name}`, true);
         setStatusMessage(`Preview uploaded: ${pathInRepo}`);
       } catch (err) {
@@ -3816,24 +4256,24 @@ const findProjectRoot = (startPath) => {
 
         <button
           onClick={handleUploadToVFXHub}
-          disabled={isProcessing}
+          disabled={isProcessing || !githubAuthenticated}
           style={{
             flex: 1,
             padding: '8px 20px',
-            background: 'linear-gradient(180deg, rgba(249,115,22,0.22), rgba(234,88,12,0.18))',
-            border: '1px solid rgba(249,115,22,0.32)',
-            color: '#fff2e8',
+            background: githubAuthenticated ? 'linear-gradient(180deg, rgba(249,115,22,0.22), rgba(234,88,12,0.18))' : 'rgba(156,163,175,0.2)',
+            border: githubAuthenticated ? '1px solid rgba(249,115,22,0.32)' : '1px solid rgba(156,163,175,0.32)',
+            color: githubAuthenticated ? '#fff2e8' : '#9ca3af',
             borderRadius: '8px',
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: '14px',
             fontWeight: '600',
-            cursor: isProcessing ? 'not-allowed' : 'pointer',
+            cursor: (isProcessing || !githubAuthenticated) ? 'not-allowed' : 'pointer',
             transition: 'all 0.2s ease',
-            opacity: isProcessing ? 0.7 : 1,
+            opacity: (isProcessing || !githubAuthenticated) ? 0.7 : 1,
             boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
           }}
           onMouseEnter={(e) => {
-            if (!isProcessing) {
+            if (!isProcessing && githubAuthenticated) {
               e.target.style.transform = 'translateY(-1px)';
               e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
             }
@@ -3842,8 +4282,9 @@ const findProjectRoot = (startPath) => {
             e.target.style.transform = 'translateY(0)';
             e.target.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
           }}
+          title={!githubAuthenticated ? 'Authentication required - Configure GitHub credentials in Settings' : 'Upload VFX system to VFX Hub'}
         >
-          Upload to VFX Hub
+          {!githubAuthenticated ? 'Upload (Auth Required)' : 'Upload to VFX Hub'}
         </button>
       </div>
 
@@ -4074,7 +4515,6 @@ const findProjectRoot = (startPath) => {
             padding: '20px',
             paddingLeft: '100px' // Account for left navbar
           }}
-          onClick={() => setShowPersistentModal(false)}
         >
           <div
             style={{
@@ -4148,27 +4588,106 @@ const findProjectRoot = (startPath) => {
               }}>
                 <div style={{ marginBottom: 12, fontWeight: 600, color: 'var(--accent)', fontSize: '1.1rem' }}>Condition</div>
                 <div style={{ display: 'grid', gap: 12 }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Type:</span>
-                    <select
-                      value={persistentPreset.type}
-                      onChange={e => setPersistentPreset(p => ({ ...p, type: e.target.value }))}
-                      style={{
-                        padding: '8px 12px',
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: 6,
-                        color: 'var(--accent)',
-                        fontSize: '0.9rem'
-                      }}
-                    >
-                      <option value="IsAnimationPlaying">IsAnimationPlaying</option>
-                      <option value="HasBuffScript">HasBuff (ScriptName)</option>
-                      <option value="LearnedSpell">LearnedSpell</option>
-                      <option value="HasGear">HasGear</option>
-                      <option value="FloatComparison">FloatComparison (SpellRank)</option>
-                    </select>
-                  </label>
+                    <div style={{ position: 'relative' }} ref={typeDropdownRef}>
+                      <button
+                        onClick={() => setTypeDropdownOpen(!typeDropdownOpen)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          background: 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          borderRadius: 8,
+                          color: 'var(--accent)',
+                          fontSize: '0.9rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          transition: 'all 0.2s ease',
+                          backdropFilter: 'blur(10px)',
+                          WebkitBackdropFilter: 'blur(10px)'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06))';
+                          e.target.style.borderColor = 'rgba(255,255,255,0.25)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))';
+                          e.target.style.borderColor = 'rgba(255,255,255,0.15)';
+                        }}
+                      >
+                        <span>{typeOptions.find(opt => opt.value === persistentPreset.type)?.label || persistentPreset.type}</span>
+                        <span style={{ 
+                          transform: typeDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease',
+                          fontSize: '0.8rem'
+                        }}>▼</span>
+                      </button>
+                      
+                      {typeDropdownOpen && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          background: 'linear-gradient(135deg, rgba(0,0,0,0.85), rgba(0,0,0,0.75))',
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          borderRadius: 8,
+                          marginTop: 4,
+                          zIndex: 1000,
+                          backdropFilter: 'blur(20px)',
+                          WebkitBackdropFilter: 'blur(20px)',
+                          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                          overflow: 'hidden'
+                        }}>
+                          {typeOptions.map((option) => (
+                            <div
+                              key={option.value}
+                              onClick={() => {
+                                setPersistentPreset(p => ({ ...p, type: option.value }));
+                                setTypeDropdownOpen(false);
+                              }}
+                              style={{
+                                padding: '12px 16px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                                color: persistentPreset.type === option.value ? '#ffffff' : 'rgba(255,255,255,0.9)',
+                                background: persistentPreset.type === option.value ? 'rgba(255,255,255,0.15)' : 'transparent'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (persistentPreset.type !== option.value) {
+                                  e.target.style.background = 'rgba(255,255,255,0.1)';
+                                  e.target.style.color = '#ffffff';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (persistentPreset.type !== option.value) {
+                                  e.target.style.background = 'transparent';
+                                  e.target.style.color = 'rgba(255,255,255,0.9)';
+                                }
+                              }}
+                            >
+                              <div style={{ fontWeight: persistentPreset.type === option.value ? 600 : 400 }}>
+                                {option.label}
+                              </div>
+                              {option.description && (
+                                <div style={{ 
+                                  fontSize: '0.75rem', 
+                                  color: 'rgba(255,255,255,0.8)', 
+                                  marginTop: 2 
+                                }}>
+                                  {option.description}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   {persistentPreset.type === 'IsAnimationPlaying' && (
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -4288,6 +4807,60 @@ const findProjectRoot = (startPath) => {
                         <input
                           type="number"
                           value={persistentPreset.value ?? 1}
+                          onChange={e => setPersistentPreset(p => ({ ...p, value: Number(e.target.value) }))}
+                          style={{
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 6,
+                            color: 'var(--accent)',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  {persistentPreset.type === 'BuffCounterFloatComparison' && (
+                    <>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Spell Hash:</span>
+                        <input
+                          type="text"
+                          placeholder="Characters/Ezreal/Spells/EzrealPassiveAbility/EzrealPassiveStacks"
+                          value={persistentPreset.spellHash ?? ''}
+                          onChange={e => setPersistentPreset(p => ({ ...p, spellHash: e.target.value }))}
+                          style={{
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 6,
+                            color: 'var(--accent)',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Operator:</span>
+                        <input
+                          type="number"
+                          value={persistentPreset.operator ?? 2}
+                          onChange={e => setPersistentPreset(p => ({ ...p, operator: Number(e.target.value) }))}
+                          style={{
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 6,
+                            color: 'var(--accent)',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Value:</span>
+                        <input
+                          type="number"
+                          value={persistentPreset.value ?? 5}
                           onChange={e => setPersistentPreset(p => ({ ...p, value: Number(e.target.value) }))}
                           style={{
                             padding: '8px 12px',
@@ -4810,7 +5383,6 @@ const findProjectRoot = (startPath) => {
             alignItems: 'center', justifyContent: 'center', padding: '20px',
             paddingLeft: '100px'
           }}
-          onClick={() => setShowNewSystemModal(false)}
         >
           <div
             style={{

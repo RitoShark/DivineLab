@@ -8,6 +8,62 @@ const https = require('https');
 // Track if the app is in the process of quitting to avoid re-entrancy/loops
 let isQuitting = false;
 
+// ============================================================================
+// FILE-BASED LOGGING SYSTEM FOR PRODUCTION DEBUGGING
+// ============================================================================
+const LOG_DIR = path.join(app.getPath('userData'), 'logs');
+const LOG_FILE = path.join(LOG_DIR, `divinelab-${new Date().toISOString().split('T')[0]}.log`);
+
+// Ensure log directory exists
+try {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.error('Failed to create log directory:', e);
+}
+
+// Log function that writes to both console and file
+function logToFile(message, level = 'INFO') {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] [${level}] ${message}\n`;
+  
+  // Write to console
+  console.log(logMessage.trim());
+  
+  // Write to file
+  try {
+    fs.appendFileSync(LOG_FILE, logMessage);
+  } catch (e) {
+    console.error('Failed to write to log file:', e);
+  }
+}
+
+// Export log file path via IPC
+ipcMain.handle('get-log-file-path', () => {
+  return LOG_FILE;
+});
+
+// IPC handler to open log file location
+ipcMain.handle('open-log-folder', async () => {
+  try {
+    await shell.openPath(LOG_DIR);
+    return { success: true, path: LOG_DIR };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+logToFile('='.repeat(80), 'INFO');
+logToFile('DivineLab Started', 'INFO');
+logToFile(`Version: ${app.getVersion()}`, 'INFO');
+logToFile(`Electron: ${process.versions.electron}`, 'INFO');
+logToFile(`Node: ${process.versions.node}`, 'INFO');
+logToFile(`Platform: ${process.platform}`, 'INFO');
+logToFile(`isDev: ${isDev}`, 'INFO');
+logToFile(`isPackaged: ${app.isPackaged}`, 'INFO');
+logToFile('='.repeat(80), 'INFO');
+
 function createWindow() {
   // Create the browser window.
   let mainWindow = new BrowserWindow({
@@ -56,14 +112,23 @@ function createWindow() {
     try { mainWindow.removeMenu(); } catch {}
   }
 
-  // Intercept close to warn about unsaved changes (renderer sets window.__DL_unsavedBin)
+  // Unified close handler: checks unsaved changes AND stops backend
   mainWindow.on('close', async (e) => {
     try {
       // If we're already quitting, allow the close
-      if (isQuitting) return;
+      if (isQuitting || isShuttingDown) {
+        console.log('✅ Already quitting/shutting down, allowing close...');
+        return;
+      }
 
       // Always prevent first, then decide what to do
       e.preventDefault();
+
+      // Prevent multiple close attempts
+      if (isShuttingDown) {
+        console.log('🔄 Shutdown already in progress, ignoring close request...');
+        return;
+      }
 
       // Check if there are unsaved changes by querying the renderer process
       let hasUnsaved = false;
@@ -71,78 +136,60 @@ function createWindow() {
         hasUnsaved = await mainWindow.webContents.executeJavaScript('Boolean(window.__DL_unsavedBin)');
       } catch {}
 
-      if (!hasUnsaved) {
-        // No unsaved changes — proceed to quit
-        isQuitting = true;
-        try { await mainWindow.webContents.executeJavaScript('window.__DL_forceClose = true;'); } catch {}
-        try { mainWindow.destroy(); } catch {}
-        app.quit();
-        return;
+      // If there are unsaved changes, show confirmation dialog
+      if (hasUnsaved) {
+        const result = await dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          buttons: ['Exit Without Saving', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+          title: 'Unsaved Changes',
+          message: 'You have unsaved BIN changes. Exit without saving?',
+          noLink: true,
+        });
+
+        if (result.response !== 0) {
+          // User cancelled: do nothing, window stays open
+          console.log('User cancelled close, window stays open');
+          return;
+        }
+        // User chose to exit anyway - continue with shutdown
+        console.log('User confirmed exit without saving');
       }
 
-      // Show confirmation dialog
-      const result = await dialog.showMessageBox(mainWindow, {
-        type: 'warning',
-        buttons: ['Exit Without Saving', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        title: 'Unsaved Changes',
-        message: 'You have unsaved BIN changes. Exit without saving?',
-        noLink: true,
-      });
-
-      if (result.response === 0) {
-        // User chose to exit anyway
-        isQuitting = true;
-        try { await mainWindow.webContents.executeJavaScript('window.__DL_forceClose = true;'); } catch {}
-        try { mainWindow.destroy(); } catch {}
-        app.quit();
-      } else {
-        // User cancelled: do nothing, window stays open
-      }
-    } catch (error) {
-      console.error('Error in close handler:', error);
-      // As a fallback, allow quitting to avoid trapping the user
+      // Mark that we're shutting down (prevents re-entry)
       isQuitting = true;
-      app.quit();
-    }
-  });
+      isShuttingDown = true;
 
+      // Notify renderer that we're closing
+      try { 
+        await mainWindow.webContents.executeJavaScript('window.__DL_forceClose = true;'); 
+        mainWindow.webContents.send('app:closing');
+      } catch {}
 
-
-  // Handle window close request (before actually closing)
-  mainWindow.on('close', async (event) => {
-    // Prevent immediate close
-    event.preventDefault();
-    
-    // Prevent multiple close attempts
-    if (isShuttingDown) {
-      console.log('🔄 Shutdown already in progress, ignoring close request...');
-      return;
-    }
-    
-    // Mark that we're shutting down
-    isShuttingDown = true;
-    
-    // Show closing message
-    mainWindow.webContents.send('app:closing');
-    
-    try {
       // Stop the backend service gracefully
       console.log('🔄 Gracefully shutting down backend service...');
-      await stopBackendService();
-      
+      try {
+        await stopBackendService();
+        console.log('✅ Backend service stopped');
+      } catch (error) {
+        console.error('❌ Error stopping backend:', error);
+      }
+
       // Wait a moment for cleanup
       await new Promise(resolve => setTimeout(resolve, 500));
-      
-      console.log('✅ Backend shutdown complete');
-      
+
       // Now actually close the window
-      mainWindow.destroy();
+      console.log('🔄 Destroying window and quitting app...');
+      try { mainWindow.destroy(); } catch {}
+      app.quit();
     } catch (error) {
-      console.error('❌ Error during shutdown:', error);
-      // Force close even if there's an error
-      mainWindow.destroy();
+      console.error('❌ Error in close handler:', error);
+      // As a fallback, allow quitting to avoid trapping the user
+      isQuitting = true;
+      isShuttingDown = true;
+      try { mainWindow.destroy(); } catch {}
+      app.quit();
     }
   });
 
@@ -487,8 +534,17 @@ ipcMain.handle('tools:deletePath', async (event, payload) => {
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
+  logToFile('APP: whenReady triggered - initializing application', 'INFO');
   try { app.setAppUserModelId('com.github.ritoshark.divinelab'); } catch {}
   createWindow();
+  
+  // Start backend service after window is created
+  logToFile('APP: Scheduling backend service startup', 'INFO');
+  const delay = isDev && !app.isPackaged ? 2000 : 5000;
+  setTimeout(() => {
+    logToFile(`APP: Starting backend service (delay: ${delay}ms)`, 'INFO');
+    ensureBackendService();
+  }, delay);
 });
 
 // LtMAO related IPC
@@ -531,13 +587,22 @@ app.on('window-all-closed', async () => {
 // Handle app-level quit (e.g., Cmd+Q / File->Quit) with unsaved guard
 app.on('before-quit', async (e) => {
   try {
-    if (isQuitting) return; // Already confirmed
+    console.log('📌 before-quit event triggered');
+    
+    // If already quitting/shutting down, allow it
+    if (isQuitting || isShuttingDown) {
+      console.log('✅ Already quitting/shutting down, allowing quit...');
+      return;
+    }
 
     const wins = BrowserWindow.getAllWindows();
     const win = wins && wins.length ? wins[0] : null;
     if (!win) {
+      console.log('No windows to check, proceeding with quit');
       isQuitting = true;
-      return; // No window to ask
+      isShuttingDown = true;
+      await stopBackendService();
+      return;
     }
 
     // Check unsaved flag from renderer
@@ -547,7 +612,9 @@ app.on('before-quit', async (e) => {
     } catch {}
 
     if (!hasUnsaved) {
+      console.log('No unsaved changes, proceeding with quit');
       isQuitting = true;
+      isShuttingDown = true;
       try { await win.webContents.executeJavaScript('window.__DL_forceClose = true;'); } catch {}
       // Stop backend service before quitting
       await stopBackendService();
@@ -567,7 +634,9 @@ app.on('before-quit', async (e) => {
     });
 
     if (result.response === 0) {
+      console.log('User confirmed quit without saving');
       isQuitting = true;
+      isShuttingDown = true;
       try { await win.webContents.executeJavaScript('window.__DL_forceClose = true;'); } catch {}
       // Stop backend service before quitting
       await stopBackendService();
@@ -575,11 +644,15 @@ app.on('before-quit', async (e) => {
       try { w?.destroy?.(); } catch {}
       app.quit();
     } else {
+      console.log('User cancelled quit');
       // Cancelled: do nothing
     }
   } catch (err) {
+    console.error('❌ Error in before-quit handler:', err);
     // On error, allow quit to avoid trapping
     isQuitting = true;
+    isShuttingDown = true;
+    await stopBackendService();
   }
 });
 
@@ -1931,10 +2004,26 @@ ipcMain.handle('filerandomizer:renameFiles', async (event, { targetFolder, textT
 let backendService = null;
 let isBackendRunning = false;
 let backendStartTime = null;
+let isBackendStarting = false; // NEW: Prevent concurrent start attempts
+let backendStartCount = 0; // NEW: Track how many times we've tried to start
 
 // File-based mutex to prevent multiple backends
 const BACKEND_LOCK_FILE = path.join(__dirname, '.backend.lock');
 const BACKEND_PORT = 5001;
+
+// Log backend state changes
+function logBackendState(action, details = {}) {
+  const state = {
+    action,
+    isBackendRunning,
+    isBackendStarting,
+    backendStartCount,
+    hasProcess: backendService !== null,
+    pid: backendService?.pid || null,
+    ...details
+  };
+  logToFile(`BACKEND: ${action} - ${JSON.stringify(state)}`, 'INFO');
+}
 
 // Check if port is available
 async function isPortAvailable(port) {
@@ -2055,32 +2144,81 @@ function removeBackendLock() {
 // Health check function to verify backend is responding
 async function checkBackendHealth() {
   try {
-    const response = await fetch('http://127.0.0.1:5001/api/bumpath/logs', {
-      method: 'GET',
-      timeout: 2000
-    });
-    return response.ok;
+    // Use a promise-based timeout to avoid hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    
+    try {
+      // First try the simple health endpoint
+      const healthResponse = await fetch('http://127.0.0.1:5001/health', {
+        method: 'GET',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      if (healthResponse.ok) {
+        const data = await healthResponse.json();
+        console.log('✅ Backend health check passed:', data);
+        return true;
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      // If health endpoint fails, try the logs endpoint as fallback
+      console.log('⚠️ Health endpoint failed, trying logs endpoint:', fetchError.message);
+      
+      const controller2 = new AbortController();
+      const timeoutId2 = setTimeout(() => controller2.abort(), 2000);
+      
+      try {
+        const response = await fetch('http://127.0.0.1:5001/api/bumpath/logs', {
+          method: 'GET',
+          signal: controller2.signal
+        });
+        clearTimeout(timeoutId2);
+        return response.ok;
+      } catch (logsError) {
+        clearTimeout(timeoutId2);
+        console.log('⚠️ Logs endpoint also failed:', logsError.message);
+        return false;
+      }
+    }
+    
+    return false;
   } catch (error) {
-    console.log('🔍 Backend health check failed:', error.message);
+    console.log('❌ Backend health check error:', error.message);
     return false;
   }
 }
 
 // Ensure backend service is running (reuse existing or start new)
 async function ensureBackendService() {
-  console.log('🔄 Ensuring backend service is available...');
+  logBackendState('ensureBackendService called');
+  
+  // CRITICAL: Prevent concurrent start attempts
+  if (isBackendStarting) {
+    logToFile('BACKEND: Already starting, waiting...', 'WARN');
+    // Wait for the current start attempt to complete
+    let attempts = 0;
+    while (isBackendStarting && attempts < 30) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      attempts++;
+    }
+    logBackendState('ensureBackendService waited', { waitedMs: attempts * 200 });
+    return isBackendRunning;
+  }
   
   // Step 1: Check for existing lock file
   const lockInfo = await checkBackendLock();
   if (lockInfo.exists) {
-    console.log(`🔒 Found existing backend lock (PID: ${lockInfo.pid})`);
+    logToFile(`BACKEND: Found existing lock (PID: ${lockInfo.pid})`, 'INFO');
     
     // Verify the locked process is still healthy
     if (await checkBackendHealth()) {
-      console.log('✅ Existing backend is healthy, reusing...');
+      logToFile('BACKEND: Existing backend is healthy, reusing', 'INFO');
+      isBackendRunning = true;
       return true;
     } else {
-      console.log('⚠️ Locked backend not responding, cleaning up...');
+      logToFile('BACKEND: Locked backend not responding, cleaning up', 'WARN');
       removeBackendLock();
     }
   }
@@ -2088,10 +2226,10 @@ async function ensureBackendService() {
   // Step 2: Check if our own service is running
   if (isBackendRunning && backendService && !backendService.killed) {
     if (await checkBackendHealth()) {
-      console.log('✅ Our backend service is healthy, reusing...');
+      logToFile('BACKEND: Our backend service is healthy, reusing', 'INFO');
       return true;
     } else {
-      console.log('⚠️ Our backend service not responding, restarting...');
+      logToFile('BACKEND: Our backend service not responding, restarting', 'WARN');
       await stopBackendService();
     }
   }
@@ -2100,35 +2238,49 @@ async function ensureBackendService() {
   await cleanupExistingBackends();
   
   // Step 4: Start new backend service
-  console.log('🚀 Starting new backend service...');
+  logToFile('BACKEND: Starting new backend service', 'INFO');
   return await startBackendService();
 }
 
 async function startBackendService() {
   try {
+    // CRITICAL: Set flag to prevent concurrent starts
+    if (isBackendStarting) {
+      logToFile('BACKEND: startBackendService called while already starting!', 'ERROR');
+      return false;
+    }
+    
     if (isBackendRunning) {
-      console.log('⚠️ Backend service already marked as running');
+      logToFile('BACKEND: Backend service already marked as running', 'WARN');
       return false;
     }
 
-    console.log('🚀 Starting Bumpath Backend Service...');
+    isBackendStarting = true;
+    backendStartCount++;
+    logBackendState('startBackendService BEGIN', { attempt: backendStartCount });
     
     const isDevelopment = isDev && !app.isPackaged;
-    console.log(`🔍 Environment: ${isDevelopment ? 'Development' : 'Production'}`);
-    console.log(`🔍 isDev: ${isDev}, app.isPackaged: ${app.isPackaged}`);
-    console.log(`🔍 process.resourcesPath: ${process.resourcesPath}`);
+    logToFile(`BACKEND: Environment: ${isDevelopment ? 'Development' : 'Production'}`, 'INFO');
+    logToFile(`BACKEND: isDev=${isDev}, isPackaged=${app.isPackaged}`, 'INFO');
+    logToFile(`BACKEND: resourcesPath=${process.resourcesPath}`, 'INFO');
+    logToFile(`BACKEND: __dirname=${__dirname}`, 'INFO');
+    logToFile(`BACKEND: cwd=${process.cwd()}`, 'INFO');
     
     let backendPath, spawnArgs;
     
     if (isDevelopment) {
       // Development mode: use Python script
       backendPath = path.join(__dirname, 'bumpath_backend_standalone_final.py');
+      logToFile(`BACKEND: Checking dev path: ${backendPath}`, 'INFO');
+      
       if (!fs.existsSync(backendPath)) {
-        console.log('❌ WARNING: Bumpath backend script not found:', backendPath);
+        logToFile(`BACKEND: ERROR - Backend script not found: ${backendPath}`, 'ERROR');
+        isBackendStarting = false;
         return false;
       }
+      
       spawnArgs = ['python', [`"${backendPath}"`]];
-      console.log('✅ Using system Python for Bumpath Backend (Development)');
+      logToFile('BACKEND: Using system Python for Bumpath Backend (Development)', 'INFO');
     } else {
       // Production mode: use bundled executable
       const possiblePaths = [
@@ -2138,32 +2290,55 @@ async function startBackendService() {
         path.join(process.resourcesPath, '..', 'bumpath_backend.exe')
       ];
       
+      logToFile(`BACKEND: Searching for executable in ${possiblePaths.length} locations`, 'INFO');
+      possiblePaths.forEach((p, i) => {
+        const exists = fs.existsSync(p);
+        logToFile(`BACKEND: [${i+1}/${possiblePaths.length}] ${exists ? 'FOUND' : 'NOT FOUND'}: ${p}`, exists ? 'INFO' : 'WARN');
+      });
+      
       backendPath = possiblePaths.find(p => fs.existsSync(p));
       
       if (!backendPath) {
-        console.log('❌ WARNING: Bumpath backend executable not found in any expected location:');
-        possiblePaths.forEach(p => console.log(`   - ${p}`));
+        logToFile('BACKEND: ERROR - Bumpath backend executable not found in ANY location!', 'ERROR');
+        isBackendStarting = false;
         return false;
       }
       
-      console.log(`✅ Found backend executable at: ${backendPath}`);
+      logToFile(`BACKEND: Using executable: ${backendPath}`, 'INFO');
       spawnArgs = [`"${backendPath}"`, []];
-      console.log('✅ Using bundled executable for Bumpath Backend (Production)');
+      logToFile('BACKEND: Using bundled executable for Bumpath Backend (Production)', 'INFO');
     }
 
     // Set correct working directory
     const workingDir = isDevelopment ? __dirname : process.resourcesPath;
     
-    backendService = spawn(spawnArgs[0], spawnArgs[1], {
-      cwd: workingDir,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: true,
-      windowsHide: true,
-      detached: false
-    });
+    logToFile(`BACKEND: Working directory: ${workingDir}`, 'INFO');
+    logToFile(`BACKEND: Spawn command: ${spawnArgs[0]}`, 'INFO');
+    logToFile(`BACKEND: Spawn args: ${JSON.stringify(spawnArgs[1])}`, 'INFO');
+    logToFile(`BACKEND: Spawning process...`, 'INFO');
+    
+    try {
+      backendService = spawn(spawnArgs[0], spawnArgs[1], {
+        cwd: workingDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
+        windowsHide: true,
+        detached: false
+      });
+      
+      backendStartTime = Date.now(); // Set start time when spawned, not when healthy
+      logToFile(`BACKEND: Process spawned successfully, PID: ${backendService.pid}`, 'INFO');
+    } catch (spawnError) {
+      logToFile(`BACKEND: SPAWN ERROR: ${spawnError.message}`, 'ERROR');
+      logToFile(`BACKEND: SPAWN ERROR STACK: ${spawnError.stack}`, 'ERROR');
+      isBackendStarting = false;
+      throw spawnError;
+    }
 
     backendService.stdout.on('data', (data) => {
-      console.log(`[Backend Service] ${data.toString().trim()}`);
+      const output = data.toString().trim();
+      console.log(`[Backend Service] ${output}`);
+      logToFile(`BACKEND STDOUT: ${output}`, 'INFO');
     });
 
     backendService.stderr.on('data', (data) => {
@@ -2172,79 +2347,120 @@ async function startBackendService() {
       if (output.includes('HTTP/1.1"') && output.includes(' - - [')) {
         // This is Flask's normal HTTP request logging, not an error
         console.log(`[Backend Service] ${output}`);
+        logToFile(`BACKEND: ${output}`, 'INFO');
       } else if (output.includes('WARNING: This is a development server') || 
                  output.includes('Use a production WSGI server instead')) {
         // This is Flask's development server warning, not an error
         console.log(`[Backend Service] ${output}`);
+        logToFile(`BACKEND: ${output}`, 'INFO');
       } else {
         // This is an actual error - log with more detail
         console.error(`[Backend Service Error] ${output}`);
-        // In production, also log to a file for debugging
-        if (!isDev || app.isPackaged) {
-          try {
-            const logPath = path.join(getUserDataPath(), 'backend-errors.log');
-            const timestamp = new Date().toISOString();
-            fs.appendFileSync(logPath, `[${timestamp}] ${output}\n`);
-          } catch (logError) {
-            console.error('Failed to write error log:', logError.message);
-          }
-        }
+        logToFile(`BACKEND STDERR: ${output}`, 'ERROR');
       }
     });
 
     backendService.on('close', (code) => {
-      console.log(`[Backend Service] Process exited with code ${code}`);
+      const uptime = backendStartTime ? Date.now() - backendStartTime : 0;
+      logToFile(`BACKEND: Process exited with code ${code} (uptime: ${uptime}ms)`, code === 0 ? 'INFO' : 'ERROR');
+      logBackendState('BACKEND CLOSED', { exitCode: code, uptime });
+      
+      // Detect crash (non-zero exit code or very short uptime)
+      if (code !== 0 || uptime < 5000) {
+        logToFile(`BACKEND: Detected abnormal termination (crash)!`, 'ERROR');
+        
+        // Notify all windows about backend crash
+        const allWindows = BrowserWindow.getAllWindows();
+        allWindows.forEach(win => {
+          try {
+            win.webContents.send('backend:crashed', { code, uptime });
+          } catch (e) {
+            logToFile(`Failed to notify window about backend crash: ${e.message}`, 'WARN');
+          }
+        });
+      }
+      
       backendService = null;
       isBackendRunning = false;
+      isBackendStarting = false; // Clear flag in case it crashed during startup
       backendStartTime = null;
       removeBackendLock(); // Clean up lock file when process exits
     });
 
     backendService.on('error', (error) => {
       console.error('[Backend Service] Failed to start:', error.message);
+      logToFile(`BACKEND: Failed to start - ${error.message}`, 'ERROR');
+      logToFile(`BACKEND: Error stack: ${error.stack}`, 'ERROR');
       backendService = null;
       isBackendRunning = false;
+      isBackendStarting = false; // Clear flag
       backendStartTime = null;
       removeBackendLock(); // Clean up lock file on error
     });
 
-    // Smart health check with retries
+    // Smart health check with retries - EXTENDED for PyInstaller startup time
     let healthCheckAttempts = 0;
-    const maxHealthAttempts = 10;
+    const maxHealthAttempts = 20; // Increased from 10 to 20 for slower PyInstaller startup
     
     while (healthCheckAttempts < maxHealthAttempts) {
-      // Wait incrementally longer each attempt
-      await new Promise(resolve => setTimeout(resolve, 200 + (healthCheckAttempts * 100)));
+      // Wait incrementally longer each attempt (up to 15 seconds total)
+      await new Promise(resolve => setTimeout(resolve, 300 + (healthCheckAttempts * 150)));
       
       if (backendService && !backendService.killed) {
         // Try health check
         if (await checkBackendHealth()) {
           isBackendRunning = true;
-          backendStartTime = Date.now();
+          isBackendStarting = false; // CRITICAL: Clear flag on success
           
           // Create lock file for this backend instance
           createBackendLock(backendService.pid);
           
-          console.log(`✅ Backend Service started successfully and is healthy (attempt ${healthCheckAttempts + 1})`);
+          const startupTime = Date.now() - backendStartTime;
+          logBackendState('startBackendService SUCCESS', { 
+            pid: backendService.pid, 
+            healthAttempt: healthCheckAttempts + 1,
+            startupTimeMs: startupTime
+          });
+          logToFile(`BACKEND: Health check succeeded after ${healthCheckAttempts + 1} attempts (${startupTime}ms startup time)`, 'INFO');
           return true;
         }
         
         healthCheckAttempts++;
         if (healthCheckAttempts < maxHealthAttempts) {
-          console.log(`🔍 Health check ${healthCheckAttempts}/${maxHealthAttempts} failed, retrying...`);
+          logToFile(`BACKEND: Health check ${healthCheckAttempts}/${maxHealthAttempts} failed, retrying...`, 'WARN');
         }
       } else {
-        console.error('❌ Backend Service failed to start or crashed immediately');
+        isBackendStarting = false; // CRITICAL: Clear flag on failure
+        logToFile('BACKEND: Backend Service failed to start or crashed immediately', 'ERROR');
+        logBackendState('startBackendService FAILED - immediate crash');
         return false;
       }
     }
     
-    console.error('❌ Backend Service started but not responding to health checks after max attempts');
-    await stopBackendService();
-    return false;
+    // DON'T kill the backend on timeout - it might still be starting up
+    // PyInstaller can take 10+ seconds to unpack and start
+    isBackendStarting = false; // Clear flag but keep process running
+    isBackendRunning = true; // Assume it will work
+    createBackendLock(backendService.pid);
+    
+    logToFile('BACKEND: Health check timeout reached, but keeping backend alive (PyInstaller may need more time)', 'WARN');
+    logBackendState('startBackendService TIMEOUT - keeping alive', { pid: backendService.pid });
+    
+    // Start a background health check monitor
+    setTimeout(async () => {
+      if (await checkBackendHealth()) {
+        logToFile('BACKEND: Backend became healthy after timeout - success!', 'INFO');
+      } else {
+        logToFile('BACKEND: Backend still not healthy after extended wait', 'ERROR');
+      }
+    }, 5000);
+    
+    return true; // Return success and let it keep trying
 
   } catch (error) {
-    console.error('❌ ERROR: Failed to start Backend Service:', error);
+    isBackendStarting = false; // CRITICAL: Clear flag on exception
+    logToFile(`BACKEND: ERROR: Failed to start Backend Service: ${error.message}`, 'ERROR');
+    logBackendState('startBackendService EXCEPTION', { error: error.message });
     return false;
   }
 }
@@ -2380,13 +2596,7 @@ async function stopBackendService() {
   }
 }
 
-// Start backend service when app is ready
-app.whenReady().then(() => {
-  // Ensure backend service is running after a longer delay for production
-  const delay = isDev && !app.isPackaged ? 2000 : 5000;
-  setTimeout(ensureBackendService, delay);
-});
-
+// Backend service startup is now handled in the main app.whenReady() block above
 // Backend service cleanup is handled in the existing before-quit handler above
 
 // IPC handler to check backend service status

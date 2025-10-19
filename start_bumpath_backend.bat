@@ -21,6 +21,6 @@ echo Backend will be available at: http://localhost:5001
 echo Press Ctrl+C to stop the server
 echo.
 
-python bumpath_backend.py --host localhost --port 5001
+python bumpath_backend_standalone_final.py --host localhost --port 5001
 
 pause

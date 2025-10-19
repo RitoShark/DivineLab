@@ -9,10 +9,12 @@ class GitHubAPI {
   constructor() {
     this.baseUrl = 'https://api.github.com';
     this.rawUrl = 'https://raw.githubusercontent.com';
+    this.cache = new Map();
+    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
   }
 
   /**
-   * Get GitHub credentials from settings
+   * Get GitHub credentials from settings (supports public-only access)
    */
   async getCredentials() {
     await electronPrefs.initPromise;
@@ -21,41 +23,45 @@ class GitHubAPI {
     const token = electronPrefs.obj.GitHubToken;
     const repoUrl = electronPrefs.obj.GitHubRepoUrl || 'https://github.com/FrogCsLoL/VFXHub';
     
-    if (!username || !token) {
-      throw new Error('GitHub credentials not configured. Please set your GitHub username and token in Settings.');
-    }
-    
     // Extract owner/repo from URL
     const urlMatch = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
     if (!urlMatch) {
       throw new Error('Invalid GitHub repository URL format. Expected format: https://github.com/owner/repo');
     }
     
+    // Return credentials if available, otherwise return public-only access
     return {
-      username,
-      token,
+      username: username || 'public',
+      token: token || null,
       owner: urlMatch[1],
       repo: urlMatch[2],
-      repoUrl
+      repoUrl,
+      isPublicOnly: !username || !token
     };
   }
 
   /**
-   * Make authenticated GitHub API request
+   * Make GitHub API request (supports public-only access)
    */
   async request(endpoint, options = {}) {
-    const { token } = await this.getCredentials();
+    const credentials = await this.getCredentials();
     
     const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
     
+    const headers = {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'VFXHub-App',
+      ...options.headers
+    };
+    
+    // Only add authorization if we have a token
+    if (credentials.token) {
+      headers['Authorization'] = `token ${credentials.token}`;
+    }
+    
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'Authorization': `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'VFXHub-App',
-        ...options.headers
-      }
+      headers
     });
 
     if (!response.ok) {
@@ -65,9 +71,17 @@ class GitHubAPI {
         error.status = 404;
         throw error;
       } else if (response.status === 403) {
-        throw new Error('Access forbidden. Check your GitHub token permissions.');
+        if (credentials.isPublicOnly) {
+          throw new Error('Access forbidden. This repository may be private. Public access requires the repository to be public.');
+        } else {
+          throw new Error('Access forbidden. Check your GitHub token permissions.');
+        }
       } else if (response.status === 401) {
-        throw new Error('Authentication failed. Check your GitHub token.');
+        if (credentials.isPublicOnly) {
+          throw new Error('Authentication required. Please configure your GitHub credentials in Settings for full access.');
+        } else {
+          throw new Error('Authentication failed. Check your GitHub token.');
+        }
       } else {
         throw new Error(`GitHub API Error: ${response.status} ${response.statusText}`);
       }
@@ -77,13 +91,22 @@ class GitHubAPI {
   }
 
   /**
-   * Get raw file content from GitHub
+   * Get raw file content from GitHub (supports public access)
    */
   async getRawFile(filePath, branch = 'main') {
-    const { owner, repo } = await this.getCredentials();
+    const credentials = await this.getCredentials();
     
-    // Use authenticated API instead of raw URL for private repos
-    let endpoint = `/repos/${owner}/${repo}/contents/${filePath}`;
+    // For public-only access, use raw URL directly
+    if (credentials.isPublicOnly) {
+      const response = await fetch(`https://raw.githubusercontent.com/${credentials.owner}/${credentials.repo}/${branch}/${filePath}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+      }
+      return await response.text();
+    }
+    
+    // Use authenticated API for private repos
+    let endpoint = `/repos/${credentials.owner}/${credentials.repo}/contents/${filePath}`;
     if (branch !== 'main') {
       endpoint += `?ref=${branch}`;
     }
@@ -99,14 +122,24 @@ class GitHubAPI {
   }
 
   /**
-   * Get raw binary file content from GitHub (for assets like .dds, .scb files)
+   * Get raw binary file content from GitHub (supports public access)
    */
   async getRawBinaryFile(filePath, branch = 'main') {
     try {
-      const { owner, repo } = await this.getCredentials();
+      const credentials = await this.getCredentials();
       
-      // Use authenticated API instead of raw URL for private repos
-      let endpoint = `/repos/${owner}/${repo}/contents/${filePath}`;
+      // For public-only access, use raw URL directly
+      if (credentials.isPublicOnly) {
+        const response = await fetch(`https://raw.githubusercontent.com/${credentials.owner}/${credentials.repo}/${branch}/${filePath}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch asset: ${response.status} ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+      }
+      
+      // Use authenticated API for private repos
+      let endpoint = `/repos/${credentials.owner}/${credentials.repo}/contents/${filePath}`;
       if (branch !== 'main') {
         endpoint += `?ref=${branch}`;
       }
@@ -123,12 +156,33 @@ class GitHubAPI {
       if (error.status === 404) {
         throw new Error(`Asset file not found: ${filePath}. Please check if the file exists in your repository.`);
       } else if (error.status === 403) {
-        throw new Error(`Access denied to asset: ${filePath}. Please check your GitHub token permissions.`);
+        if (credentials.isPublicOnly) {
+          throw new Error(`Access denied to asset: ${filePath}. This repository may be private. Public access requires the repository to be public.`);
+        } else {
+          throw new Error(`Access denied to asset: ${filePath}. Please check your GitHub token permissions.`);
+        }
       } else if (error.status === 401) {
-        throw new Error(`Authentication failed for asset: ${filePath}. Please check your GitHub token.`);
+        if (credentials.isPublicOnly) {
+          throw new Error(`Authentication required for asset: ${filePath}. Please configure your GitHub credentials in Settings for full access.`);
+        } else {
+          throw new Error(`Authentication failed for asset: ${filePath}. Please check your GitHub token.`);
+        }
       } else {
         throw new Error(`Failed to download asset ${filePath}: ${error.message}`);
       }
+    }
+  }
+
+  /**
+   * Get public download URL for assets (works for public repos)
+   */
+  async getPublicDownloadUrl(filePath, branch = 'main') {
+    try {
+      const { owner, repo } = await this.getCredentials();
+      return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}`;
+    } catch (error) {
+      console.warn(`Could not get public download URL for ${filePath}:`, error.message);
+      return null;
     }
   }
 
@@ -153,6 +207,26 @@ class GitHubAPI {
   }
 
   /**
+   * Get download URL with fallback to public access
+   * Tries authenticated first, falls back to public if authentication fails
+   */
+  async getDownloadUrlWithFallback(filePath, branch = 'main') {
+    try {
+      // First try to get authenticated URL
+      const { owner, repo, token } = await this.getCredentials();
+      if (token) {
+        const authenticatedUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}?token=${token}`;
+        return authenticatedUrl;
+      }
+    } catch (error) {
+      console.warn(`Authentication not available, using public URL: ${error.message}`);
+    }
+    
+    // Fallback to public URL
+    return this.getPublicDownloadUrl(filePath, branch);
+  }
+
+  /**
    * List files in a directory
    */
   async listDirectory(dirPath = '', branch = 'main') {
@@ -167,14 +241,238 @@ class GitHubAPI {
   }
 
   /**
-   * Get VFX collections from the repository
+   * Check GitHub API rate limit and handle accordingly
+   */
+  async checkRateLimit() {
+    try {
+      const credentials = await this.getCredentials();
+      
+      // For authenticated users, use the authenticated API to get accurate rate limits
+      if (!credentials.isPublicOnly) {
+        try {
+          const rateLimitResponse = await this.request('/rate_limit');
+          console.log('📊 GitHub API Rate Limit Status (Authenticated):', {
+            remaining: rateLimitResponse.rate?.remaining || 'unknown',
+            reset: rateLimitResponse.rate?.reset ? new Date(rateLimitResponse.rate.reset * 1000).toLocaleTimeString() : 'unknown',
+            limit: rateLimitResponse.rate?.limit || 'unknown',
+            authenticated: true
+          });
+          
+          if (rateLimitResponse.rate?.remaining === 0) {
+            const resetTime = new Date(rateLimitResponse.rate.reset * 1000);
+            throw new Error(`Rate limit exceeded for authenticated user. Resets at ${resetTime.toLocaleString()}.`);
+          }
+          
+          return rateLimitResponse;
+        } catch (authError) {
+          console.warn('Could not check authenticated rate limit:', authError.message);
+          // Fall back to public rate limit check
+        }
+      }
+      
+      // For public users or if authenticated check fails, use public rate limit
+      const rateLimitResponse = await fetch(`${this.baseUrl}/rate_limit`);
+      const rateLimit = await rateLimitResponse.json();
+      
+      console.log('📊 GitHub API Rate Limit Status (Public):', {
+        remaining: rateLimit.rate?.remaining || 'unknown',
+        reset: rateLimit.rate?.reset ? new Date(rateLimit.rate.reset * 1000).toLocaleTimeString() : 'unknown',
+        limit: rateLimit.rate?.limit || 'unknown',
+        authenticated: false
+      });
+      
+      if (rateLimit.rate?.remaining === 0) {
+        const resetTime = new Date(rateLimit.rate.reset * 1000);
+        throw new Error(`Rate limit exceeded for unauthenticated user. Resets at ${resetTime.toLocaleString()}. Add GitHub authentication in Settings for unlimited access.`);
+      }
+      
+      return rateLimit;
+    } catch (error) {
+      console.warn('Could not check rate limit:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get VFX collections with automatic fallback between authenticated and public access
    */
   async getVFXCollections() {
     try {
-      // Get collection files (create directory structure if it doesn't exist)
+      const credentials = await this.getCredentials();
+      
+      // Check rate limit before making any API calls
+      await this.checkRateLimit();
+      
+      // Try authenticated API first if credentials are available
+      if (!credentials.isPublicOnly) {
+        console.log('🔐 Attempting authenticated API access');
+        return await this.getVFXCollectionsAuthenticated();
+      } else {
+        console.log('🌐 Using public API access');
+        return await this.getVFXCollectionsPublic();
+      }
+    } catch (error) {
+      console.warn('❌ Primary access method failed:', error.message);
+      
+      // Fallback to public access if authenticated fails
+      if (!credentials.isPublicOnly) {
+        console.log('🔄 Falling back to public API access');
+        return await this.getVFXCollectionsPublic();
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Get VFX collections using authenticated API (higher rate limits)
+   */
+  async getVFXCollectionsAuthenticated() {
+    try {
+      const { owner, repo } = await this.getCredentials();
+      
+      // Use authenticated API to get collection files from the correct directory
+      const collectionFiles = await this.request(`/repos/${owner}/${repo}/contents/collection/vfx collection`);
+      
+      if (!Array.isArray(collectionFiles)) {
+        console.log('VFX collection directory not found, will be created on first upload');
+        return { collections: [] };
+      }
+      
+      // Get index.json if it exists (authenticated access)
+      let index = {};
+      try {
+        const indexContent = await this.getRawFile('index.json');
+        index = JSON.parse(indexContent);
+      } catch (error) {
+        console.warn('No index.json found, will create basic collection list');
+      }
+
+      // Build previews index: map of cleaned base name -> preview URL (authenticated access)
+      const previewsIndex = await this.getPreviewsIndexAuthenticated();
+      console.log(`📋 Available preview keys:`, Object.keys(previewsIndex));
+
+      // Process collection files
+      const collections = [];
+      
+      // Helper: derive category from filename
+      const deriveCategoryFromFilename = (filename) => {
+        const lower = filename.toLowerCase();
+        // strip extension
+        let base = lower.replace(/\.py$/, '');
+        // remove trailing vfx or vfxs suffix
+        base = base.replace(/vfxs?$/, '');
+        base = base.trim();
+        // normalize underscores/spaces
+        base = base.replace(/[_\s]+/g, '');
+        // pluralization map for desired categories
+        const pluralMap = {
+          aura: 'auras',
+          missile: 'missiles',
+          explosion: 'explosions'
+        };
+        const normalized = pluralMap[base] || base;
+        return normalized;
+      };
+
+      console.log(`🔍 Processing ${collectionFiles.length} collection files...`);
+      
+      for (const file of collectionFiles) {
+        console.log(`📄 Processing file: ${file.name} (type: ${file.type})`);
+        
+        if (file.name.endsWith('.py')) {
+          const category = deriveCategoryFromFilename(file.name);
+          console.log(`🐍 Python file detected: ${file.name} -> category: ${category}`);
+          
+          // Get VFX systems from this collection file (authenticated access)
+          try {
+            const content = await this.getRawFile(file.path);
+            console.log(`📝 File content length: ${content.length} characters`);
+            
+            // Parse systems and include all for UI display
+            const parsedSystems = this.parseVFXSystemsFromContent(content);
+            console.log(`🎯 Parsed ${parsedSystems.length} systems from ${file.name}`);
+            const systems = parsedSystems.map(sys => {
+              // Attach previewUrl from previews index by matching system name/displayName
+              const keysToTry = [
+                (sys.displayName || '').toString(),
+                (sys.name || '').toString().split('/').pop() || (sys.name || '').toString(),
+              ];
+              let previewUrl = null;
+              for (const k of keysToTry) {
+                const key = this.cleanPreviewKey(k);
+                console.log(`🔍 Looking for preview key: "${key}" for system: ${sys.name}`);
+                if (previewsIndex[key]) {
+                  previewUrl = previewsIndex[key];
+                  console.log(`✅ Found preview: ${key} -> ${previewUrl}`);
+                  break;
+                }
+              }
+              if (!previewUrl) {
+                console.log(`❌ No preview found for system: ${sys.name}, tried keys:`, keysToTry.map(k => this.cleanPreviewKey(k)));
+              }
+              return { ...sys, previewUrl };
+            });
+            
+            collections.push({
+              name: file.name,
+              category,
+              description: `${category.charAt(0).toUpperCase() + category.slice(1)} VFX Collection`,
+              systems,
+              filePath: file.path,
+              downloadUrl: file.download_url
+            });
+          } catch (error) {
+            console.error(`Error parsing collection file ${file.name}:`, error);
+          }
+        }
+      }
+
+      console.log(`📊 Final result: ${collections.length} collections processed`);
+      console.log(`📋 Collections:`, collections.map(c => ({ name: c.name, systems: c.systems?.length || 0 })));
+      
+      const result = {
+        collections,
+        index
+      };
+      
+      console.log(`✅ Returning ${result.collections.length} collections`);
+      return result;
+    } catch (error) {
+      console.error('Error fetching VFX collections with authenticated API:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get VFX collections from the repository (public access)
+   */
+  async getVFXCollectionsPublic() {
+    try {
+      const { owner, repo } = await this.getCredentials();
+      
+      // Check cache first to reduce API calls for public users
+      const cacheKey = `collections_${owner}_${repo}`;
+      const cached = this.cache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp) < this.cacheTimeout) {
+        console.log('📦 Using cached collections data');
+        return cached.data;
+      }
+      
+      // Use public GitHub API to get collection files from the correct directory
       let collectionFiles;
       try {
-        collectionFiles = await this.listDirectory('collection/vfx collection');
+        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/collection/vfx collection`);
+        if (!response.ok) {
+          if (response.status === 404) {
+            console.log('VFX collection directory not found, will be created on first upload');
+            collectionFiles = [];
+          } else {
+            throw new Error(`GitHub API Error: ${response.status} ${response.statusText}`);
+          }
+        } else {
+          collectionFiles = await response.json();
+        }
       } catch (error) {
         if (error.message.includes('not found')) {
           console.log('VFX collection directory not found, will be created on first upload');
@@ -184,17 +482,21 @@ class GitHubAPI {
         }
       }
       
-      // Get index.json if it exists
+      // Get index.json if it exists (public access)
       let index = {};
       try {
-        const indexContent = await this.getRawFile('index.json');
-        index = JSON.parse(indexContent);
+        const response = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/index.json`);
+        if (response.ok) {
+          const indexContent = await response.text();
+          index = JSON.parse(indexContent);
+        }
       } catch (error) {
         console.warn('No index.json found, will create basic collection list');
       }
 
-      // Build previews index: map of cleaned base name -> preview URL
-      const previewsIndex = await this.getPreviewsIndex();
+      // Build previews index: map of cleaned base name -> preview URL (public access)
+      const previewsIndex = await this.getPreviewsIndexPublic();
+      console.log(`📋 Available preview keys:`, Object.keys(previewsIndex));
 
       // Process collection files
       const collections = [];
@@ -223,9 +525,14 @@ class GitHubAPI {
         if (file.name.endsWith('.py')) {
           const category = deriveCategoryFromFilename(file.name);
           
-          // Get VFX systems from this collection file
+          // Get VFX systems from this collection file (public access)
           try {
-            const content = await this.getRawFile(file.path);
+            const response = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/${file.path}`);
+            if (!response.ok) {
+              console.warn(`Failed to fetch collection file ${file.name}: ${response.status}`);
+              continue;
+            }
+            const content = await response.text();
             // Parse systems and include all for UI display
             const parsedSystems = this.parseVFXSystemsFromContent(content);
             const systems = parsedSystems.map(sys => {
@@ -237,12 +544,17 @@ class GitHubAPI {
               let previewUrl = null;
               for (const k of keysToTry) {
                 const key = this.cleanPreviewKey(k);
-                              if (previewsIndex[key]) {
-                previewUrl = previewsIndex[key];
-                break;
+                console.log(`🔍 Looking for preview key: "${key}" for system: ${sys.name}`);
+                if (previewsIndex[key]) {
+                  previewUrl = previewsIndex[key];
+                  console.log(`✅ Found preview: ${key} -> ${previewUrl}`);
+                  break;
+                }
               }
-            }
-            return { ...sys, previewUrl };
+              if (!previewUrl) {
+                console.log(`❌ No preview found for system: ${sys.name}, tried keys:`, keysToTry.map(k => this.cleanPreviewKey(k)));
+              }
+              return { ...sys, previewUrl };
             });
             
             collections.push({
@@ -259,10 +571,19 @@ class GitHubAPI {
         }
       }
 
-      return {
+      const result = {
         collections,
         index
       };
+      
+      // Cache the result for public users
+      this.cache.set(cacheKey, {
+        data: result,
+        timestamp: Date.now()
+      });
+      
+      console.log(`✅ Returning ${result.collections.length} collections`);
+      return result;
     } catch (error) {
       console.error('Error fetching VFX collections:', error);
       throw error;
@@ -320,10 +641,20 @@ class GitHubAPI {
         try {
           const ext = name.split('.').pop().toLowerCase();
           
-          // For GIFs, use authenticated download URL instead of base64 to avoid performance issues
+          // For GIFs, use public URL to avoid performance issues with base64
           if (ext === 'gif') {
-            const authenticatedUrl = await this.getAuthenticatedDownloadUrl(f.path);
-            index[key] = authenticatedUrl || f.download_url;
+            const credentials = await this.getCredentials();
+            if (credentials.isPublicOnly) {
+              // Use raw GitHub URLs for GIFs in public-only mode (avoid CSP issues)
+              const publicUrl = `https://raw.githubusercontent.com/${credentials.owner}/${credentials.repo}/main/${f.path}`;
+              index[key] = publicUrl;
+              console.log(`🎬 Loaded GIF preview (public): ${name} -> ${publicUrl}`);
+            } else {
+              // Use authenticated URL for GIFs when authenticated
+              const authenticatedUrl = await this.getAuthenticatedDownloadUrl(f.path);
+              index[key] = authenticatedUrl || f.download_url;
+              console.log(`🎬 Loaded GIF preview (authenticated): ${name} -> ${authenticatedUrl || f.download_url}`);
+            }
           } else {
             // For other image types, use base64 data URL
             const fileData = await this.request(`/repos/${(await this.getCredentials()).owner}/${(await this.getCredentials()).repo}/contents/${f.path}`);
@@ -347,9 +678,10 @@ class GitHubAPI {
           }
         } catch (error) {
           console.warn(`Failed to load preview image ${f.path}:`, error.message);
-          // Fallback to authenticated download URL if base64 conversion fails
-          const authenticatedUrl = await this.getAuthenticatedDownloadUrl(f.path);
-          index[key] = authenticatedUrl || f.download_url;
+          // Fallback to raw GitHub URL for all image types
+          const credentials = await this.getCredentials();
+          const publicUrl = `https://raw.githubusercontent.com/${credentials.owner}/${credentials.repo}/main/${f.path}`;
+          index[key] = publicUrl;
         }
       }
       return index;
@@ -363,6 +695,77 @@ class GitHubAPI {
     return String(s || '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '');
+  }
+
+  /**
+   * Build an index of previews located at collection/previews (public access)
+   * Keying by cleaned filename (no extension, lowercased, non-alnum removed)
+   */
+  async getPreviewsIndexPublic() {
+    try {
+      const { owner, repo } = await this.getCredentials();
+      const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/collection/previews`);
+      if (!response.ok) {
+        console.warn('Could not load previews directory (public access)');
+        return {};
+      }
+      
+      const files = await response.json();
+      console.log(`📁 Found ${files.length} files in collection/previews:`, files.map(f => f.name));
+      const index = {};
+      for (const f of files) {
+        if (!f.type || f.type !== 'file') continue;
+        const name = f.name || '';
+        if (!name.match(/\.(png|jpg|jpeg|gif|webp)$/i)) continue;
+        const base = name.replace(/\.[^.]+$/, '');
+        const key = this.cleanPreviewKey(base);
+        
+        // Use raw GitHub URLs for public access (avoid CSP issues with base64)
+        const publicUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${f.path}`;
+        index[key] = publicUrl;
+        console.log(`📸 Loaded preview (public): ${name} -> ${publicUrl}`);
+        
+        // Skip URL testing to avoid 401 errors in public mode
+      }
+      return index;
+    } catch (e) {
+      console.warn('Could not load previews index (public access):', e.message);
+      return {};
+    }
+  }
+
+  /**
+   * Get previews index using authenticated API
+   */
+  async getPreviewsIndexAuthenticated() {
+    try {
+      const { owner, repo } = await this.getCredentials();
+      const files = await this.request(`/repos/${owner}/${repo}/contents/collection/previews`);
+      
+      if (!Array.isArray(files)) {
+        console.warn('Could not load previews directory (authenticated access)');
+        return {};
+      }
+      
+      console.log(`📁 Found ${files.length} files in collection/previews:`, files.map(f => f.name));
+      const index = {};
+      for (const f of files) {
+        if (!f.type || f.type !== 'file') continue;
+        const name = f.name || '';
+        if (!name.match(/\.(png|jpg|jpeg|gif|webp)$/i)) continue;
+        const base = name.replace(/\.[^.]+$/, '');
+        const key = this.cleanPreviewKey(base);
+        
+        // Use raw GitHub URLs for authenticated access
+        const publicUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${f.path}`;
+        index[key] = publicUrl;
+        console.log(`📸 Loaded preview (authenticated): ${name} -> ${publicUrl}`);
+      }
+      return index;
+    } catch (e) {
+      console.warn('Could not load previews index (authenticated access):', e.message);
+      return {};
+    }
   }
 
 
@@ -482,19 +885,19 @@ class GitHubAPI {
          console.log(`⚠️ No system content provided - returning all assets`);
        }
 
-      // Download asset URLs using authenticated API for private repos
+      // Download asset URLs with fallback to public access
       const assets = [];
       for (const asset of matchingAssets) {
-        // For private repos, we need to use the authenticated API instead of download_url
-        const authenticatedDownloadUrl = await this.getAuthenticatedDownloadUrl(asset.path);
+        // Try authenticated first, fallback to public if authentication fails
+        const downloadUrl = await this.getDownloadUrlWithFallback(asset.path);
         
         assets.push({
           name: asset.name,
           path: asset.path,
-          downloadUrl: authenticatedDownloadUrl || asset.download_url, // Fallback to original if needed
+          downloadUrl: downloadUrl || asset.download_url, // Fallback to original if needed
           size: asset.size
         });
-        console.log(`  📦 Asset: ${asset.name} (${asset.size} bytes) - URL: ${authenticatedDownloadUrl ? 'Authenticated' : 'Public'}`);
+        console.log(`  📦 Asset: ${asset.name} (${asset.size} bytes) - URL: ${downloadUrl ? 'Available' : 'Fallback'}`);
       }
 
       return assets;
@@ -505,17 +908,33 @@ class GitHubAPI {
   }
 
   /**
-   * Test GitHub connection
+   * Test GitHub connection (supports public-only access)
    */
   async testConnection() {
     try {
-      const { owner, repo } = await this.getCredentials();
+      const credentials = await this.getCredentials();
       
-      // Test user access
+      // For public-only access, just test repository access
+      if (credentials.isPublicOnly) {
+        const response = await fetch(`https://api.github.com/repos/${credentials.owner}/${credentials.repo}`);
+        if (!response.ok) {
+          throw new Error(`Repository not accessible: ${response.status} ${response.statusText}`);
+        }
+        
+        return {
+          success: true,
+          user: 'public',
+          repository: `${credentials.owner}/${credentials.repo}`,
+          permissions: {
+            read: true,
+            write: false
+          }
+        };
+      }
+      
+      // Test authenticated access
       const userData = await this.request('/user');
-      
-      // Test repository access
-      const repoData = await this.request(`/repos/${owner}/${repo}`);
+      const repoData = await this.request(`/repos/${credentials.owner}/${credentials.repo}`);
       
       return {
         success: true,
@@ -535,13 +954,20 @@ class GitHubAPI {
   }
 
   /**
-   * Upload VFX system to repository
+   * Upload VFX system to repository (requires authentication)
    */
   async uploadVFXSystem(systemData, collectionFile, assets = [], metadata = {}) {
     console.log('Starting VFX system upload...');
     
     try {
-      const { owner, repo } = await this.getCredentials();
+      const credentials = await this.getCredentials();
+      
+      // Require authentication for uploads
+      if (credentials.isPublicOnly) {
+        throw new Error('Authentication required for uploads. Please configure your GitHub credentials in Settings.');
+      }
+      
+      const { owner, repo } = credentials;
       
              // Step 1: Get the current collection file (or create a new one if it doesn't exist)
        let currentContent;
@@ -897,12 +1323,14 @@ class GitHubAPI {
     try {
       const fileInfo = await this.request(`/repos/${owner}/${repo}/contents/${filePath}`);
       sha = fileInfo.sha;
+      console.log(`📝 Updating existing file: ${filePath} (SHA: ${sha.substring(0, 8)}...)`);
     } catch (error) {
       // File doesn't exist, which is fine for new files
       if (error.status === 404) {
-        console.log(`Creating new file: ${filePath}`);
+        console.log(`📄 Creating new file: ${filePath}`);
       } else {
-        throw error;
+        console.warn(`⚠️ Could not check if file exists: ${error.message}`);
+        // Continue without SHA - GitHub will handle it
       }
     }
     
@@ -911,7 +1339,12 @@ class GitHubAPI {
     
     // Check for potential encoding issues with large files
     if (content.length > 1000000) { // 1MB limit
-      console.warn(`Large file detected (${content.length} chars). This might cause encoding issues.`);
+      console.warn(`Large file detected (${(content.length / 1024 / 1024).toFixed(1)}MB base64). This might cause encoding issues.`);
+    }
+    
+    // GitHub has a 100MB limit for base64 content, but we should warn earlier
+    if (content.length > 50000000) { // 50MB base64 limit
+      throw new Error(`File too large for GitHub API: ${(content.length / 1024 / 1024).toFixed(1)}MB base64. Please use a smaller file.`);
     }
     
     const encodedContent = isBinary ? content : btoa(unescape(encodeURIComponent(content)));
@@ -923,13 +1356,53 @@ class GitHubAPI {
       ...(sha && { sha })
     };
     
-    return this.request(`/repos/${owner}/${repo}/contents/${filePath}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(updateData)
-    });
+    try {
+      return await this.request(`/repos/${owner}/${repo}/contents/${filePath}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updateData)
+      });
+    } catch (error) {
+      if (error.status === 409) {
+        console.error(`409 Conflict for ${filePath}:`, error);
+        // The file already exists - this means the SHA we got earlier was incorrect or the file was modified
+        // Try to get the current SHA and retry the upload
+        try {
+          console.log(`🔄 File exists, getting current SHA for ${filePath}`);
+          const currentFile = await this.request(`/repos/${owner}/${repo}/contents/${filePath}`);
+          const currentSha = currentFile.sha;
+          
+          console.log(`📝 Retrying upload with current SHA: ${currentSha.substring(0, 8)}...`);
+          
+          // Retry the upload with the correct SHA
+          const retryData = {
+            message: commitMessage,
+            content: encodedContent,
+            sha: currentSha
+          };
+          
+          return await this.request(`/repos/${owner}/${repo}/contents/${filePath}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(retryData)
+          });
+        } catch (retryError) {
+          console.error(`❌ Retry failed for ${filePath}:`, retryError);
+          throw new Error(`File conflict: Unable to update existing file at ${filePath}. The file may be locked or you may not have permission to modify it. Please try a different filename or check your repository permissions.`);
+        }
+      } else if (error.status === 413) {
+        throw new Error(`File too large: The file exceeds GitHub's size limits. Please use a smaller file.`);
+      } else if (error.status === 422) {
+        throw new Error(`Invalid file: The file format or content is not supported by GitHub.`);
+      } else if (error.status === 403) {
+        throw new Error(`Permission denied: You don't have permission to upload to this repository. Please check your GitHub credentials and repository access.`);
+      }
+      throw error;
+    }
   }
 
   /**

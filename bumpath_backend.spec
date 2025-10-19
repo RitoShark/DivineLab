@@ -2,33 +2,11 @@
 
 
 a = Analysis(
-    ['bumpath_backend_standalone_final.py'],
+    ['C:\\Users\\Frog\\Desktop\\Projects coding\\DivineLab-main\\bumpath_backend_standalone_final.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('pyRitoFile', 'pyRitoFile'),
-        ('minimal-ltmao', 'minimal-ltmao'),
-    ],
-    hiddenimports=[
-        'pyRitoFile.bin',
-        'pyRitoFile.wad', 
-        'pyRitoFile.stream',
-        'pyRitoFile.structs',
-        'pyRitoFile.helper',
-        'pyRitoFile.anm',
-        'pyRitoFile.skl',
-        'pyRitoFile.skn',
-        'pyRitoFile.tex',
-        'LtMAO.bumpath',
-        'LtMAO.hash_helper',
-        'LtMAO.lepath',
-        'LtMAO.wad_tool',
-        'flask',
-        'flask_cors',
-        'requests',
-        'PIL',
-        'PIL.Image'
-    ],
+    datas=[],
+    hiddenimports=['pyzstd', 'xxhash', 'PIL', 'PIL.Image', 'flask', 'flask_cors', 'requests', 'pyRitoFile.bin', 'pyRitoFile.wad', 'pyRitoFile.stream', 'pyRitoFile.structs', 'pyRitoFile.helper', 'pyRitoFile.anm', 'pyRitoFile.skl', 'pyRitoFile.skn', 'pyRitoFile.tex', 'LtMAO.bumpath', 'LtMAO.hash_helper', 'LtMAO.lepath', 'LtMAO.wad_tool', 'LtMAO.texsmart', 'LtMAO.Ritoddstex'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

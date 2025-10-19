@@ -1283,6 +1283,7 @@ const BinEditor = () => {
     translationOverride: false
   });
   const [selectedMode, setSelectedMode] = useState('none');
+  
   const [lockedSystems, setLockedSystems] = useState(new Set()); // Track locked systems
   const [matchingEmitters, setMatchingEmitters] = useState([]); // Track emitters matching search query
 
@@ -1301,6 +1302,29 @@ const BinEditor = () => {
   const updateStatus = useCallback((message) => {
     setStatusMessage(message);
   }, []);
+
+  // Function to reparse content when mode changes
+  const reparseContentOnModeChange = useCallback(async () => {
+    if (currentPyPath && pyContent) {
+      console.log('🔄 Reparsing content due to mode change...');
+      try {
+        const systems = parsePyContent(pyContent);
+        setBinData(systems);
+        updateStatus('Content reparsed for new mode');
+        console.log('✅ Content reparsed successfully');
+      } catch (error) {
+        console.error('❌ Error reparsing content:', error);
+        updateStatus('Error reparsing content');
+      }
+    }
+  }, [currentPyPath, pyContent, updateStatus]);
+  
+  // Reparse content when mode changes
+  useEffect(() => {
+    if (selectedMode !== 'none') {
+      reparseContentOnModeChange();
+    }
+  }, [selectedMode, reparseContentOnModeChange]);
 
   const getSelectionStatus = useCallback(() => {
     const status = selectedEmitters.size === 0 
@@ -1641,11 +1665,434 @@ const BinEditor = () => {
     }
   }, [currentPyPath, pyContent, currentBinPath, updateStatus, markSaved, clearUndoHistory]);
 
+  const updatePyContentWithChangesForData = (dataToUse) => {
+    console.log('🔄 DEBUG: updatePyContentWithChangesForData called:', {
+      hasPyContent: !!pyContent,
+      hasBinData: !!dataToUse,
+      isResetting,
+      selectedEmittersSize: selectedEmitters.size,
+      selectedEmitters: Array.from(selectedEmitters)
+    });
+    
+    // Debug: Count emitters with translationOverride
+    let translationOverrideCount = 0;
+    let nullIndexCount = 0;
+    
+    Object.values(dataToUse).forEach(system => {
+      system.emitters.forEach(emitter => {
+        if (translationOverrideUtils.hasTranslationOverride(emitter)) {
+          translationOverrideCount++;
+          if (emitter.translationOverride.originalIndex === null || typeof emitter.translationOverride.originalIndex === 'undefined') {
+            nullIndexCount++;
+          }
+        }
+      });
+    });
+    
+    console.log('🔍 TranslationOverride stats:', { translationOverrideCount, nullIndexCount });
+    
+    try {
+      // Don't update content if we're in the middle of a reset
+      if (isResetting) {
+        console.log('🔄 updatePyContentWithChangesForData - Skipping update during reset');
+        return pyContent;
+      }
+      
+      let lines = pyContent.split('\n');
+
+      // SIMPLE BINDWEIGHT INSERTION - Process all emitters that need bindWeight
+      let bindWeightInsertionCount = 0;
+
+      console.log('🔧 Starting bindWeight insertion phase...');
+      let pendingBindWeightCount = 0;
+      Object.values(dataToUse).forEach(system => {
+        system.emitters.forEach(emitter => {
+          const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+          const isSelected = selectedEmitters.has(emitterKey);
+          
+          // Check if emitter has bindWeight that needs to be inserted AND is selected
+          const needsBindWeight = isSelected && !!emitter.bindWeight && (emitter.bindWeight.originalIndex === null || typeof emitter.bindWeight.originalIndex === 'undefined');
+          if (needsBindWeight) {
+            pendingBindWeightCount++;
+            const startIndex = Number(emitter.originalIndex) || 0;
+            console.log(`🔧 Found emitter needing bindWeight: ${emitter.name} (originalIndex: ${startIndex})`);
+
+            // Find the emitterName line (first forward window, then backward if needed)
+            let foundEmitterName = false;
+
+            // Prefer exact match on emitter name within a wide window around startIndex
+            const targetNameFragment = `emitterName: string = "${emitter.name}"`;
+            let bestIdx = -1;
+            let bestDist = Number.POSITIVE_INFINITY;
+            const winStart = Math.max(0, startIndex - 400);
+            const winEnd = Math.min(lines.length - 1, startIndex + 400);
+            for (let i = winStart; i <= winEnd; i++) {
+              const line = lines[i];
+              if (!line) continue;
+              if (line.includes('emitterName: string =')) {
+                // Prefer exact name match
+                if (line.includes(targetNameFragment)) {
+                  const dist = Math.abs(i - startIndex);
+                  if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                  }
+                }
+              }
+            }
+
+            // Fallback: nearest emitterName if exact name not found
+            if (bestIdx === -1) {
+              for (let i = winStart; i <= winEnd; i++) {
+                const line = lines[i];
+                if (!line) continue;
+                if (line.includes('emitterName: string =')) {
+                  const dist = Math.abs(i - startIndex);
+                  if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                  }
+                }
+              }
+            }
+
+            if (bestIdx !== -1) {
+              foundEmitterName = true;
+              const bindWeightLines = [
+                `    bindWeight: embed = ValueFloat {`,
+                `        constantValue: f32 = ${emitter.bindWeight.constantValue}`,
+                `    }`
+              ];
+              lines.splice(bestIdx + 1, 0, ...bindWeightLines);
+              emitter.bindWeight.originalIndex = bestIdx + 1;
+              bindWeightInsertionCount++;
+              console.log(`✅ Inserted bindWeight for ${emitter.name} after emitterName at line ${bestIdx + 1} (best match, dist=${bestDist})`);
+            }
+
+            if (!foundEmitterName) {
+              console.log(`❌ Could not find emitterName for ${emitter.name} near index ${startIndex}`);
+            }
+          }
+        });
+      });
+
+      console.log(`🔧 BindWeight pending: ${pendingBindWeightCount}, insertions: ${bindWeightInsertionCount}`);
+
+      // CHECK IF WE'RE IN ISOLATED MODE
+      // Only trigger isolated mode when selectedMode is not 'none'
+      let isIsolatedMode = false;
+      let isolatedProperty = null;
+      
+      if (selectedMode !== 'none') {
+        isIsolatedMode = true;
+        isolatedProperty = selectedMode;
+      }
+      
+      console.log('🎯 Mode detected:', isIsolatedMode ? `ISOLATED MODE (${isolatedProperty})` : 'NORMAL MODE');
+      
+      if (isIsolatedMode) {
+        // ISOLATED MODE - Handle the specific property AND allow bindWeight insertions
+        console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Processing ${isolatedProperty} and allowing bindWeight insertions`);
+        
+        Object.values(dataToUse).forEach(system => {
+          system.emitters.forEach(emitter => {
+            const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+            if (!selectedEmitters.has(emitterKey)) {
+              return; // Skip this emitter - it's not selected
+            }
+            
+            // ONLY handle the specific isolated property
+            if (isolatedProperty === 'translationOverride' && translationOverrideUtils.hasTranslationOverride(emitter)) {
+              const translationOverride = emitter.translationOverride;
+              
+              // Check if this is a newly added translationOverride (no originalIndex means it was just added)
+              if (translationOverride.originalIndex === undefined || translationOverride.originalIndex === null) {
+                console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Inserting new translationOverride for emitter:`, emitter.name);
+                
+                // Find the emitterName line and insert translationOverride after it
+                for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
+                  if (lines[i] && lines[i].includes('emitterName: string =')) {
+                    // Check if translationOverride already exists in the next few lines
+                    let alreadyExists = false;
+                    for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+                      if (lines[j] && lines[j].includes('translationOverride: vec3 =')) {
+                        alreadyExists = true;
+                        console.log(`⚠️ ISOLATED MODE (${isolatedProperty}): translationOverride already exists at line ${j}`);
+                        break;
+                      }
+                    }
+                    
+                    if (!alreadyExists) {
+                      const value = translationOverride.constantValue;
+                      const newLines = [
+                        `    translationOverride: vec3 = { ${value.x}, ${value.y}, ${value.z} }`
+                      ];
+                      lines.splice(i + 1, 0, ...newLines);
+                      // Update the originalIndex for future updates
+                      translationOverride.originalIndex = i + 1;
+                      console.log(`✅ ISOLATED MODE (${isolatedProperty}): Inserted translationOverride at line:`, i + 1);
+                    }
+                    break;
+                  }
+                }
+              } else {
+                // Update existing translationOverride
+                const line = lines[translationOverride.originalIndex];
+                if (line && line.includes('translationOverride: vec3 =')) {
+                  const value = translationOverride.constantValue;
+                  const newLine = line.replace(/= \{[^}]*\}/, `= { ${value.x}, ${value.y}, ${value.z} }`);
+                  lines[translationOverride.originalIndex] = newLine;
+                  console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Updated existing translationOverride for emitter:`, emitter.name);
+                }
+              }
+            } else if (isolatedProperty === 'birthScale' && emitter.birthScale0 && emitter.birthScale0.constantValue) {
+              // Handle birthScale in isolated mode
+              const scale = emitter.birthScale0.constantValue;
+              console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Updating birthScale for emitter:`, emitter.name);
+              
+              // Update constantValue
+              for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
+                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated birthScale constantValue for emitter:`, emitter.name);
+                  break;
+                }
+              }
+            } else if (isolatedProperty === 'scale' && emitter.scale0 && emitter.scale0.constantValue) {
+              // Handle scale in isolated mode
+              const scale = emitter.scale0.constantValue;
+              console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Updating scale for emitter:`, emitter.name);
+              
+              // Update constantValue
+              for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
+                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated scale constantValue for emitter:`, emitter.name);
+                  break;
+                }
+              }
+            }
+            
+            // Handle birthScale updates in isolated mode (only when isolatedProperty is birthScale)
+            if (isolatedProperty === 'birthScale' && emitter.birthScale0 && emitter.birthScale0.constantValue) {
+              const scale = emitter.birthScale0.constantValue;
+              console.log(`🔧 ISOLATED MODE: Updating birthScale for emitter:`, emitter.name);
+              
+              // Update constantValue
+              for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
+                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                  const oldLine = lines[i];
+                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  console.log(`✅ ISOLATED MODE: Updated birthScale constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
+                  break;
+                }
+              }
+            }
+            
+            // Handle scale updates in isolated mode (only when isolatedProperty is scale)
+            if (isolatedProperty === 'scale' && emitter.scale0 && emitter.scale0.constantValue) {
+              const scale = emitter.scale0.constantValue;
+              console.log(`🔧 ISOLATED MODE: Updating scale for emitter:`, emitter.name);
+              
+              // Update constantValue
+              for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
+                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                  const oldLine = lines[i];
+                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  console.log(`✅ ISOLATED MODE: Updated scale constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
+                  break;
+                }
+              }
+            }
+            
+            // Handle bindWeight updates in isolated mode (only when isolatedProperty is bindWeight)
+            if (isolatedProperty === 'bindWeight' && bindWeightUtils.hasBindWeight(emitter) && emitter.bindWeight.originalIndex !== null) {
+              const bindWeight = emitter.bindWeight;
+              console.log(`🔧 ISOLATED MODE: Updating bindWeight for emitter:`, emitter.name, 'value:', bindWeight.constantValue);
+              
+              // Update constantValue
+              for (let i = bindWeight.originalIndex; i < lines.length && i < bindWeight.originalIndex + 20; i++) {
+                if (lines[i] && lines[i].includes('constantValue: f32 =')) {
+                  const oldLine = lines[i];
+                  lines[i] = lines[i].replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/, `$1${bindWeight.constantValue}`);
+                  console.log(`✅ ISOLATED MODE: Updated bindWeight constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
+                  break;
+                }
+              }
+            }
+          });
+        });
+        
+        // ISOLATED MODE: Allow bindWeight insertions but skip other property updates
+        console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Allowing bindWeight insertions, skipping other property updates to prevent corruption`);
+        
+        // Process bindWeight insertions even in isolated mode
+        Object.values(dataToUse).forEach(system => {
+          system.emitters.forEach(emitter => {
+            const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+            if (!selectedEmitters.has(emitterKey)) {
+              return; // Skip this emitter - it's not selected
+            }
+            
+            // Handle bindWeight insertions in isolated mode
+            if (emitter.bindWeight && (emitter.bindWeight.originalIndex === null || typeof emitter.bindWeight.originalIndex === 'undefined')) {
+              console.log(`🔧 ISOLATED MODE: Processing bindWeight insertion for ${emitter.name}`);
+              
+              // Find the emitterName line and insert bindWeight after it
+              const startIndex = Number(emitter.originalIndex) || 0;
+              const targetNameFragment = `emitterName: string = "${emitter.name}"`;
+              let bestIdx = -1;
+              let bestDist = Number.POSITIVE_INFINITY;
+              const winStart = Math.max(0, startIndex - 400);
+              const winEnd = Math.min(lines.length - 1, startIndex + 400);
+              
+              for (let i = winStart; i <= winEnd; i++) {
+                const line = lines[i];
+                if (!line) continue;
+                if (line.includes('emitterName: string =')) {
+                  if (line.includes(targetNameFragment)) {
+                    const dist = Math.abs(i - startIndex);
+                    if (dist < bestDist) {
+                      bestDist = dist;
+                      bestIdx = i;
+                    }
+                  }
+                }
+              }
+              
+              if (bestIdx !== -1) {
+                const bindWeightLines = [
+                  `    bindWeight: embed = ValueFloat {`,
+                  `        constantValue: f32 = ${emitter.bindWeight.constantValue}`,
+                  `    }`
+                ];
+                lines.splice(bestIdx + 1, 0, ...bindWeightLines);
+                emitter.bindWeight.originalIndex = bestIdx + 1;
+                console.log(`✅ ISOLATED MODE: Inserted bindWeight for ${emitter.name} after emitterName at line ${bestIdx + 1}`);
+              }
+            }
+          });
+        });
+        
+        return lines.join('\n');
+      }
+
+      // SECOND: Update each modified emitter - only process selected emitters
+      Object.values(dataToUse).forEach(system => {
+        system.emitters.forEach(emitter => {
+          const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+          if (!selectedEmitters.has(emitterKey)) {
+            return; // Skip this emitter - it's not selected
+          }
+          
+          // Handle translationOverride updates
+          if (translationOverrideUtils.hasTranslationOverride(emitter)) {
+            const translationOverride = emitter.translationOverride;
+            
+            // Check if this is a newly added translationOverride (no originalIndex means it was just added)
+            if (translationOverride.originalIndex === undefined || translationOverride.originalIndex === null) {
+              console.log(`🔧 Inserting new translationOverride for emitter:`, emitter.name);
+              
+              // Find the emitterName line and insert translationOverride after it
+              for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
+                if (lines[i] && lines[i].includes('emitterName: string =')) {
+                  // Check if translationOverride already exists in the next few lines
+                  let alreadyExists = false;
+                  for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+                    if (lines[j] && lines[j].includes('translationOverride: vec3 =')) {
+                      alreadyExists = true;
+                      console.log(`⚠️ translationOverride already exists at line ${j}`);
+                      break;
+                    }
+                  }
+                  
+                  if (!alreadyExists) {
+                    const value = translationOverride.constantValue;
+                    const newLines = [
+                      `    translationOverride: vec3 = { ${value.x}, ${value.y}, ${value.z} }`
+                    ];
+                    lines.splice(i + 1, 0, ...newLines);
+                    // Update the originalIndex for future updates
+                    translationOverride.originalIndex = i + 1;
+                    console.log(`✅ Inserted translationOverride at line:`, i + 1);
+                  }
+                  break;
+                }
+              }
+            } else {
+              // Update existing translationOverride
+              const line = lines[translationOverride.originalIndex];
+              if (line && line.includes('translationOverride: vec3 =')) {
+                const value = translationOverride.constantValue;
+                const newLine = line.replace(/= \{[^}]*\}/, `= { ${value.x}, ${value.y}, ${value.z} }`);
+                lines[translationOverride.originalIndex] = newLine;
+                console.log(`🔧 Updated existing translationOverride for emitter:`, emitter.name);
+              }
+            }
+          }
+          
+          // Handle birthScale0 updates
+          if (emitter.birthScale0 && emitter.birthScale0.constantValue) {
+            const scale = emitter.birthScale0.constantValue;
+            console.log(`🔧 Updating birthScale for emitter:`, emitter.name);
+            
+            // Update constantValue
+               for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
+              if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                console.log(`✅ Updated birthScale constantValue for emitter:`, emitter.name);
+                break;
+              }
+            }
+          }
+          
+          // Handle scale0 updates
+          if (emitter.scale0 && emitter.scale0.constantValue) {
+            const scale = emitter.scale0.constantValue;
+            console.log(`🔧 Updating scale for emitter:`, emitter.name);
+            
+            // Update constantValue
+               for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
+              if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                console.log(`✅ Updated scale constantValue for emitter:`, emitter.name);
+                break;
+              }
+            }
+          }
+          
+          // Handle bindWeight updates
+          if (bindWeightUtils.hasBindWeight(emitter) && emitter.bindWeight.originalIndex !== null) {
+            const bindWeight = emitter.bindWeight;
+            console.log(`🔧 Updating bindWeight for emitter:`, emitter.name, 'value:', bindWeight.constantValue);
+            
+            // Update constantValue
+            for (let i = bindWeight.originalIndex; i < lines.length && i < bindWeight.originalIndex + 20; i++) {
+              if (lines[i] && lines[i].includes('constantValue: f32 =')) {
+                const oldLine = lines[i];
+                lines[i] = lines[i].replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/, `$1${bindWeight.constantValue}`);
+                console.log(`✅ Updated bindWeight constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
+                break;
+              }
+            }
+          }
+        });
+      });
+
+      return lines.join('\n');
+    } catch (error) {
+      console.error('Error in updatePyContentWithChangesForData:', error);
+      throw new Error(`Failed to update Python content: ${error.message}`);
+    }
+  };
+
   const updatePyContentWithChanges = () => {
-    console.log('🔄 updatePyContentWithChanges called:', {
+    console.log('🔄 DEBUG: updatePyContentWithChanges called:', {
       hasPyContent: !!pyContent,
       hasBinData: !!binData,
-      isResetting
+      isResetting,
+      selectedEmittersSize: selectedEmitters.size,
+      selectedEmitters: Array.from(selectedEmitters)
     });
     
     // Debug: Count emitters with translationOverride
@@ -1672,7 +2119,313 @@ const BinEditor = () => {
       
       let lines = pyContent.split('\n');
 
-      // Update each modified emitter - only process selected emitters
+      // SIMPLE BINDWEIGHT INSERTION - Process all emitters that need bindWeight
+      let bindWeightInsertionCount = 0;
+
+      console.log('🔧 Starting bindWeight insertion phase...');
+      let pendingBindWeightCount = 0;
+      Object.values(binData).forEach(system => {
+        system.emitters.forEach(emitter => {
+          const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+          const isSelected = selectedEmitters.has(emitterKey);
+          
+          // Check if emitter has bindWeight that needs to be inserted AND is selected
+          const needsBindWeight = isSelected && !!emitter.bindWeight && (emitter.bindWeight.originalIndex === null || typeof emitter.bindWeight.originalIndex === 'undefined');
+          if (needsBindWeight) {
+            pendingBindWeightCount++;
+            const startIndex = Number(emitter.originalIndex) || 0;
+            console.log(`🔧 Found emitter needing bindWeight: ${emitter.name} (originalIndex: ${startIndex})`);
+
+            // Find the emitterName line (first forward window, then backward if needed)
+            let foundEmitterName = false;
+
+            // Prefer exact match on emitter name within a wide window around startIndex
+            const targetNameFragment = `emitterName: string = "${emitter.name}"`;
+            let bestIdx = -1;
+            let bestDist = Number.POSITIVE_INFINITY;
+            const winStart = Math.max(0, startIndex - 400);
+            const winEnd = Math.min(lines.length - 1, startIndex + 400);
+            for (let i = winStart; i <= winEnd; i++) {
+              const line = lines[i];
+              if (!line) continue;
+              if (line.includes('emitterName: string =')) {
+                // Prefer exact name match
+                if (line.includes(targetNameFragment)) {
+                  const dist = Math.abs(i - startIndex);
+                  if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                  }
+                }
+              }
+            }
+
+            // Fallback: nearest emitterName if exact name not found
+            if (bestIdx === -1) {
+              for (let i = winStart; i <= winEnd; i++) {
+                const line = lines[i];
+                if (!line) continue;
+                if (line.includes('emitterName: string =')) {
+                  const dist = Math.abs(i - startIndex);
+                  if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                  }
+                }
+              }
+            }
+
+            if (bestIdx !== -1) {
+              foundEmitterName = true;
+              const bindWeightLines = [
+                `    bindWeight: embed = ValueFloat {`,
+                `        constantValue: f32 = ${emitter.bindWeight.constantValue}`,
+                `    }`
+              ];
+              lines.splice(bestIdx + 1, 0, ...bindWeightLines);
+              emitter.bindWeight.originalIndex = bestIdx + 1;
+              bindWeightInsertionCount++;
+              console.log(`✅ Inserted bindWeight for ${emitter.name} after emitterName at line ${bestIdx + 1} (best match, dist=${bestDist})`);
+            }
+
+            if (!foundEmitterName) {
+              console.log(`❌ Could not find emitterName for ${emitter.name} near index ${startIndex}`);
+            }
+          }
+        });
+      });
+
+      console.log(`🔧 BindWeight pending: ${pendingBindWeightCount}, insertions: ${bindWeightInsertionCount}`);
+
+      // CHECK IF WE'RE IN ISOLATED MODE
+      // Only trigger isolated mode when selectedMode is not 'none'
+      let isIsolatedMode = false;
+      let isolatedProperty = null;
+      
+      if (selectedMode !== 'none') {
+        isIsolatedMode = true;
+        isolatedProperty = selectedMode;
+      }
+      
+      console.log('🎯 Mode detected:', isIsolatedMode ? `ISOLATED MODE (${isolatedProperty})` : 'NORMAL MODE');
+      
+      if (isIsolatedMode) {
+        // ISOLATED MODE - Handle the specific property AND allow bindWeight insertions
+        console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Processing ${isolatedProperty} and allowing bindWeight insertions`);
+        
+        Object.values(binData).forEach(system => {
+          system.emitters.forEach(emitter => {
+            const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+            if (!selectedEmitters.has(emitterKey)) {
+              return; // Skip this emitter - it's not selected
+            }
+            
+            // ONLY handle the specific isolated property
+            if (isolatedProperty === 'translationOverride' && translationOverrideUtils.hasTranslationOverride(emitter)) {
+              const translationOverride = emitter.translationOverride;
+              
+              // Check if this is a newly added translationOverride (no originalIndex means it was just added)
+              if (translationOverride.originalIndex === undefined || translationOverride.originalIndex === null) {
+                console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Inserting new translationOverride for emitter:`, emitter.name);
+                
+                // Find the emitterName line and insert translationOverride after it
+                for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
+                  if (lines[i] && lines[i].includes('emitterName: string =')) {
+                    // Check if translationOverride already exists in the next few lines
+                    let alreadyExists = false;
+                    for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+                      if (lines[j] && lines[j].includes('translationOverride: vec3 =')) {
+                        alreadyExists = true;
+                        // Update the existing line instead of inserting a new one
+                        lines[j] = `    translationOverride: vec3 = { ${translationOverride.constantValue.x}, ${translationOverride.constantValue.y}, ${translationOverride.constantValue.z} }`;
+                        translationOverride.originalIndex = j;
+                        console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Updated existing translationOverride line:`, { 
+                          value: translationOverride.constantValue,
+                          line: j
+                        });
+                        break;
+                      }
+                    }
+                    
+                    if (!alreadyExists) {
+                      // Insert the new translationOverride line after the emitterName line
+                      const newLine = `    translationOverride: vec3 = { ${translationOverride.constantValue.x}, ${translationOverride.constantValue.y}, ${translationOverride.constantValue.z} }`;
+                      lines.splice(i + 1, 0, newLine);
+                      
+                      // Update the originalIndex for future updates
+                      translationOverride.originalIndex = i + 1;
+                      console.log(`✅ ISOLATED MODE (${isolatedProperty}): Inserted translationOverride at line:`, i + 1);
+                    }
+                    break;
+                  }
+                }
+              } else {
+                // Update existing translationOverride
+                const line = lines[translationOverride.originalIndex];
+                if (line && line.includes('translationOverride: vec3 =')) {
+                  const value = translationOverride.constantValue;
+                  const newLine = line.replace(/= \{[^}]*\}/, `= { ${value.x}, ${value.y}, ${value.z} }`);
+                  lines[translationOverride.originalIndex] = newLine;
+                  console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Updated existing translationOverride for emitter:`, emitter.name);
+                }
+              }
+            } else if (isolatedProperty === 'birthScale' && emitter.birthScale0 && emitter.birthScale0.constantValue) {
+              // Handle birthScale in isolated mode
+              const scale = emitter.birthScale0.constantValue;
+              console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Updating birthScale for emitter:`, emitter.name);
+              
+              // Update constantValue
+              for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
+                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated birthScale constantValue for emitter:`, emitter.name);
+                  break;
+                }
+              }
+              
+              // Update dynamic values if they exist
+              if (emitter.birthScale0.dynamicsValues && emitter.birthScale0.dynamicsValues.length > 0) {
+                let inDynamicsValues = false;
+                let valueIndex = 0;
+                for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
+                  if (lines[i] && lines[i].includes('values: list[vec3] =')) {
+                    inDynamicsValues = true;
+                    continue;
+                  }
+                  
+                  if (inDynamicsValues && lines[i] && lines[i].includes('{') && lines[i].includes(',') && valueIndex < emitter.birthScale0.dynamicsValues.length) {
+                    const value = emitter.birthScale0.dynamicsValues[valueIndex];
+                    lines[i] = lines[i].replace(/\{[^}]*\}/, `{ ${value.x}, ${value.y}, ${value.z} }`);
+                    valueIndex++;
+                  }
+                  
+                  if (inDynamicsValues && lines[i] && lines[i].includes('}') && !lines[i].includes('{')) {
+                    break;
+                  }
+                }
+                console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated birthScale dynamics for emitter:`, emitter.name);
+              }
+            } else if (isolatedProperty === 'scale' && emitter.scale0 && emitter.scale0.constantValue) {
+              // Handle scale in isolated mode
+              const scale = emitter.scale0.constantValue;
+              console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Updating scale for emitter:`, emitter.name);
+              
+              // Update constantValue
+              for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
+                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated scale constantValue for emitter:`, emitter.name);
+                  break;
+                }
+              }
+              
+              // Update dynamic values if they exist
+              if (emitter.scale0.dynamicsValues && emitter.scale0.dynamicsValues.length > 0) {
+                let inDynamicsValues = false;
+                let valueIndex = 0;
+                for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
+                  if (lines[i] && lines[i].includes('values: list[vec3] =')) {
+                    inDynamicsValues = true;
+                    continue;
+                  }
+                  
+                  if (inDynamicsValues && lines[i] && lines[i].includes('{') && lines[i].includes(',') && valueIndex < emitter.scale0.dynamicsValues.length) {
+                    const value = emitter.scale0.dynamicsValues[valueIndex];
+                    lines[i] = lines[i].replace(/\{[^}]*\}/, `{ ${value.x}, ${value.y}, ${value.z} }`);
+                    valueIndex++;
+                  }
+                  
+                  if (inDynamicsValues && lines[i] && lines[i].includes('}') && !lines[i].includes('{')) {
+                    break;
+                  }
+                }
+                console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated scale dynamics for emitter:`, emitter.name);
+              }
+            }
+          });
+        });
+        
+        // ISOLATED MODE: Allow bindWeight insertions but skip other property updates
+        console.log(`🔧 ISOLATED MODE (${isolatedProperty}): Allowing bindWeight insertions, skipping other property updates to prevent corruption`);
+        
+        // Process bindWeight insertions even in isolated mode
+        Object.values(binData).forEach(system => {
+          system.emitters.forEach(emitter => {
+            const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+            if (!selectedEmitters.has(emitterKey)) {
+              return; // Skip this emitter - it's not selected
+            }
+            
+            // Handle bindWeight insertions in isolated mode
+            if (emitter.bindWeight && (emitter.bindWeight.originalIndex === null || typeof emitter.bindWeight.originalIndex === 'undefined')) {
+              console.log(`🔧 ISOLATED MODE: Processing bindWeight insertion for ${emitter.name}`);
+              
+              // Find the emitterName line and insert bindWeight after it
+              const startIndex = Number(emitter.originalIndex) || 0;
+              const targetNameFragment = `emitterName: string = "${emitter.name}"`;
+              let bestIdx = -1;
+              let bestDist = Number.POSITIVE_INFINITY;
+              const winStart = Math.max(0, startIndex - 400);
+              const winEnd = Math.min(lines.length - 1, startIndex + 400);
+              
+              for (let i = winStart; i <= winEnd; i++) {
+                const line = lines[i];
+                if (!line) continue;
+                if (line.includes('emitterName: string =')) {
+                  if (line.includes(targetNameFragment)) {
+                    const dist = Math.abs(i - startIndex);
+                    if (dist < bestDist) {
+                      bestDist = dist;
+                      bestIdx = i;
+                    }
+                  }
+                }
+              }
+              
+              if (bestIdx !== -1) {
+                const bindWeightLines = [
+                  `    bindWeight: embed = ValueFloat {`,
+                  `        constantValue: f32 = ${emitter.bindWeight.constantValue}`,
+                  `    }`
+                ];
+                lines.splice(bestIdx + 1, 0, ...bindWeightLines);
+                emitter.bindWeight.originalIndex = bestIdx + 1;
+                console.log(`✅ ISOLATED MODE: Inserted bindWeight for ${emitter.name} after emitterName at line ${bestIdx + 1}`);
+              }
+            }
+          });
+        });
+        
+        // Handle bindWeight updates in isolated mode
+        Object.values(binData).forEach(system => {
+          system.emitters.forEach(emitter => {
+            const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
+            if (!selectedEmitters.has(emitterKey)) {
+              return; // Skip this emitter - it's not selected
+            }
+            
+            // Handle bindWeight updates in isolated mode (only when isolatedProperty is bindWeight)
+            if (isolatedProperty === 'bindWeight' && bindWeightUtils.hasBindWeight(emitter) && emitter.bindWeight.originalIndex !== null) {
+              const bindWeight = emitter.bindWeight;
+              console.log(`🔧 ISOLATED MODE: Updating bindWeight for emitter:`, emitter.name, 'value:', bindWeight.constantValue);
+              
+              // Update constantValue
+              for (let i = bindWeight.originalIndex; i < lines.length && i < bindWeight.originalIndex + 20; i++) {
+                if (lines[i] && lines[i].includes('constantValue: f32 =')) {
+                  const oldLine = lines[i];
+                  lines[i] = lines[i].replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/, `$1${bindWeight.constantValue}`);
+                  console.log(`✅ ISOLATED MODE: Updated bindWeight constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
+                  break;
+                }
+              }
+            }
+          });
+        });
+        
+        return lines.join('\n');
+      }
+
+      // SECOND: Update each modified emitter - only process selected emitters
       Object.values(binData).forEach(system => {
         system.emitters.forEach(emitter => {
           // Only process emitters that are actually selected
@@ -1694,7 +2447,7 @@ const BinEditor = () => {
            if (emitter.birthScale0) {
              if (emitter.birthScale0.constantValue) {
                const scale = emitter.birthScale0.constantValue;
-               for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 20; i++) {
+               for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
                  if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
                    lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                    break;
@@ -1729,7 +2482,7 @@ const BinEditor = () => {
            if (emitter.scale0) {
              if (emitter.scale0.constantValue) {
                const scale = emitter.scale0.constantValue;
-               for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 20; i++) {
+               for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
                  if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
                    lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                    break;
@@ -1845,134 +2598,11 @@ const BinEditor = () => {
             }
           }
 
-          // Update translationOverride if changed
-          if (translationOverrideUtils.hasTranslationOverride(emitter)) {
-            const translationOverride = emitter.translationOverride;
-            
-            // Check if this is a newly added translationOverride (no originalIndex means it was just added)
-            if (translationOverride.originalIndex === undefined || translationOverride.originalIndex === null) {
-              console.log('🔧 Inserting new translationOverride for emitter:', {
-                emitterName: emitter.name,
-                systemName: emitter.systemName,
-                originalIndex: emitter.originalIndex,
-                value: translationOverride.constantValue,
-                hasTranslationOverride: translationOverride.hasTranslationOverride
-              });
-              
-              // Find the emitterName line and insert translationOverride after it
-              for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('emitterName: string =')) {
-                  // Check if translationOverride already exists in the next few lines
-                  let alreadyExists = false;
-                  for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
-                    if (lines[j] && lines[j].includes('translationOverride: vec3 =')) {
-                      alreadyExists = true;
-                      // Update the existing line instead of inserting a new one
-                      lines[j] = `    translationOverride: vec3 = { ${translationOverride.constantValue.x}, ${translationOverride.constantValue.y}, ${translationOverride.constantValue.z} }`;
-                      translationOverride.originalIndex = j;
-                      console.log('🔧 Updated existing translationOverride line:', { 
-                        value: translationOverride.constantValue,
-                        line: j,
-                        newLine: lines[j]
-                      });
-                      break;
-                    }
-                  }
-                  
-                  if (!alreadyExists) {
-                    // Insert the new translationOverride line after the emitterName line
-                    const newLine = `    translationOverride: vec3 = { ${translationOverride.constantValue.x}, ${translationOverride.constantValue.y}, ${translationOverride.constantValue.z} }`;
-                    console.log('🔧 Inserting new translationOverride line:', { 
-                      value: translationOverride.constantValue,
-                      newLine 
-                    });
-                    lines.splice(i + 1, 0, newLine);
-                    
-                    // Update the originalIndex for future updates
-                    translationOverride.originalIndex = i + 1;
-                    console.log('✅ Inserted translationOverride at line:', i + 1);
-                  }
-                  break;
-                }
-              }
-            } else {
-              // Update existing translationOverride
-              const line = lines[translationOverride.originalIndex];
-              if (line && line.includes('translationOverride: vec3 =')) {
-                const value = translationOverride.constantValue;
-                console.log('🔧 Updating existing translationOverride:', { 
-                  originalLine: line, 
-                  value, 
-                  x: value.x, 
-                  y: value.y, 
-                  z: value.z 
-                });
-                const newLine = line.replace(/= \{[^}]*\}/, `= { ${value.x}, ${value.y}, ${value.z} }`);
-                lines[translationOverride.originalIndex] = newLine;
-                console.log('🔧 New line:', newLine);
-              }
-            }
-          }
+          // Note: translationOverride is handled in TRANSLATIONOVERRIDE MODE above
         });
       });
 
-      // Insert new bindWeight properties
-      Object.values(binData).forEach(system => {
-        system.emitters.forEach(emitter => {
-          if (bindWeightUtils.hasBindWeight(emitter) && emitter.bindWeight.originalIndex === null) {
-            console.log('🔧 Inserting new bindWeight for emitter:', {
-              emitterName: emitter.name,
-              systemName: emitter.systemName,
-              originalIndex: emitter.originalIndex,
-              value: emitter.bindWeight.constantValue,
-              hasBindWeight: emitter.bindWeight.hasBindWeight
-            });
-            
-            // Find the emitterName line and insert bindWeight after it
-            for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
-              if (lines[i] && lines[i].includes('emitterName: string =')) {
-                // Check if bindWeight already exists in the next few lines
-                let alreadyExists = false;
-                for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
-                  if (lines[j] && lines[j].includes('bindWeight: embed = ValueFloat')) {
-                    alreadyExists = true;
-                    // Update the existing line instead of inserting a new one
-                    lines[j] = `    bindWeight: embed = ValueFloat {`;
-                    lines[j + 1] = `        constantValue: f32 = ${emitter.bindWeight.constantValue}`;
-                    lines[j + 2] = `    }`;
-                    emitter.bindWeight.originalIndex = j;
-                    console.log('🔧 Updated existing bindWeight line:', { 
-                      value: emitter.bindWeight.constantValue,
-                      line: j,
-                      newLine: lines[j]
-                    });
-                    break;
-                  }
-                }
-                
-                if (!alreadyExists) {
-                  // Insert the new bindWeight lines after the emitterName line
-                  const newLines = [
-                    `    bindWeight: embed = ValueFloat {`,
-                    `        constantValue: f32 = ${emitter.bindWeight.constantValue}`,
-                    `    }`
-                  ];
-                  console.log('🔧 Inserting new bindWeight lines:', { 
-                    value: emitter.bindWeight.constantValue,
-                    newLines 
-                  });
-                  lines.splice(i + 1, 0, ...newLines);
-                  
-                  // Update the originalIndex for future updates
-                  emitter.bindWeight.originalIndex = i + 1;
-                  console.log('✅ Inserted bindWeight at line:', i + 1);
-                }
-                break;
-              }
-            }
-          }
-        });
-      });
+      // Note: bindWeight insertions are handled above before isolated mode check
 
       return lines.join('\n');
     } catch (error) {
@@ -2170,6 +2800,15 @@ const BinEditor = () => {
       setBinData(newBinData);
       markUnsaved();
       updateStatus(`Set bindWeight to 0 for ${modifiedCount} emitters`);
+      
+      // Update the Python content with the new bindWeight values
+      console.log('🔧 Updating Python content with new bindWeight values...');
+      console.log('🔧 Selection state when updating Python content:', {
+        selectedEmittersSize: selectedEmitters.size,
+        selectedEmitters: Array.from(selectedEmitters)
+      });
+      const updatedPyContent = updatePyContentWithChangesForData(newBinData);
+      setPyContent(updatedPyContent);
     } else {
       updateStatus('No selected emitters with bindWeight found to modify');
     }
@@ -2219,14 +2858,27 @@ const BinEditor = () => {
       setBinData(newBinData);
       markUnsaved();
       updateStatus(`Set bindWeight to 1 for ${modifiedCount} emitters`);
+      
+      // Update the Python content with the new bindWeight values
+      console.log('🔧 Updating Python content with new bindWeight values...');
+      console.log('🔧 Selection state when updating Python content:', {
+        selectedEmittersSize: selectedEmitters.size,
+        selectedEmitters: Array.from(selectedEmitters)
+      });
+      const updatedPyContent = updatePyContentWithChangesForData(newBinData);
+      setPyContent(updatedPyContent);
     } else {
       updateStatus('No selected emitters with bindWeight found to modify');
     }
   }, [binData, selectedEmitters, markUnsaved, updateStatus, addToUndoHistory, isLoading, isResetting]);
 
   const handleAddBindWeight = useCallback(() => {
+    console.log('🔧 Add BindWeight clicked');
+    console.log('🔧 State:', { hasBinData: !!binData, isLoading, isResetting, selectedCount: selectedEmitters.size });
+    console.log('🔧 Selected emitters:', Array.from(selectedEmitters));
+    
     if (!binData || isLoading || isResetting) {
-      console.log('🚫 Add bindWeight blocked:', { hasData: !!binData, isLoading, isResetting });
+      console.log('❌ Blocked:', { hasBinData: !!binData, isLoading, isResetting });
       return;
     }
 
@@ -2236,42 +2888,41 @@ const BinEditor = () => {
     addToUndoHistory(currentBinData, currentPyContent);
 
     let addedCount = 0;
-    const addedEmitters = [];
-    
     const newBinData = JSON.parse(JSON.stringify(binData));
     
+    console.log('🔧 Processing emitters...');
     Object.values(newBinData).forEach(system => {
       system.emitters.forEach(emitter => {
         const emitterKey = `${emitter.systemName}-${emitter.originalIndex}`;
-        if (selectedEmitters.has(emitterKey) && !bindWeightUtils.hasBindWeight(emitter)) {
-          console.log('🔧 Adding bindWeight to emitter:', {
-            emitterKey,
-            emitterName: emitter.name,
-            systemName: emitter.systemName,
-            originalIndex: emitter.originalIndex
-          });
+        const isSelected = selectedEmitters.has(emitterKey);
+        const hasBindWeight = !!emitter.bindWeight;
+        
+        console.log(`🔧 ${emitter.name}: selected=${isSelected}, hasBindWeight=${hasBindWeight}`);
+        
+        if (isSelected && !hasBindWeight) {
+          console.log(`✅ Adding bindWeight to ${emitter.name}`);
           emitter.bindWeight = {
             constantValue: 1,
-            originalIndex: null, // Will be set when inserted into file
+            originalIndex: null,
             rawLines: [],
             hasBindWeight: true
           };
           addedCount++;
-          addedEmitters.push({ name: emitter.name, system: emitter.systemName, key: emitterKey });
         }
       });
     });
 
-    console.log('📊 BindWeight addition summary:', {
-      totalSelected: selectedEmitters.size,
-      addedCount,
-      addedEmitters
-    });
-
+    console.log(`🔧 Added to ${addedCount} emitters`);
     if (addedCount > 0) {
       setBinData(newBinData);
       markUnsaved();
       updateStatus(`Added bindWeight to ${addedCount} emitters`);
+      
+      // Update the Python content with the new bindWeight properties
+      console.log('🔧 Updating Python content with new bindWeight properties...');
+      // Use newBinData directly since setBinData is asynchronous
+      const updatedPyContent = updatePyContentWithChangesForData(newBinData);
+      setPyContent(updatedPyContent);
     } else {
       updateStatus('No selected emitters without bindWeight found to modify');
     }
@@ -2941,7 +3592,13 @@ const BinEditor = () => {
         const emitterIndex = systemData.emitters.findIndex(e => e.originalIndex === selectedEmitter.originalIndex);
         if (emitterIndex !== -1) {
           systemData.emitters[emitterIndex] = newEmitter;
-          setBinData({ ...binData });
+          const updatedBinData = { ...binData };
+          setBinData(updatedBinData);
+          
+          // Update the Python content with the new birthScale values
+          console.log('🔧 Updating Python content with new birthScale values...');
+          const updatedPyContent = updatePyContentWithChangesForData(updatedBinData);
+          setPyContent(updatedPyContent);
         }
       }
 
@@ -3009,7 +3666,13 @@ const BinEditor = () => {
         const emitterIndex = systemData.emitters.findIndex(e => e.originalIndex === selectedEmitter.originalIndex);
         if (emitterIndex !== -1) {
           systemData.emitters[emitterIndex] = newEmitter;
-          setBinData({ ...binData });
+          const updatedBinData = { ...binData };
+          setBinData(updatedBinData);
+          
+          // Update the Python content with the new scale values
+          console.log('🔧 Updating Python content with new scale values...');
+          const updatedPyContent = updatePyContentWithChangesForData(updatedBinData);
+          setPyContent(updatedPyContent);
         }
       }
 
@@ -3662,14 +4325,14 @@ const BinEditor = () => {
           </FormControl>
           <button
             onClick={handleApplyScaleMultiplier}
-            disabled={!binData || isLoading}
+            disabled={!binData || isLoading || selectedMode === 'bindWeight' || selectedMode === 'translationOverride'}
             style={{
               padding: '0.5rem 0.75rem',
-              background: (!binData || isLoading) ? 'rgba(160,160,160,0.2)' : 'linear-gradient(180deg, rgba(236,185,106,0.22), rgba(173,126,52,0.18))',
-              border: (!binData || isLoading) ? '1px solid rgba(200,200,200,0.24)' : '1px solid rgba(236,185,106,0.32)',
-              color: (!binData || isLoading) ? '#ccc' : 'var(--accent)',
+              background: (!binData || isLoading || selectedMode === 'bindWeight' || selectedMode === 'translationOverride') ? 'rgba(160,160,160,0.2)' : 'linear-gradient(180deg, rgba(236,185,106,0.22), rgba(173,126,52,0.18))',
+              border: (!binData || isLoading || selectedMode === 'bindWeight' || selectedMode === 'translationOverride') ? '1px solid rgba(200,200,200,0.24)' : '1px solid rgba(236,185,106,0.32)',
+              color: (!binData || isLoading || selectedMode === 'bindWeight' || selectedMode === 'translationOverride') ? '#ccc' : 'var(--accent)',
               borderRadius: '6px',
-              cursor: (!binData || isLoading) ? 'not-allowed' : 'pointer',
+              cursor: (!binData || isLoading || selectedMode === 'bindWeight' || selectedMode === 'translationOverride') ? 'not-allowed' : 'pointer',
               fontFamily: 'JetBrains Mono, monospace',
               fontWeight: 'bold',
               fontSize: '0.875rem',
@@ -3681,10 +4344,10 @@ const BinEditor = () => {
               gap: '0.5rem',
               textTransform: 'none',
               height: '36px',
-              opacity: (!binData || isLoading) ? 0.5 : 1
+              opacity: (!binData || isLoading || selectedMode === 'bindWeight' || selectedMode === 'translationOverride') ? 0.5 : 1
             }}
             onMouseEnter={(e) => {
-              if (binData && !isLoading) {
+              if (binData && !isLoading && selectedMode !== 'bindWeight' && selectedMode !== 'translationOverride') {
                 e.target.style.transform = 'translateY(-1px)';
                 e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
               }
@@ -3814,7 +4477,10 @@ const BinEditor = () => {
           </button>
           
           <button
-            onClick={handleAddBindWeight}
+            onClick={() => {
+              console.log('🔧 BUTTON CLICKED!');
+              handleAddBindWeight();
+            }}
             disabled={!binData || isLoading}
             style={{
               padding: '0.5rem 0.75rem',

@@ -12,7 +12,7 @@ import { findAssetFiles, copyAssetFiles, showAssetCopyResults } from '../utils/a
 
 // Import animation-specific utilities
 import { parseAnimationData } from '../utils/animationParser.js';
-import { linkAnimationWithVfx, portAnimationEventWithVfx } from '../utils/animationVfxLinker.js';
+import { linkAnimationWithVfx, portAnimationEventWithVfx, findVfxSystemForEffectKey } from '../utils/animationVfxLinker.js';
 import { 
   loadAnimationFilePair, 
   autoDetectSkinsFile,
@@ -3508,13 +3508,42 @@ const AniPortSimple = () => {
         console.log('🚀 PORT: ===== PARTICLE EVENT DETECTED =====');
         console.log('🚀 PORT: Porting particle event with effect key:', event.effectKey);
         
-        const connectionKey = `${sourceClip.name}.${event.effectKey}`;
-        console.log('🚀 PORT: Connection key:', connectionKey);
-        console.log('🚀 PORT: Available connections:', Object.keys(donorData.linkedData.connections || {}));
-        
-        const connection = donorData.linkedData.connections[connectionKey];
-        console.log('🚀 PORT: Connection found:', !!connection);
-        console.log('🚀 PORT: Connection object:', connection);
+        // REWORK: Ignore prebuilt connection map; pick the exact donor event by hash/name or startFrame
+        let connection = null;
+        try {
+          const donorClip = donorData?.animationData?.clips?.[sourceClip.name];
+          if (!donorClip) {
+            throw new Error(`Donor clip not found: ${sourceClip.name}`);
+          }
+          const donorParticles = Array.isArray(donorClip.events?.particle) ? donorClip.events.particle : [];
+          const sameKey = donorParticles.filter(pe => pe.effectKey === event.effectKey);
+          console.log('🚀 PORT: Donor particle candidates for effectKey:', sameKey.length);
+          let picked = null;
+          if (event.eventName || event.hash) {
+            const keyName = event.eventName || event.hash;
+            picked = sameKey.find(pe => pe.eventName === keyName || pe.hash === keyName) || null;
+          }
+          if (!picked && event.startFrame != null) {
+            picked = sameKey.find(pe => pe.startFrame === event.startFrame) || null;
+          }
+          if (!picked && sameKey.length > 0) {
+            picked = sameKey[0];
+          }
+          if (!picked) {
+            throw new Error('Could not locate donor particle event with matching effectKey/hash/startFrame');
+          }
+          console.log('🚀 PORT: Selected donor particle event:', { eventName: picked.eventName, startFrame: picked.startFrame });
+          const vfxConn = findVfxSystemForEffectKey(event.effectKey, donorData.vfxSystems || {}, donorData.resourceResolver || {});
+          connection = {
+            animationClip: targetClipName,
+            particleEvent: picked,
+            vfxSystem: vfxConn ? vfxConn.vfxSystem : { name: event.effectKey, rawContent: null },
+            resourceResolverKey: vfxConn ? vfxConn.resourceKey : event.effectKey,
+            connectionType: vfxConn ? vfxConn.connectionType : 'direct'
+          };
+        } catch (e) {
+          console.warn('🚀 PORT: Direct donor event selection failed:', e);
+        }
 
         if (connection) {
           // Ensure target containers exist so VFX systems and resolver can be ported
@@ -4078,6 +4107,23 @@ const AniPortSimple = () => {
 
   return (
     <div className="aniport-container">
+      
+      {/* Production Warning */}
+      <div style={{
+        background: 'linear-gradient(135deg, #ff6b6b, #ee5a24)',
+        color: 'white',
+        padding: '12px 20px',
+        margin: '0 0 20px 0',
+        borderRadius: '8px',
+        border: '1px solid #ff4757',
+        boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3), 0 2px 8px rgba(0, 0, 0, 0.6), 0 1px 4px rgba(0, 0, 0, 0.8)',
+        textAlign: 'center',
+        fontWeight: 'bold',
+        fontSize: '14px',
+        textShadow: '1px 1px 2px rgba(0, 0, 0, 0.8), 0 0 4px rgba(0, 0, 0, 0.6)'
+      }}>
+        ⚠️ <strong>AniPort Simple is still in production!</strong> Please check the Python file while the program processes to ensure nothing breaks.
+      </div>
       
       {/* Loading Overlay */}
       {isLoading && (

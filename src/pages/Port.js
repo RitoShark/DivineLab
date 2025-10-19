@@ -28,6 +28,8 @@ const Port = () => {
   const [donorPath, setDonorPath] = useState('This will show donor bin');
   const [targetFilter, setTargetFilter] = useState('');
   const [donorFilter, setDonorFilter] = useState('');
+  const [enableTargetEmitterSearch, setEnableTargetEmitterSearch] = useState(false);
+  const [enableDonorEmitterSearch, setEnableDonorEmitterSearch] = useState(false);
 
   // File data states
   const [targetSystems, setTargetSystems] = useState({});
@@ -47,8 +49,8 @@ const Port = () => {
         return system;
       }
       
-      // Check emitter names and filter emitters
-      if (system.emitters && Array.isArray(system.emitters)) {
+      // Only check emitter names if emitter search is enabled
+      if (enableTargetEmitterSearch && system.emitters && Array.isArray(system.emitters)) {
         const matchingEmitters = system.emitters.filter(emitter => {
           const emitterName = (emitter.name || '').toLowerCase();
           return emitterName.includes(searchTerm);
@@ -63,7 +65,7 @@ const Port = () => {
       // No matches found, return null (will be filtered out)
       return null;
     }).filter(system => system !== null);
-  }, [targetSystems, targetFilter]);
+  }, [targetSystems, targetFilter, enableTargetEmitterSearch]);
 
   const filteredDonorSystems = React.useMemo(() => {
     if (!donorFilter) return Object.values(donorSystems);
@@ -78,8 +80,8 @@ const Port = () => {
         return system;
       }
       
-      // Check emitter names and filter emitters
-      if (system.emitters && Array.isArray(system.emitters)) {
+      // Only check emitter names if emitter search is enabled
+      if (enableDonorEmitterSearch && system.emitters && Array.isArray(system.emitters)) {
         const matchingEmitters = system.emitters.filter(emitter => {
           const emitterName = (emitter.name || '').toLowerCase();
           return emitterName.includes(searchTerm);
@@ -94,7 +96,7 @@ const Port = () => {
       // No matches found, return null (will be filtered out)
       return null;
     }).filter(system => system !== null);
-  }, [donorSystems, donorFilter]);
+  }, [donorSystems, donorFilter, enableDonorEmitterSearch]);
   const [targetPyContent, setTargetPyContent] = useState('');
   const [donorPyContent, setDonorPyContent] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -147,6 +149,42 @@ const Port = () => {
   const [showExistingConditions, setShowExistingConditions] = useState(false);
   const [editingConditionIndex, setEditingConditionIndex] = useState(null);
   const [effectKeyOptions, setEffectKeyOptions] = useState([]);
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const typeDropdownRef = useRef(null);
+  
+  // Type options for the dropdown
+  const typeOptions = [
+    { 
+      value: 'IsAnimationPlaying', 
+      label: 'Animation Playing', 
+      description: 'Trigger when specific animation is playing' 
+    },
+    { 
+      value: 'HasBuffScript', 
+      label: 'Has Buff', 
+      description: 'Trigger when character has a specific buff' 
+    },
+    { 
+      value: 'LearnedSpell', 
+      label: 'Learned Spell', 
+      description: 'Trigger when character has learned a spell' 
+    },
+    { 
+      value: 'HasGear', 
+      label: 'Has Gear', 
+      description: 'Trigger when character has specific gear equipped' 
+    },
+    { 
+      value: 'FloatComparison', 
+      label: 'Spell Rank Comparison', 
+      description: 'Compare spell rank with a value' 
+    },
+    { 
+      value: 'BuffCounterFloatComparison', 
+      label: 'Buff Counter Comparison', 
+      description: 'Compare buff counter with a value' 
+    }
+  ];
   const [availableSubmeshes, setAvailableSubmeshes] = useState([]);
   // New VFX System modal state
   const [showNewSystemModal, setShowNewSystemModal] = useState(false);
@@ -266,6 +304,23 @@ const Port = () => {
       conversionTimers.current.clear();
     };
   }, []);
+
+  // Handle click outside for type dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(event.target)) {
+        setTypeDropdownOpen(false);
+      }
+    };
+
+    if (typeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [typeDropdownOpen]);
 
   // Remove scroll-based preloading in favor of on-hover preload
 
@@ -2585,7 +2640,7 @@ const Port = () => {
   const renderParticleSystems = (systems, isTarget = true) => {
     if (!systems || systems.length === 0) {
       return (
-        <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--accent-muted)' }}>
+        <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--accent)' }}>
           {isTarget ? 'No target bin loaded' : 'No donor bin loaded'}
         </div>
       );
@@ -2708,9 +2763,9 @@ const Port = () => {
                 marginRight: '0',
                 fontSize: '12px',
                 padding: '2px 6px',
-                background: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.08)' : 'rgba(255, 193, 7, 0.1)',
-                border: '1px solid rgba(255, 193, 7, 0.4)',
-                color: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.35)' : '#ffc107',
+                background: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.08)' : 'rgba(76, 175, 80, 0.1)',
+                border: '1px solid rgba(76, 175, 80, 0.4)',
+                color: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.35)' : '#4caf50',
                 borderRadius: '4px',
                 cursor: (!hasResourceResolver || !hasSkinCharacterData) ? 'not-allowed' : 'pointer',
                 position: 'relative',
@@ -2741,9 +2796,9 @@ const Port = () => {
                 marginRight: '0',
                 fontSize: '12px',
                 padding: '2px 6px',
-                background: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.08)' : 'rgba(255, 193, 7, 0.1)',
-                border: '1px solid rgba(255, 193, 7, 0.4)',
-                color: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.35)' : '#ffc107',
+                background: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.08)' : 'rgba(76, 175, 80, 0.1)',
+                border: '1px solid rgba(76, 175, 80, 0.4)',
+                color: (!hasResourceResolver || !hasSkinCharacterData) ? 'rgba(255,255,255,0.35)' : '#4caf50',
                 borderRadius: '4px',
                 cursor: (!hasResourceResolver || !hasSkinCharacterData) ? 'not-allowed' : 'pointer',
                 position: 'relative',
@@ -2789,9 +2844,9 @@ const Port = () => {
                 marginLeft: '6px',
                 fontSize: '12px',
                 padding: '2px 6px',
-                background: 'rgba(255, 193, 7, 0.1)',
-                border: '1px solid rgba(255, 193, 7, 0.4)',
-                color: '#ffc107',
+                background: 'rgba(76, 175, 80, 0.1)',
+                border: '1px solid rgba(76, 175, 80, 0.4)',
+                color: '#4caf50',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 zIndex: 10,
@@ -3053,14 +3108,14 @@ const Port = () => {
 
   // Helper function to convert color data to CSS color string
   const getColorString = (colorData) => {
-    if (!colorData) return 'var(--accent-muted)';
+    if (!colorData) return 'var(--accent)';
 
     if (colorData.constantValue && colorData.constantValue.length >= 3) {
       const [r, g, b, a = 1] = colorData.constantValue;
               return `rgba(${Math.ceil(r * 254.9)}, ${Math.ceil(g * 254.9)}, ${Math.ceil(b * 254.9)}, ${a})`;
     }
 
-          return 'var(--accent-muted)';
+          return 'var(--accent)';
   };
 
   // Helper function to get short name from full path
@@ -3155,7 +3210,7 @@ const Port = () => {
             disabled={isProcessing}
             style={{
               ...glassButtonSx,
-              background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent), transparent 78%), color-mix(in srgb, var(--accent-muted), transparent 82%))',
+              background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent), transparent 78%), color-mix(in srgb, var(--accent), transparent 82%))',
               border: '1px solid color-mix(in srgb, var(--accent), transparent 68%)',
               color: 'var(--accent)',
             }}
@@ -3165,23 +3220,48 @@ const Port = () => {
 
 
           {/* Target Filter */}
-          <input
-            type="text"
-            placeholder="Filter by Particle or Emitter Name"
-            value={targetFilter}
-            onChange={(e) => filterTargetParticles(e.target.value)}
-            style={{
-              padding: '8px 16px',
-              background: 'var(--surface-2)',
-              border: '1px solid #444',
-              borderRadius: '6px',
-              color: 'var(--accent)',
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: '14px',
-              outline: 'none',
-              marginTop: '-4px'
-            }}
-          />
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder={enableTargetEmitterSearch ? "Filter by Particle or Emitter Name" : "Filter by Particle Name Only"}
+              value={targetFilter}
+              onChange={(e) => filterTargetParticles(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                background: 'var(--surface-2)',
+                border: '1px solid #444',
+                borderRadius: '6px',
+                color: 'var(--accent)',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '14px',
+                outline: 'none',
+                marginTop: '-4px'
+              }}
+            />
+            <button
+              onClick={() => setEnableTargetEmitterSearch(!enableTargetEmitterSearch)}
+              title={enableTargetEmitterSearch ? "Disable emitter search (faster)" : "Enable emitter search"}
+              style={{
+                padding: '8px 12px',
+                background: enableTargetEmitterSearch 
+                  ? 'linear-gradient(180deg, color-mix(in srgb, var(--accent), transparent 78%), color-mix(in srgb, var(--accent), transparent 82%))'
+                  : 'var(--surface-2)',
+                border: enableTargetEmitterSearch 
+                  ? '1px solid color-mix(in srgb, var(--accent), transparent 68%)'
+                  : '1px solid #444',
+                borderRadius: '6px',
+                color: enableTargetEmitterSearch ? 'var(--accent)' : 'var(--accent)',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '12px',
+                cursor: 'pointer',
+                marginTop: '-4px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {enableTargetEmitterSearch ? '🔍+' : '🔍-'}
+            </button>
+          </div>
 
           {/* Target Content Area */}
           <div style={{
@@ -3335,24 +3415,48 @@ const Port = () => {
           </button>
 
           {/* Donor Filter */}
-          <input
-            type="text"
-            placeholder="Filter by Particle or Emitter Name"
-            value={donorFilter}
-            onChange={(e) => filterDonorParticles(e.target.value)}
-            style={{
-              padding: '8px 16px',
-              background: 'var(--surface-2)',
-              border: '1px solid #444',
-              border: '1px solid #444',
-              borderRadius: '6px',
-              color: 'var(--accent)',
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: '14px',
-              outline: 'none',
-              marginTop: '-4px'
-            }}
-          />
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder={enableDonorEmitterSearch ? "Filter by Particle or Emitter Name" : "Filter by Particle Name Only"}
+              value={donorFilter}
+              onChange={(e) => filterDonorParticles(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                background: 'var(--surface-2)',
+                border: '1px solid #444',
+                borderRadius: '6px',
+                color: 'var(--accent)',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '14px',
+                outline: 'none',
+                marginTop: '-4px'
+              }}
+            />
+            <button
+              onClick={() => setEnableDonorEmitterSearch(!enableDonorEmitterSearch)}
+              title={enableDonorEmitterSearch ? "Disable emitter search (faster)" : "Enable emitter search"}
+              style={{
+                padding: '8px 12px',
+                background: enableDonorEmitterSearch 
+                  ? 'linear-gradient(180deg, color-mix(in srgb, var(--accent), transparent 78%), color-mix(in srgb, var(--accent), transparent 82%))'
+                  : 'var(--surface-2)',
+                border: enableDonorEmitterSearch 
+                  ? '1px solid color-mix(in srgb, var(--accent), transparent 68%)'
+                  : '1px solid #444',
+                borderRadius: '6px',
+                color: enableDonorEmitterSearch ? 'var(--accent)' : 'var(--accent)',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '12px',
+                cursor: 'pointer',
+                marginTop: '-4px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {enableDonorEmitterSearch ? '🔍+' : '🔍-'}
+            </button>
+          </div>
 
           {/* Donor Content Area */}
           <div style={{
@@ -3406,8 +3510,7 @@ const Port = () => {
             justifyContent: 'center',
             padding: '20px',
             paddingLeft: '100px' // Account for left navbar
-          }} 
-          onClick={() => setShowPersistentModal(false)}
+          }}
         >
           <div 
             style={{ 
@@ -3482,27 +3585,106 @@ const Port = () => {
               }}>
                 <div style={{ marginBottom: 12, fontWeight: 600, color: 'var(--accent)', fontSize: '1.1rem' }}>Condition</div>
                 <div style={{ display: 'grid', gap: 12 }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Type:</span>
-                    <select 
-                      value={persistentPreset.type} 
-                      onChange={e => setPersistentPreset(p => ({ ...p, type: e.target.value }))}
-                      style={{
-                        padding: '8px 12px',
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: 6,
-                        color: 'var(--accent)',
-                        fontSize: '0.9rem'
-                      }}
-                    >
-                      <option value="IsAnimationPlaying">IsAnimationPlaying</option>
-                      <option value="HasBuffScript">HasBuff (ScriptName)</option>
-                      <option value="LearnedSpell">LearnedSpell</option>
-                      <option value="HasGear">HasGear</option>
-                      <option value="FloatComparison">FloatComparison (SpellRank)</option>
-                    </select>
-                  </label>
+                    <div style={{ position: 'relative' }} ref={typeDropdownRef}>
+                      <button
+                        onClick={() => setTypeDropdownOpen(!typeDropdownOpen)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          background: 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          borderRadius: 8,
+                          color: 'var(--accent)',
+                          fontSize: '0.9rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          transition: 'all 0.2s ease',
+                          backdropFilter: 'blur(10px)',
+                          WebkitBackdropFilter: 'blur(10px)'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06))';
+                          e.target.style.borderColor = 'rgba(255,255,255,0.25)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))';
+                          e.target.style.borderColor = 'rgba(255,255,255,0.15)';
+                        }}
+                      >
+                        <span>{typeOptions.find(opt => opt.value === persistentPreset.type)?.label || persistentPreset.type}</span>
+                        <span style={{ 
+                          transform: typeDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease',
+                          fontSize: '0.8rem'
+                        }}>▼</span>
+                      </button>
+                      
+                      {typeDropdownOpen && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          background: 'linear-gradient(135deg, rgba(0,0,0,0.85), rgba(0,0,0,0.75))',
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          borderRadius: 8,
+                          marginTop: 4,
+                          zIndex: 1000,
+                          backdropFilter: 'blur(20px)',
+                          WebkitBackdropFilter: 'blur(20px)',
+                          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                          overflow: 'hidden'
+                        }}>
+                          {typeOptions.map((option) => (
+                            <div
+                              key={option.value}
+                              onClick={() => {
+                                setPersistentPreset(p => ({ ...p, type: option.value }));
+                                setTypeDropdownOpen(false);
+                              }}
+                              style={{
+                                padding: '12px 16px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                                color: persistentPreset.type === option.value ? '#ffffff' : 'rgba(255,255,255,0.9)',
+                                background: persistentPreset.type === option.value ? 'rgba(255,255,255,0.15)' : 'transparent'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (persistentPreset.type !== option.value) {
+                                  e.target.style.background = 'rgba(255,255,255,0.1)';
+                                  e.target.style.color = '#ffffff';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (persistentPreset.type !== option.value) {
+                                  e.target.style.background = 'transparent';
+                                  e.target.style.color = 'rgba(255,255,255,0.9)';
+                                }
+                              }}
+                            >
+                              <div style={{ fontWeight: persistentPreset.type === option.value ? 600 : 400 }}>
+                                {option.label}
+                              </div>
+                              {option.description && (
+                                <div style={{ 
+                                  fontSize: '0.75rem', 
+                                  color: 'rgba(255,255,255,0.8)', 
+                                  marginTop: 2 
+                                }}>
+                                  {option.description}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   
                   {persistentPreset.type === 'IsAnimationPlaying' && (
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -3622,6 +3804,60 @@ const Port = () => {
                         <input 
                           type="number" 
                           value={persistentPreset.value ?? 1} 
+                          onChange={e => setPersistentPreset(p => ({ ...p, value: Number(e.target.value) }))}
+                          style={{
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 6,
+                            color: 'var(--accent)',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                      </label>
+                    </>
+                  )}
+                  
+                  {persistentPreset.type === 'BuffCounterFloatComparison' && (
+                    <>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Spell Hash:</span>
+                        <input 
+                          type="text" 
+                          placeholder="Characters/Ezreal/Spells/EzrealPassiveAbility/EzrealPassiveStacks"
+                          value={persistentPreset.spellHash ?? ''} 
+                          onChange={e => setPersistentPreset(p => ({ ...p, spellHash: e.target.value }))}
+                          style={{
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 6,
+                            color: 'var(--accent)',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Operator:</span>
+                        <input 
+                          type="number" 
+                          value={persistentPreset.operator ?? 2} 
+                          onChange={e => setPersistentPreset(p => ({ ...p, operator: Number(e.target.value) }))}
+                          style={{
+                            padding: '8px 12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 6,
+                            color: 'var(--accent)',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Value:</span>
+                        <input 
+                          type="number" 
+                          value={persistentPreset.value ?? 5} 
                           onChange={e => setPersistentPreset(p => ({ ...p, value: Number(e.target.value) }))}
                           style={{
                             padding: '8px 12px',
@@ -4245,7 +4481,7 @@ const Port = () => {
                     background: 'rgba(255,255,255,0.06)', 
                     border: '1px solid rgba(255,255,255,0.14)', 
                     borderRadius: 8, 
-                    color: 'var(--accent-muted)',
+                    color: 'var(--accent)',
                     cursor: 'pointer',
                     fontSize: '0.9rem',
                     transition: 'all 0.2s ease'
@@ -4315,11 +4551,11 @@ const Port = () => {
             </h3>
 
             <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
-                VFX System: <strong style={{ color: 'var(--accent-muted)' }}>{editingChildSystem?.name}</strong>
+              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
+                VFX System: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{editingChildSystem?.name}</strong>
               </p>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
-                Emitter: <strong style={{ color: 'var(--accent-muted)' }}>{editingChildEmitter}</strong>
+              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
+                Emitter: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{editingChildEmitter}</strong>
               </p>
               
               {/* VfxSystemDefinitionData Selection */}
@@ -4327,7 +4563,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Child VFX System:
               </label>
@@ -4338,8 +4575,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -4358,7 +4595,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Rate:
               </label>
@@ -4372,8 +4610,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -4385,7 +4623,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Lifetime:
               </label>
@@ -4398,8 +4637,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -4411,7 +4650,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Bind Weight:
               </label>
@@ -4425,8 +4665,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -4438,7 +4678,8 @@ const Port = () => {
                 color: '#ffffff', 
                 marginBottom: '5px',
                 fontSize: '14px',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                textShadow: '0 0 6px rgba(255,255,255,0.25)'
               }}>
                 Time Before First Emission:
               </label>
@@ -4452,8 +4693,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -4465,17 +4706,19 @@ const Port = () => {
                 color: '#ffffff', 
                 marginBottom: '5px',
                 fontSize: '14px',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                textShadow: '0 0 6px rgba(255,255,255,0.25)'
               }}>
                 Translation Override:
               </label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ 
-                    color: '#ffffff', 
-                    marginBottom: '3px',
-                    fontSize: '12px',
-                    display: 'block'
+                color: '#ffffff', 
+                marginBottom: '3px',
+                fontSize: '12px',
+                display: 'block',
+                textShadow: '0 0 4px rgba(255,255,255,0.15)'
                   }}>
                     X:
                   </label>
@@ -4488,8 +4731,8 @@ const Port = () => {
                       width: '100%',
                       padding: '6px',
                       background: 'var(--surface)',
-                      color: 'var(--accent-muted)',
-                      border: '1px solid var(--accent-muted)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--accent)',
                       borderRadius: '4px',
                       fontSize: '12px'
                     }}
@@ -4497,10 +4740,11 @@ const Port = () => {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ 
-                    color: '#ffffff', 
-                    marginBottom: '3px',
-                    fontSize: '12px',
-                    display: 'block'
+                color: '#ffffff', 
+                marginBottom: '3px',
+                fontSize: '12px',
+                display: 'block',
+                textShadow: '0 0 4px rgba(255,255,255,0.15)'
                   }}>
                     Y:
                   </label>
@@ -4513,8 +4757,8 @@ const Port = () => {
                       width: '100%',
                       padding: '6px',
                       background: 'var(--surface)',
-                      color: 'var(--accent-muted)',
-                      border: '1px solid var(--accent-muted)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--accent)',
                       borderRadius: '4px',
                       fontSize: '12px'
                     }}
@@ -4522,10 +4766,11 @@ const Port = () => {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ 
-                    color: '#ffffff', 
-                    marginBottom: '3px',
-                    fontSize: '12px',
-                    display: 'block'
+                color: '#ffffff', 
+                marginBottom: '3px',
+                fontSize: '12px',
+                display: 'block',
+                textShadow: '0 0 4px rgba(255,255,255,0.15)'
                   }}>
                     Z:
                   </label>
@@ -4538,8 +4783,8 @@ const Port = () => {
                       width: '100%',
                       padding: '6px',
                       background: 'var(--surface)',
-                      color: 'var(--accent-muted)',
-                      border: '1px solid var(--accent-muted)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--accent)',
                       borderRadius: '4px',
                       fontSize: '12px'
                     }}
@@ -4553,6 +4798,7 @@ const Port = () => {
                 display: 'flex', 
                 alignItems: 'center',
                 marginBottom: '15px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)',
                 fontSize: '14px',
                 cursor: 'pointer'
               }}>
@@ -4586,8 +4832,8 @@ const Port = () => {
                 style={{
                   padding: '8px 16px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   cursor: 'pointer'
                 }}
@@ -4666,7 +4912,6 @@ const Port = () => {
       {showNewSystemModal && (
         <div
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-          onClick={() => setShowNewSystemModal(false)}
         >
           <div
             style={{
@@ -4715,7 +4960,6 @@ const Port = () => {
       {showNamePromptModal && (
         <div
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-          onClick={() => { setShowNamePromptModal(false); setPendingDrop(null); }}
         >
           <div
             style={{
@@ -4863,36 +5107,36 @@ const Port = () => {
         }}>
           <div style={{
             background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--bg) 100%)',
-            border: '2px solid var(--accent-muted)',
+            border: '2px solid var(--accent)',
             borderRadius: '8px',
             padding: '20px',
             minWidth: '400px',
             maxWidth: '500px'
           }}>
-            <h3 style={{ color: 'var(--accent-muted)', marginBottom: '15px', textAlign: 'center' }}>
+            <h3 style={{ color: 'var(--accent)', marginBottom: '15px', textAlign: 'center' }}>
               Add Idle Particles
             </h3>
 
             <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
-                VFX System: <strong style={{ color: 'var(--accent-muted)' }}>{selectedSystemForIdle?.name}</strong>
+              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
+                VFX System: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{selectedSystemForIdle?.name}</strong>
               </p>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
+              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
                 {isEditingIdle ? 'Select or enter a new bone for this idle particle:' : 'Select bone to attach particles:'}
               </p>
 
-              <select
-                value={selectedBoneName}
-                onChange={(e) => setSelectedBoneName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
-                  borderRadius: '4px',
-                  fontSize: '14px'
-                }}
+                <select
+                  value={selectedBoneName}
+                  onChange={(e) => setSelectedBoneName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: 'var(--surface)',
+                    color: 'var(--accent)',
+                    border: '1px solid var(--accent)',
+                    borderRadius: '4px',
+                    fontSize: '14px'
+                  }}
               >
                 {BONE_NAMES.map(bone => (
                   <option key={bone} value={bone}>{bone}</option>
@@ -4901,7 +5145,7 @@ const Port = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
+              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
                 Or type a custom bone name:
               </p>
               <input
@@ -4912,8 +5156,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px'
                 }}
@@ -4941,7 +5185,7 @@ const Port = () => {
                 onClick={handleConfirmIdleParticles}
                 style={{
                   padding: '8px 16px',
-                  background: 'linear-gradient(135deg, var(--accent), var(--accent-muted))',
+                  background: 'linear-gradient(135deg, var(--accent), var(--accent))',
                   color: 'var(--surface)',
                   border: 'none',
                   borderRadius: '4px',
@@ -4992,8 +5236,8 @@ const Port = () => {
             </h3>
 
             <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
-                VFX System: <strong style={{ color: 'var(--accent-muted)' }}>{selectedSystemForChild?.name}</strong>
+              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
+                VFX System: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{selectedSystemForChild?.name}</strong>
               </p>
               
               {/* VfxSystemDefinitionData Selection */}
@@ -5001,7 +5245,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Select Child VFX System:
               </label>
@@ -5012,8 +5257,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -5032,7 +5277,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Emitter Name:
               </label>
@@ -5045,8 +5291,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -5058,7 +5304,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Rate (default: 1):
               </label>
@@ -5073,8 +5320,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -5086,7 +5333,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Lifetime (default: 9999):
               </label>
@@ -5100,8 +5348,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -5113,7 +5361,8 @@ const Port = () => {
                 color: '#ffffff', 
                 display: 'block', 
                 marginBottom: '5px',
-                fontSize: '14px'
+                fontSize: '14px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)'
               }}>
                 Bind Weight (default: 1):
               </label>
@@ -5128,8 +5377,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -5141,7 +5390,8 @@ const Port = () => {
                 color: '#ffffff', 
                 marginBottom: '5px',
                 fontSize: '14px',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                textShadow: '0 0 6px rgba(255,255,255,0.25)'
               }}>
                 Time Before First Emission (default: 0):
               </label>
@@ -5156,8 +5406,8 @@ const Port = () => {
                   width: '100%',
                   padding: '8px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid var(--accent-muted)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   fontSize: '14px',
                   marginBottom: '15px'
@@ -5169,17 +5419,19 @@ const Port = () => {
                 color: '#ffffff', 
                 marginBottom: '5px',
                 fontSize: '14px',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                textShadow: '0 0 6px rgba(255,255,255,0.25)'
               }}>
                 Translation Override (default: 0, 0, 0):
               </label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ 
-                    color: '#ffffff', 
-                    marginBottom: '3px',
-                    fontSize: '12px',
-                    display: 'block'
+                color: '#ffffff', 
+                marginBottom: '3px',
+                fontSize: '12px',
+                display: 'block',
+                textShadow: '0 0 4px rgba(255,255,255,0.15)'
                   }}>
                     X:
                   </label>
@@ -5193,8 +5445,8 @@ const Port = () => {
                       width: '100%',
                       padding: '6px',
                       background: 'var(--surface)',
-                      color: 'var(--accent-muted)',
-                      border: '1px solid var(--accent-muted)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--accent)',
                       borderRadius: '4px',
                       fontSize: '12px'
                     }}
@@ -5202,10 +5454,11 @@ const Port = () => {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ 
-                    color: '#ffffff', 
-                    marginBottom: '3px',
-                    fontSize: '12px',
-                    display: 'block'
+                color: '#ffffff', 
+                marginBottom: '3px',
+                fontSize: '12px',
+                display: 'block',
+                textShadow: '0 0 4px rgba(255,255,255,0.15)'
                   }}>
                     Y:
                   </label>
@@ -5219,8 +5472,8 @@ const Port = () => {
                       width: '100%',
                       padding: '6px',
                       background: 'var(--surface)',
-                      color: 'var(--accent-muted)',
-                      border: '1px solid var(--accent-muted)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--accent)',
                       borderRadius: '4px',
                       fontSize: '12px'
                     }}
@@ -5228,10 +5481,11 @@ const Port = () => {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ 
-                    color: '#ffffff', 
-                    marginBottom: '3px',
-                    fontSize: '12px',
-                    display: 'block'
+                color: '#ffffff', 
+                marginBottom: '3px',
+                fontSize: '12px',
+                display: 'block',
+                textShadow: '0 0 4px rgba(255,255,255,0.15)'
                   }}>
                     Z:
                   </label>
@@ -5245,8 +5499,8 @@ const Port = () => {
                       width: '100%',
                       padding: '6px',
                       background: 'var(--surface)',
-                      color: 'var(--accent-muted)',
-                      border: '1px solid var(--accent-muted)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--accent)',
                       borderRadius: '4px',
                       fontSize: '12px'
                     }}
@@ -5260,6 +5514,7 @@ const Port = () => {
                 display: 'flex', 
                 alignItems: 'center',
                 marginBottom: '15px',
+                textShadow: '0 0 6px rgba(255,255,255,0.2)',
                 fontSize: '14px',
                 cursor: 'pointer'
               }}>

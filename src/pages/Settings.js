@@ -38,6 +38,8 @@ import {
   ExpandLess as ExpandLessIcon,
   Delete as DeleteIcon,
   RestartAlt as RestartIcon,
+  Image as ImageIcon,
+  Terminal as TerminalIcon,
 } from '@mui/icons-material';
 
 // Import Electron preferences system
@@ -640,6 +642,25 @@ const Settings = () => {
     }
   };
 
+  // Handler to open log folder
+  const handleOpenLogs = async () => {
+    try {
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        await ipcRenderer.invoke('open-log-folder');
+      }
+    } catch (error) {
+      console.error('Failed to open logs:', error);
+      if (CreateMessage) {
+        CreateMessage({
+          type: "error",
+          title: "Error",
+          message: "Failed to open log folder. Please check the console for errors."
+        });
+      }
+    }
+  };
+
   const handleRestore = () => {
     if (CreateMessage) {
       CreateMessage({
@@ -695,6 +716,155 @@ const Settings = () => {
           type: "error",
           title: "Error",
           message: "Unable to open fonts folder. This feature requires the Electron environment."
+        });
+      }
+    }
+  };
+
+  const handleSelectNavbarGif = async () => {
+    console.log('🎬 Select GIF button clicked');
+    
+    if (!window.require) {
+      console.error('❌ window.require not available');
+      if (CreateMessage) {
+        CreateMessage({
+          type: "error",
+          title: "Error",
+          message: "File selection requires Electron environment."
+        });
+      }
+      return;
+    }
+    
+    try {
+      console.log('🔍 Attempting to require Electron modules...');
+      const { ipcRenderer } = window.require('electron');
+      const path = window.require('path');
+      const fs = window.require('fs');
+      
+      console.log('✅ Electron modules loaded successfully');
+      
+      // Open file dialog to select a gif using IPC
+      console.log('📁 Opening file dialog via IPC...');
+      const result = await ipcRenderer.invoke('dialog:openFile', {
+        title: 'Select Navbar GIF',
+        filters: [
+          { name: 'GIF Images', extensions: ['gif'] },
+          { name: 'All Images', extensions: ['gif', 'png', 'jpg', 'jpeg', 'webp'] }
+        ]
+      });
+      
+      console.log('📁 Dialog result:', result);
+      
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return; // User cancelled
+      }
+      
+      const selectedFile = result.filePaths[0];
+      const fileExtension = path.extname(selectedFile).toLowerCase();
+      
+      // Validate file type
+      if (!['.gif', '.png', '.jpg', '.jpeg', '.webp'].includes(fileExtension)) {
+        if (CreateMessage) {
+          CreateMessage({
+            type: "error",
+            title: "Invalid File Type",
+            message: "Please select a valid image file (GIF, PNG, JPG, JPEG, or WEBP)."
+          });
+        }
+        return;
+      }
+      
+      // Get the app installation directory and create gif-icon folder
+      // Use process.execPath to get the actual app executable path, then get its directory
+      const appPath = path.dirname(process.execPath);
+      const gifIconDir = path.join(appPath, 'gif-icon');
+      const gifPath = path.join(gifIconDir, 'your-logo.gif');
+      
+      // Create the gif-icon directory if it doesn't exist
+      if (!fs.existsSync(gifIconDir)) {
+        fs.mkdirSync(gifIconDir, { recursive: true });
+      }
+      
+      // Copy the selected file to the assets directory
+      fs.copyFileSync(selectedFile, gifPath);
+      console.log('📁 Copied selected gif to:', gifPath);
+      
+      // Dispatch custom event to notify navbar of gif change
+      window.dispatchEvent(new CustomEvent('navbarGifChanged', {
+        detail: { gifPath: gifPath }
+      }));
+      
+      if (CreateMessage) {
+        CreateMessage({
+          type: "success",
+          title: "Navbar GIF Updated",
+          message: "Your custom navbar gif has been saved successfully! The change will take effect immediately."
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error selecting navbar gif:', error);
+      if (CreateMessage) {
+        CreateMessage({
+          type: "error",
+          title: "Error",
+          message: "Failed to save the selected gif. Please try again."
+        });
+      }
+    }
+  };
+
+  const handleResetNavbarGif = () => {
+    console.log('🔄 Reset GIF button clicked');
+    
+    if (!window.require) {
+      if (CreateMessage) {
+        CreateMessage({
+          type: "error",
+          title: "Error",
+          message: "Reset requires Electron environment."
+        });
+      }
+      return;
+    }
+    
+    try {
+      const path = window.require('path');
+      const fs = window.require('fs');
+      
+      // Get the app installation directory and gif-icon folder
+      // Use process.execPath to get the actual app executable path, then get its directory
+      const appPath = path.dirname(process.execPath);
+      const gifIconDir = path.join(appPath, 'gif-icon');
+      const gifPath = path.join(gifIconDir, 'your-logo.gif');
+      
+      // Delete the custom gif if it exists
+      if (fs.existsSync(gifPath)) {
+        fs.unlinkSync(gifPath);
+        console.log('📁 Removed custom navbar gif');
+      }
+      
+      // Dispatch custom event to notify navbar of gif change
+      window.dispatchEvent(new CustomEvent('navbarGifChanged', {
+        detail: { gifPath: null }
+      }));
+      
+      if (CreateMessage) {
+        CreateMessage({
+          type: "success",
+          title: "Navbar GIF Reset",
+          message: "Navbar gif has been reset to default. The change will take effect immediately."
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error resetting navbar gif:', error);
+      if (CreateMessage) {
+        CreateMessage({
+          type: "error",
+          title: "Error",
+          message: "Failed to reset navbar gif. Please try again."
         });
       }
     }
@@ -1093,22 +1263,59 @@ const Settings = () => {
                   >
                     {isLoadingFonts ? 'Loading...' : 'Refresh'}
                    </Button>
+                   
+                   <Button
+                     variant="outlined"
+                     onClick={handleSelectNavbarGif}
+                     size="small"
+                     startIcon={<ImageIcon />}
+                     sx={{ 
+                        borderColor: 'var(--accent2)', 
+                        color: 'var(--accent)', 
+                        '&:hover': { borderColor: 'var(--accent)' },
+                       textTransform: 'none',
+                       fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.875rem' },
+                      flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 4px)' },
+                      minWidth: { xs: '100px', sm: '120px' },
+                      px: { xs: 0.5, sm: 1 }
+                    }}
+                  >
+                    Select GIF
+                   </Button>
+                   
+                   <Button
+                     variant="outlined"
+                     onClick={handleResetNavbarGif}
+                     size="small"
+                     startIcon={<RestoreIcon />}
+                     sx={{ 
+                        borderColor: 'var(--accent2)', 
+                        color: 'var(--accent)', 
+                        '&:hover': { borderColor: 'var(--accent)' },
+                       textTransform: 'none',
+                       fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.875rem' },
+                      flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 4px)' },
+                      minWidth: { xs: '100px', sm: '120px' },
+                      px: { xs: 0.5, sm: 1 }
+                    }}
+                  >
+                    Reset GIF
+                   </Button>
                  </Box>
                    
                    <Typography 
                      variant="body2" 
                      sx={{ 
-                    mt: 1.5,
-                    p: { xs: 1, sm: 1.5 },
-                        border: '1px solid var(--accent2)',
-                        borderRadius: 1,
-                        background: 'color-mix(in srgb, var(--accent2), transparent 90%)',
-                        color: 'var(--accent)',
-                    fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.875rem' }
+                       color: 'var(--accent2)',
+                       fontSize: { xs: '0.6rem', sm: '0.7rem', md: '0.75rem' },
+                       mb: 1
                      }}
                    >
-                  <strong>Font Test:</strong> This text shows the currently selected font.
+                     Choose a custom GIF for the navbar logo
                    </Typography>
+                   
                    
                 {/* Page Visibility Settings - Expandable */}
                 <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid var(--mui-divider)' }}>
@@ -1907,6 +2114,26 @@ const Settings = () => {
                       }}
                     >
                       {isRestartingBackend ? 'Restarting...' : 'Restart Backend'}
+                    </Button>
+
+                    <Button
+                      variant="outlined"
+                      onClick={handleOpenLogs}
+                      startIcon={<TerminalIcon />}
+                      sx={{
+                        borderColor: 'var(--accent2)',
+                        color: 'var(--accent2)',
+                        fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
+                        px: 2,
+                        py: 1,
+                        '&:hover': {
+                          borderColor: 'var(--accent)',
+                          color: 'var(--accent)',
+                          background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                        }
+                      }}
+                    >
+                      View Logs
                     </Button>
                     
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

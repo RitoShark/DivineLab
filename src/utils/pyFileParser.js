@@ -139,9 +139,9 @@ const parseEmitter = (lines, emitterStartLine) => {
     // Parse emitter properties
     if (line.includes('emitterName: string =')) {
       emitter.name = line.split('= ')[1].replace(/"/g, '').trim();
-    } else if (line.includes('birthColor: embed = ValueColor {')) {
+    } else if (line.toLowerCase().includes('birthcolor: embed = valuecolor {')) {
       emitter.birthColor = parseColorProperty(lines, i);
-    } else if (line.includes('color: embed = ValueColor {')) {
+    } else if (line.toLowerCase().includes('color: embed = valuecolor {') && !line.toLowerCase().includes('birthcolor') && !line.toLowerCase().includes('fresnelcolor')) {
       emitter.color = parseColorProperty(lines, i);
     } else if (line.includes('fresnelColor: vec4 =') || line.includes('fresnelColor: vec4=')) {
       // Simple fresnelColor constant value

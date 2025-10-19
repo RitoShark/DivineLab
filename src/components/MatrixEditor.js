@@ -51,7 +51,7 @@ const MatrixEditor = ({ open, initialMatrix, onApply, onClose }) => {
          backdropFilter: 'blur(20px) saturate(200%)',
          WebkitBackdropFilter: 'blur(20px) saturate(200%)'
        }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: 0, marginBottom: 12, color: 'var(--accent-muted)', fontSize: '1.2rem' }}>Matrix Editor</h3>
+        <h3 style={{ margin: 0, marginBottom: 12, color: 'var(--accent)', fontSize: '1.2rem' }}>Matrix Editor</h3>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.12)', paddingBottom: 8 }}>
           <div style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>4×4 Transform Matrix</div>
           <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Row‑major</div>

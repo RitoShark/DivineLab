@@ -36,10 +36,12 @@ const RGBA = () => {
   const [alphaPercent, setAlphaPercent] = useState(100); // For display purposes
   const [alphaPreview, setAlphaPreview] = useState(1); // Fast-updating preview value
   const [showAlpha, setShowAlpha] = useState(true);
+  const [rgbaInput, setRgbaInput] = useState('{ 1.000, 0.000, 0.000, 1.000 }');
   
   // Debounce refs
   const colorChangeTimeoutRef = useRef(null);
   const alphaChangeTimeoutRef = useRef(null);
+  const rgbaInputTimeoutRef = useRef(null);
 
   // Memoized conversion functions to prevent unnecessary re-renders
   const vec4ToHex = useCallback((vec) => {
@@ -71,24 +73,49 @@ const RGBA = () => {
     return vec4;
   }, [vec4[3]]);
 
+  // Parse RGBA input string
+  const parseRgbaInput = useCallback((input) => {
+    // Remove curly braces and whitespace
+    const cleanInput = input.replace(/[{}]/g, '').replace(/\s/g, '');
+    
+    // Split by comma
+    const values = cleanInput.split(',');
+    
+    if (values.length === 4) {
+      const r = parseFloat(values[0]);
+      const g = parseFloat(values[1]);
+      const b = parseFloat(values[2]);
+      const a = parseFloat(values[3]);
+      
+      // Validate values are between 0 and 1
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b) && !isNaN(a) &&
+          r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1 && a >= 0 && a <= 1) {
+        return [r, g, b, a];
+      }
+    }
+    
+    return null; // Invalid input
+  }, []);
+
   // Memoized format functions
   const formatVec4 = useMemo(() => {
     return `{ ${vec4[0].toFixed(6)}, ${vec4[1].toFixed(6)}, ${vec4[2].toFixed(6)}, ${vec4[3].toFixed(6)} }`;
   }, [vec4]);
 
   const formatRGBA = useMemo(() => {
-    return `(${vec4[0].toFixed(3)}, ${vec4[1].toFixed(3)}, ${vec4[2].toFixed(3)}, ${vec4[3].toFixed(3)})`;
+    return `{ ${vec4[0].toFixed(3)}, ${vec4[1].toFixed(3)}, ${vec4[2].toFixed(3)}, ${vec4[3].toFixed(3)} }`;
   }, [vec4]);
 
   const formatRGB = useMemo(() => {
-    return `(${Math.ceil(vec4[0] * 254.9)}, ${Math.ceil(vec4[1] * 254.9)}, ${Math.ceil(vec4[2] * 254.9)})`;
+    return `{${Math.ceil(vec4[0] * 254.9)}, ${Math.ceil(vec4[1] * 254.9)}, ${Math.ceil(vec4[2] * 254.9)}}`;
   }, [vec4]);
 
-  // Update hex when vec4 changes
+  // Update hex and rgba input when vec4 changes
   useEffect(() => {
     setHexColor(vec4ToHex(vec4));
     setAlphaPercent(Math.round(vec4[3] * 100));
     setAlphaPreview(vec4[3]);
+    setRgbaInput(`{ ${vec4[0].toFixed(3)}, ${vec4[1].toFixed(3)}, ${vec4[2].toFixed(3)}, ${vec4[3].toFixed(3)} }`);
   }, [vec4, vec4ToHex]);
 
   // Debounced color change handler
@@ -150,6 +177,25 @@ const RGBA = () => {
     });
   }, []);
 
+  // Handle RGBA input change
+  const handleRgbaInputChange = useCallback((event) => {
+    const input = event.target.value;
+    setRgbaInput(input);
+    
+    // Clear existing timeout
+    if (rgbaInputTimeoutRef.current) {
+      clearTimeout(rgbaInputTimeoutRef.current);
+    }
+    
+    // Set new timeout for debounced update
+    rgbaInputTimeoutRef.current = setTimeout(() => {
+      const parsed = parseRgbaInput(input);
+      if (parsed) {
+        setVec4(parsed);
+      }
+    }, 500); // 500ms debounce for manual input
+  }, [parseRgbaInput]);
+
   const handleReset = useCallback(() => {
     setVec4([1, 0, 0, 1]);
   }, []);
@@ -170,6 +216,9 @@ const RGBA = () => {
       }
       if (alphaChangeTimeoutRef.current) {
         clearTimeout(alphaChangeTimeoutRef.current);
+      }
+      if (rgbaInputTimeoutRef.current) {
+        clearTimeout(rgbaInputTimeoutRef.current);
       }
       // Clean up any open color pickers
       cleanupColorPickers();
@@ -315,6 +364,41 @@ const RGBA = () => {
                       height: 28,
                       px: 1,
                       boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)'
+                    }}
+                  />
+                </Box>
+
+                {/* RGBA Manual Input */}
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" sx={{ color: 'var(--accent-muted)', mb: 0.5 }}>
+                    RGBA (0-1)
+                  </Typography>
+                  <TextField
+                    value={rgbaInput}
+                    onChange={handleRgbaInputChange}
+                    placeholder="{ 1.000, 0.000, 0.000, 1.000 }"
+                    size="small"
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        fontFamily: 'JetBrains Mono, monospace',
+                        fontSize: '0.9rem',
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: 2,
+                        '& fieldset': {
+                          border: 'none',
+                        },
+                        '&:hover fieldset': {
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          border: '1px solid var(--accent)',
+                        },
+                      },
+                      '& .MuiInputBase-input': {
+                        color: 'var(--accent)',
+                        padding: '8px 12px',
+                      },
                     }}
                   />
                 </Box>

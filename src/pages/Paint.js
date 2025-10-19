@@ -194,7 +194,15 @@ const Paint = () => {
   const [suppressAutoPalette, setSuppressAutoPalette] = useState(true);
   const [filterText, setFilterText] = useState('');
   const [checkToggle, setCheckToggle] = useState(false);
-  const [includeTextureFilter, setIncludeTextureFilter] = useState(false);
+  const [enableEmitterSearch, setEnableEmitterSearch] = useState(false);
+  const [searchOptions, setSearchOptions] = useState({
+    systems: true,
+    emitters: false,
+    textures: false
+  });
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const searchDropdownRef = useRef(null);
+  const searchButtonRef = useRef(null);
   const [filePath, setFilePath] = useState('');
   const [pyPath, setPyPath] = useState('');
   const [fileCache, setFileCache] = useState([]);
@@ -1223,7 +1231,7 @@ const Paint = () => {
       systemNameLabel.style.flex = '1';
       systemNameLabel.style.overflow = 'hidden';
       systemNameLabel.style.textOverflow = 'ellipsis';
-      systemNameLabel.style.color = 'var(--accent-muted)';
+      systemNameLabel.style.color = 'var(--accent)';
       systemNameLabel.style.fontWeight = '600';
       systemNameLabel.style.fontSize = '1rem';
       systemNameLabel.style.textShadow = '0 1px 2px var(--shadow-dark)';
@@ -2982,6 +2990,11 @@ const Paint = () => {
       const systemDiv = systemDivs[i];
       const systemKey = systemDiv.id;
       
+      // Skip hidden systems
+      if (systemDiv.style.display === "none") {
+        continue;
+      }
+      
       // Handle VFX systems
       if (systemKey && !systemKey.startsWith('material_')) {
         const system = systems[systemKey];
@@ -2991,6 +3004,11 @@ const Paint = () => {
         for (let j = 1; j < systemDiv.children.length; j++) {
           const emitterDiv = systemDiv.children[j];
           const checkbox = emitterDiv.children[0];
+
+          // Skip hidden emitters
+          if (emitterDiv.style.display === "none") {
+            continue;
+          }
 
           if (checkbox.checked) {
             const emitterIndex = j - 1;
@@ -3012,6 +3030,11 @@ const Paint = () => {
         for (let j = 1; j < systemDiv.children.length; j++) {
           const paramDiv = systemDiv.children[j];
           const checkbox = paramDiv.children[0];
+
+          // Skip hidden parameters
+          if (paramDiv.style.display === "none") {
+            continue;
+          }
 
           if (checkbox.checked) {
             const paramIndex = j - 1;
@@ -3312,9 +3335,12 @@ const Paint = () => {
   };
 
   // Highly optimized filtering with minimal DOM manipulation
-  const FilterParticles = (filterString, overrideTextureFilter = null) => {
+  const FilterParticles = (filterString, currentSearchOptions = null) => {
     if (!particleListRef.current) return;
-    const currentTextureFilter = overrideTextureFilter !== null ? overrideTextureFilter : includeTextureFilter;
+    
+    // Use provided options or fall back to current state
+    const options = currentSearchOptions || lastSearchOptionsRef.current;
+    console.log('FilterParticles called with:', filterString, 'Search options:', options);
     
     // Skip if already filtering (throttle rapid calls)
     if (isFilteringRef.current) {
@@ -3328,15 +3354,18 @@ const Paint = () => {
     
     // Use cached elements if available, otherwise cache them now
     if (!cachedElementsRef.current) {
-      // console.log('Caching DOM elements for filtering...');
+      console.log('Caching DOM elements for filtering...');
       cacheFilterElements();
     }
     
     const cachedElements = cachedElementsRef.current;
     if (!cachedElements) {
+      console.log('No cached elements available for filtering');
       isFilteringRef.current = false;
       return;
     }
+    
+    console.log('Cached elements available:', cachedElements.length);
     
     const isEmpty = !filterString.trim();
     
@@ -3355,25 +3384,40 @@ const Paint = () => {
         const searchLower = filterString.toLowerCase();
         
         for (const system of cachedElements) {
-          const systemNameMatch = system.name.includes(searchLower);
+          const systemNameMatch = options.systems && system.name.includes(searchLower);
           let emitterNameMatch = false;
 
-          // Check emitter names and texture paths
-          for (const emitter of system.emitters) {
-            const emitterMatches = emitter.name.includes(searchLower);
-            const textureMatches = currentTextureFilter && emitter.texturePath && emitter.texturePath.includes(searchLower);
-            // Debug: Log when texture filtering is happening
-            if (currentTextureFilter && emitter.texturePath && emitter.texturePath.includes(searchLower)) {
-              // console.log('Texture match found:', emitter.texturePath, 'for search:', searchLower);
-            }
+          // Check emitters if emitter search OR texture search is enabled
+          if (options.emitters || options.textures) {
+            console.log('Emitter/texture search enabled, checking system:', system.name, 'emitters:', system.emitters?.length);
+            console.log('Checking emitters for system:', system.name, 'with search:', searchLower);
+            // Check emitter names and texture paths
+            for (const emitter of system.emitters) {
+              const emitterMatches = options.emitters && emitter.name.includes(searchLower);
+              const textureMatches = options.textures && emitter.texturePath && emitter.texturePath.includes(searchLower);
+              console.log('Emitter:', emitter.name, 'matches:', emitterMatches, 'texturePath:', emitter.texturePath, 'textureMatches:', textureMatches);
+              // Debug: Log when texture filtering is happening
+              if (options.textures && emitter.texturePath && emitter.texturePath.includes(searchLower)) {
+                console.log('Texture match found:', emitter.texturePath, 'for search:', searchLower);
+              }
 
-            if (emitterMatches || textureMatches) {
-              emitterNameMatch = true;
-              emitter.element.style.display = null;
-            } else if (!systemNameMatch) {
-              emitter.element.style.display = "none";
-            } else {
-              emitter.element.style.display = null;
+              if (emitterMatches || textureMatches) {
+                emitterNameMatch = true;
+                emitter.element.style.display = null;
+              } else if (!systemNameMatch) {
+                emitter.element.style.display = "none";
+              } else {
+                emitter.element.style.display = null;
+              }
+            }
+          } else {
+            // When neither emitter nor texture search is enabled, show all emitters if system matches
+            for (const emitter of system.emitters) {
+              if (systemNameMatch) {
+                emitter.element.style.display = null;
+              } else {
+                emitter.element.style.display = "none";
+              }
             }
           }
 
@@ -3406,21 +3450,34 @@ const Paint = () => {
       }
       
       for (const system of cachedElements) {
-        const systemNameMatch = search.test(system.name);
+        const systemNameMatch = options.systems && search.test(system.name);
         let emitterNameMatch = false;
 
-        // Check emitter names and texture paths
-        for (const emitter of system.emitters) {
-          const emitterMatches = search.test(emitter.name);
-          const textureMatches = currentTextureFilter && emitter.texturePath && search.test(emitter.texturePath);
+        // Check emitters if emitter search OR texture search is enabled
+        if (options.emitters || options.textures) {
+          // Check emitter names and texture paths
+          for (const emitter of system.emitters) {
+            const emitterMatches = options.emitters && search.test(emitter.name);
+            const textureMatches = options.textures && emitter.texturePath && search.test(emitter.texturePath);
+            console.log('Long search - Emitter:', emitter.name, 'texturePath:', emitter.texturePath, 'textureMatches:', textureMatches);
 
-          if (emitterMatches || textureMatches) {
-            emitterNameMatch = true;
-            updates.push({ element: emitter.element, display: null });
-          } else if (!systemNameMatch) {
-            updates.push({ element: emitter.element, display: "none" });
-          } else {
-            updates.push({ element: emitter.element, display: null });
+            if (emitterMatches || textureMatches) {
+              emitterNameMatch = true;
+              updates.push({ element: emitter.element, display: null });
+            } else if (!systemNameMatch) {
+              updates.push({ element: emitter.element, display: "none" });
+            } else {
+              updates.push({ element: emitter.element, display: null });
+            }
+          }
+        } else {
+          // When neither emitter nor texture search is enabled, show all emitters if system matches
+          for (const emitter of system.emitters) {
+            if (systemNameMatch) {
+              updates.push({ element: emitter.element, display: null });
+            } else {
+              updates.push({ element: emitter.element, display: "none" });
+            }
           }
         }
 
@@ -3458,6 +3515,7 @@ const Paint = () => {
   const isFilteringRef = useRef(false);
   const cachedElementsRef = useRef(null);
   const inputRef = useRef(null);
+  const lastSearchOptionsRef = useRef(searchOptions);
   
   // Cache DOM elements for super-fast filtering
   const cacheFilterElements = () => {
@@ -3528,6 +3586,19 @@ const Paint = () => {
     }, 100); // Reduced to 100ms for faster response
   }, []);
 
+  // Helper function to generate dynamic placeholder text
+  const getSearchPlaceholder = () => {
+    const options = [];
+    if (searchOptions.systems) options.push('systems');
+    if (searchOptions.emitters) options.push('emitters');
+    if (searchOptions.textures) options.push('texture paths');
+    
+    if (options.length === 0) return "No search options enabled";
+    if (options.length === 1) return `Filter ${options[0]}...`;
+    if (options.length === 2) return `Filter ${options[0]} and ${options[1]}...`;
+    return `Filter ${options.slice(0, -1).join(', ')}, and ${options[options.length - 1]}...`;
+  };
+
   const handleCheckToggle = (checked) => {
     setCheckToggle(checked);
     CheckToggle(checked, particleListRef, null, cachedSystems);
@@ -3537,6 +3608,20 @@ const Paint = () => {
       setStatusMessage("All emitters deselected");
     }
   };
+
+  // Click outside handler for dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchDropdownRef.current && !searchDropdownRef.current.contains(event.target)) {
+        setSearchDropdownOpen(false);
+      }
+    };
+
+    if (searchDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [searchDropdownOpen]);
 
   const handleSelectByBlendMode = () => {
     selectByBlendMode(blendModeFilter, blendModeSlider, particleListRef, setStatusMessage);
@@ -4970,6 +5055,8 @@ const Paint = () => {
           borderRadius: 1,
           height: '32px',
           minHeight: '32px',
+          position: 'relative',
+          overflow: 'visible'
         }}>
           <Checkbox
             checked={checkToggle}
@@ -4980,48 +5067,141 @@ const Paint = () => {
               '&.Mui-checked': { color: 'var(--accent)' },
             }}
           />
-          <TextField
-                            placeholder={includeTextureFilter ? "Filter particles, systems, and texture paths..." : "Filter particles and systems only..."}
-            value={filterText}
-            onChange={(e) => handleFilterChange(e.target.value)}
-            inputRef={inputRef}
-            size="small"
-            fullWidth
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                color: 'var(--accent)',
-                background: 'var(--bg)',
-                height: '32px',
-                '& fieldset': { borderColor: 'var(--bg)' },
-                '&:hover fieldset': { borderColor: 'var(--accent)' },
-                '&.Mui-focused fieldset': { borderColor: 'var(--accent)' },
-              },
-            }}
-          />
-          <Tooltip title={includeTextureFilter ? "Disable texture path filtering" : "Enable texture path filtering"}>
-            <Checkbox
-              checked={includeTextureFilter}
-              onChange={(e) => {
-                // console.log('Texture filter checkbox changed to:', e.target.checked);
-                const newValue = e.target.checked;
-                setIncludeTextureFilter(newValue);
-                // Re-apply current filter with new texture setting immediately
-                if (filterText.trim()) {
-                  FilterParticles(filterText, newValue);
-                }
-              }}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+            <TextField
+              placeholder={getSearchPlaceholder()}
+              value={filterText}
+              onChange={(e) => handleFilterChange(e.target.value)}
+              inputRef={inputRef}
               size="small"
+              style={{ flex: 1 }}
               sx={{
-                color: 'var(--accent2)',
-                '&.Mui-checked': { color: 'var(--accent)' },
-                minWidth: 'auto',
-                padding: '4px',
+                '& .MuiOutlinedInput-root': {
+                  color: 'var(--accent)',
+                  background: 'var(--bg)',
+                  height: '32px',
+                  '& fieldset': { borderColor: 'var(--bg)' },
+                  '&:hover fieldset': { borderColor: 'var(--accent)' },
+                  '&.Mui-focused fieldset': { borderColor: 'var(--accent)' },
+                },
               }}
             />
-          </Tooltip>
+            <button
+              ref={searchButtonRef}
+              onClick={() => setSearchDropdownOpen(!searchDropdownOpen)}
+              title="Search Options"
+              style={{
+                padding: '8px 12px',
+                background: 'var(--surface-2)',
+                border: '1px solid #444',
+                borderRadius: '6px',
+                color: 'var(--accent)',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                minWidth: '60px'
+              }}
+            >
+              ⚙️
+            </button>
+          </div>
         </Box>
       )}
 
+
+      {/* Search Options Dropdown - Rendered at root level */}
+      {searchDropdownOpen && (
+        <Box
+          ref={searchDropdownRef}
+          sx={{
+            position: 'absolute',
+            top: '200px', // Fixed position below search bar
+            left: '20px', // Fixed position from left
+            zIndex: 99999,
+            background: 'var(--surface-2)',
+            border: '1px solid #444',
+            borderRadius: '6px',
+            padding: '8px',
+            minWidth: '200px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          }}
+        >
+          <Typography variant="caption" sx={{ color: 'var(--accent)', fontWeight: 'bold', mb: 1, display: 'block' }}>
+            Search Options
+          </Typography>
+          
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={searchOptions.systems}
+                onChange={(e) => {
+                  const newOptions = { ...searchOptions, systems: e.target.checked };
+                  setSearchOptions(newOptions);
+                  lastSearchOptionsRef.current = newOptions;
+                  if (filterText.trim()) {
+                    FilterParticles(filterText, newOptions);
+                  }
+                }}
+                size="small"
+                sx={{
+                  color: 'var(--accent2)',
+                  '&.Mui-checked': { color: 'var(--accent)' },
+                }}
+              />
+            }
+            label="Systems"
+            sx={{ color: 'var(--accent)', fontSize: '12px' }}
+          />
+          
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={searchOptions.emitters}
+                onChange={(e) => {
+                  const newOptions = { ...searchOptions, emitters: e.target.checked };
+                  setSearchOptions(newOptions);
+                  lastSearchOptionsRef.current = newOptions;
+                  console.log('Emitter search toggled:', e.target.checked, 'New options:', newOptions);
+                  if (filterText.trim()) {
+                    FilterParticles(filterText, newOptions);
+                  }
+                }}
+                size="small"
+                sx={{
+                  color: 'var(--accent2)',
+                  '&.Mui-checked': { color: 'var(--accent)' },
+                }}
+              />
+            }
+            label="Emitters (slower)"
+            sx={{ color: 'var(--accent)', fontSize: '12px' }}
+          />
+          
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={searchOptions.textures}
+                onChange={(e) => {
+                  const newOptions = { ...searchOptions, textures: e.target.checked };
+                  setSearchOptions(newOptions);
+                  lastSearchOptionsRef.current = newOptions;
+                  if (filterText.trim()) {
+                    FilterParticles(filterText, newOptions);
+                  }
+                }}
+                size="small"
+                sx={{
+                  color: 'var(--accent2)',
+                  '&.Mui-checked': { color: 'var(--accent)' },
+                }}
+              />
+            }
+            label="Texture Paths"
+            sx={{ color: 'var(--accent)', fontSize: '12px' }}
+          />
+        </Box>
+      )}
 
       {/* Particle List */}
       <Box sx={{

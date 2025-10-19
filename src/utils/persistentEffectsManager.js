@@ -104,7 +104,7 @@ function parsePersistentConditionBlock(conditionLines, index) {
       const typeMatch = trimmed.match(/mConditionType: u8 = (\d+)/);
       if (typeMatch) {
         const typeNum = parseInt(typeMatch[1]);
-        const typeMap = { 0: 'IsAnimationPlaying', 1: 'HasBuffScript', 2: 'LearnedSpell', 3: 'HasGear', 4: 'FloatComparison' };
+        const typeMap = { 0: 'IsAnimationPlaying', 1: 'HasBuffScript', 2: 'LearnedSpell', 3: 'HasGear', 4: 'FloatComparison', 5: 'BuffCounterFloatComparison' };
         condition.preset.type = typeMap[typeNum] || 'IsAnimationPlaying';
       }
     } else if (trimmed.includes('mAnimationName:') || trimmed.includes('mAnimationNames:')) {
@@ -133,6 +133,30 @@ function parsePersistentConditionBlock(conditionLines, index) {
     } else if (trimmed.includes('mDelayBeforeDeactivate:') || trimmed.includes('mDelayOff:')) {
       const delayMatch = trimmed.match(/f32 = ([\d.]+)/);
       if (delayMatch) condition.preset.delay.off = parseFloat(delayMatch[1]);
+    } else if (trimmed.includes('mOperator: u32 = ')) {
+      // Parse FloatComparisonMaterialDriver operator
+      const opMatch = trimmed.match(/mOperator: u32 = (\d+)/);
+      if (opMatch) condition.preset.operator = parseInt(opMatch[1]);
+    } else if (trimmed.includes('mValue: f32 = ')) {
+      // Parse FloatLiteralMaterialDriver value
+      const valueMatch = trimmed.match(/mValue: f32 = ([\d.]+)/);
+      if (valueMatch) condition.preset.value = parseFloat(valueMatch[1]);
+    } else if (trimmed.includes('Spell:') && trimmed.includes('hash = ')) {
+      // Parse BuffCounterDynamicMaterialFloatDriver spell hash
+      const spellMatch = trimmed.match(/hash = "([^"]+)"/);
+      if (spellMatch) {
+        condition.preset.spellHash = spellMatch[1];
+        // If we find a BuffCounterDynamicMaterialFloatDriver, this is a BuffCounterFloatComparison
+        condition.preset.type = 'BuffCounterFloatComparison';
+      }
+    } else if (trimmed.includes('SpellSlot: u32 = ')) {
+      // Parse SpellRankIntDriver spell slot
+      const slotMatch = trimmed.match(/SpellSlot: u32 = (\d+)/);
+      if (slotMatch) {
+        condition.preset.slot = parseInt(slotMatch[1]);
+        // If we find a SpellRankIntDriver, this is a regular FloatComparison
+        condition.preset.type = 'FloatComparison';
+      }
     }
     
     // Parse VFX items
@@ -165,7 +189,7 @@ function parsePersistentConditionBlock(conditionLines, index) {
         }
       }
       
-      if (vfxDepth <= 1 && currentVfxItem && trimmed === '}') {
+      if (vfxDepth === 2 && currentVfxItem && trimmed === '}') {
         condition.vfx.push(currentVfxItem);
         currentVfxItem = null;
       }
@@ -328,7 +352,7 @@ export function extractSubmeshes(pyContent) {
 
 /**
  * Build OwnerCondition text for a small set of presets
- * preset.type: 'IsAnimationPlaying' | 'HasBuffScript' | 'LearnedSpell' | 'FloatComparison' | 'HasGear'
+ * preset.type: 'IsAnimationPlaying' | 'HasBuffScript' | 'LearnedSpell' | 'FloatComparison' | 'BuffCounterFloatComparison' | 'HasGear'
  * preset.delay: { on: number, off: number } optional
  */
 export function buildOwnerCondition(preset) {
@@ -364,6 +388,14 @@ export function buildOwnerCondition(preset) {
       const op = Number.isFinite(preset.operator) ? preset.operator : 3;
       const value = Number.isFinite(preset.value) ? preset.value : 1;
       inner = `FloatComparisonMaterialDriver {\n${indent}    mOperator: u32 = ${op}\n${indent}    mValueA: pointer = SpellRankIntDriver {\n${indent}        SpellSlot: u32 = ${slot}\n${indent}    }\n${indent}    mValueB: pointer = FloatLiteralMaterialDriver {\n${indent}        mValue: f32 = ${value}\n${indent}    }\n${indent}}`;
+      break;
+    }
+    case 'BuffCounterFloatComparison': {
+      const spellHash = preset.spellHash || 'Characters/Ezreal/Spells/EzrealPassiveAbility/EzrealPassiveStacks';
+      const op = Number.isFinite(preset.operator) ? preset.operator : 2;
+      const value = Number.isFinite(preset.value) ? preset.value : 5;
+      const formattedSpellHash = /^0x[0-9a-fA-F]+$/.test(spellHash) ? spellHash : `"${spellHash}"`;
+      inner = `FloatComparisonMaterialDriver {\n${indent}    mOperator: u32 = ${op}\n${indent}    mValueA: pointer = BuffCounterDynamicMaterialFloatDriver {\n${indent}        Spell: hash = ${formattedSpellHash}\n${indent}    }\n${indent}    mValueB: pointer = FloatLiteralMaterialDriver {\n${indent}        mValue: f32 = ${value}\n${indent}    }\n${indent}}`;
       break;
     }
     default: {

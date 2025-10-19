@@ -36,11 +36,108 @@ import {
 
 const ModernNavigation = () => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [gifSrc, setGifSrc] = useState('');
+
+  // Function to get the navbar gif source, checking user data first, then falling back to default
+  const getNavbarGifSrc = () => {
+    if (!window.require) {
+      // Fallback to public URL if not in Electron
+      return `${process.env.PUBLIC_URL}/your-logo.gif`;
+    }
+    
+    try {
+      const path = window.require('path');
+      const fs = window.require('fs');
+      
+      // Check gif-icon directory first (user's custom gif)
+      // Use process.execPath to get the actual app executable path, then get its directory
+      const appPath = path.dirname(process.execPath);
+      const gifIconDir = path.join(appPath, 'gif-icon');
+      const userGifPath = path.join(gifIconDir, 'your-logo.gif');
+      
+      if (fs.existsSync(userGifPath)) {
+        // Read the file and convert to data URL to avoid security restrictions
+        try {
+          const fileBuffer = fs.readFileSync(userGifPath);
+          const mimeType = userGifPath.toLowerCase().endsWith('.gif') ? 'image/gif' : 'image/png';
+          const base64 = fileBuffer.toString('base64');
+          return `data:${mimeType};base64,${base64}`;
+        } catch (error) {
+          console.error('Error reading custom gif:', error);
+          // Fallback to file URL if data URL fails
+          return `file://${userGifPath.replace(/\\/g, '/')}`;
+        }
+      }
+      
+      // Fallback to default gif from app build directory
+      const possiblePaths = [
+        path.join(process.resourcesPath, 'app', 'build', 'your-logo.gif'), // Packaged app
+        path.join(__dirname, 'build', 'your-logo.gif'), // Development build
+        path.join(process.cwd(), 'build', 'your-logo.gif'), // Build folder
+        path.join(process.cwd(), 'public', 'your-logo.gif'), // Public folder (dev)
+      ];
+      
+      for (const defaultPath of possiblePaths) {
+        if (fs.existsSync(defaultPath)) {
+          try {
+            const fileBuffer = fs.readFileSync(defaultPath);
+            const mimeType = defaultPath.toLowerCase().endsWith('.gif') ? 'image/gif' : 'image/png';
+            const base64 = fileBuffer.toString('base64');
+            return `data:${mimeType};base64,${base64}`;
+          } catch (error) {
+            console.error('Error reading default gif:', error);
+            // Fallback to file URL if data URL fails
+            return `file://${defaultPath.replace(/\\/g, '/')}`;
+          }
+        }
+      }
+      
+      // Final fallback to public URL
+      return `${process.env.PUBLIC_URL}/your-logo.gif`;
+    } catch (error) {
+      console.error('Error getting navbar gif source:', error);
+      return `${process.env.PUBLIC_URL}/your-logo.gif`;
+    }
+  };
   const [hoverTimeout, setHoverTimeout] = useState(null);
   const [tooltipKey, setTooltipKey] = useState(0);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
+
+  // Load gif source on component mount and listen for changes
+  useEffect(() => {
+    const loadGifSrc = () => {
+      const src = getNavbarGifSrc();
+      setGifSrc(src);
+      console.log('🖼️ Navbar gif source loaded:', src);
+    };
+
+    loadGifSrc();
+
+    // Listen for gif changes (when user selects a new gif)
+    const handleGifChange = () => {
+      console.log('🔄 Gif change detected, reloading navbar gif...');
+      loadGifSrc();
+    };
+
+    // Listen for custom events or storage changes
+    window.addEventListener('navbarGifChanged', handleGifChange);
+    
+    // Also check periodically for file changes
+    const interval = setInterval(() => {
+      const newSrc = getNavbarGifSrc();
+      if (newSrc !== gifSrc) {
+        setGifSrc(newSrc);
+        console.log('🔄 Navbar gif updated:', newSrc);
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener('navbarGifChanged', handleGifChange);
+      clearInterval(interval);
+    };
+  }, [gifSrc]);
   const location = useLocation();
 
   const [navigationItems, setNavigationItems] = useState([]);
@@ -247,7 +344,7 @@ const ModernNavigation = () => {
             </Typography>
           ) : (
             <img 
-              src={`${process.env.PUBLIC_URL}/your-logo.gif`} 
+              src={gifSrc || getNavbarGifSrc()} 
               alt="Logo" 
               style={{
                 width: '50px',

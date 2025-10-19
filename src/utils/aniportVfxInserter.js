@@ -293,23 +293,53 @@ export function addPortedEventsToClipsForAniPort(content, portedEvents) {
         }
       }
       
-      // Check for existing events in this clip to prevent duplicates
+      // Build an index of existing keys and minimal parsed duplicates for precise checks
       const existingEventMapContent = updatedContent.substring(eventMapStartIndex, eventMapEndIndex);
-      
-      // Filter out events that already exist in the clip
-      const newEvents = events.filter(event => {
-        const eventKey = event.eventName || event.hash;
-        const effectKey = event.effectKey;
-        
-        // Check if this exact event already exists
-        const eventExists = existingEventMapContent.includes(eventKey) || 
-                           (effectKey && existingEventMapContent.includes(`"${effectKey}"`));
-        
-        if (eventExists) {
-          console.log(`[aniportVfxInserter] Event ${eventKey} (${effectKey}) already exists in ${clipName}, skipping`);
-          return false;
+      const existingKeys = new Set();
+      const existingParticleSignatureSet = new Set(); // effectKey|startFrame
+      const existingLines = existingEventMapContent.split('\n');
+      for (const line of existingLines) {
+        // Capture the map key on lines like: <key> = SomethingData {
+        const keyMatch = line.match(/^\s*([^\s=][^=]*)\s*=\s*([A-Za-z]+EventData)\s*\{/);
+        if (keyMatch) {
+          existingKeys.add(keyMatch[1].trim());
         }
-        
+      }
+      // Lightweight scan to capture particle signatures present in the map block
+      // This avoids expensive full parsing: we look for effectKey and nearest preceding startFrame
+      (function scanParticleSignatures(block) {
+        const lines = block.split('\n');
+        let currentStartFrame = null;
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i];
+          const sf = l.match(/mStartFrame:\s*f32\s*=\s*([\d.]+)/);
+          if (sf) currentStartFrame = sf[1];
+          const ek = l.match(/mEffectKey:\s*hash\s*=\s*(?:"([^"]+)"|(0x[0-9a-fA-F]+))/);
+          if (ek) {
+            const effectKey = ek[1] || ek[2] || '';
+            const startFrame = currentStartFrame || '';
+            if (effectKey && startFrame !== '') {
+              existingParticleSignatureSet.add(`${effectKey}|${startFrame}`);
+            }
+          }
+        }
+      })(existingEventMapContent);
+
+      // Filter out events that already exist in the clip using effectKey+startFrame for particles
+      const newEvents = events.filter(event => {
+        const candidateKey = (event.eventName || event.hash || '').trim();
+        const isParticle = (event.eventType || event.type) === 'particle';
+        if (isParticle && event.effectKey != null && event.startFrame != null) {
+          const sig = `${event.effectKey}|${event.startFrame}`;
+          if (existingParticleSignatureSet.has(sig)) {
+            console.log(`[aniportVfxInserter] Duplicate particle by signature ${sig} in ${clipName}, skipping`);
+            return false;
+          }
+        }
+        // If name/key exists, we will auto-generate a new unique hex key later; do not skip
+        if (candidateKey && existingKeys.has(candidateKey)) {
+          console.log(`[aniportVfxInserter] Name/key collision for ${candidateKey} in ${clipName}, will auto-generate unique key`);
+        }
         return true;
       });
       
@@ -321,7 +351,26 @@ export function addPortedEventsToClipsForAniPort(content, portedEvents) {
       // Generate event content from original event data
       let eventsContent = '';
       for (const event of newEvents) {
-        const eventContent = generateEventContent(event);
+        // Ensure a unique map key for insertion: prefer original name/hash, otherwise auto-generate
+        let mapKey = (event.eventName || event.hash || '').trim();
+        if (!mapKey || existingKeys.has(mapKey)) {
+          // Generate a stable-ish key: if particle, base on effect + frame; else random hex
+          if ((event.eventType || event.type) === 'particle' && event.effectKey != null && event.startFrame != null) {
+            // Hash-like deterministic key from effectKey + startFrame
+            const base = `${event.effectKey}:${event.startFrame}`;
+            mapKey = generateDeterministicHexKey(base, existingKeys);
+          } else {
+            mapKey = generateUniqueEventHash();
+            while (existingKeys.has(mapKey)) {
+              mapKey = generateUniqueEventHash();
+            }
+          }
+          // Persist the chosen key back onto the event so deletion can target it
+          event.hash = mapKey;
+        }
+        existingKeys.add(mapKey);
+
+        const eventContent = generateEventContentWithKey(event, mapKey);
         eventsContent += `\n${eventContent}`;
       }
       
@@ -399,6 +448,65 @@ function generateEventContent(event) {
   content += `\n                    }`;
   
   return content;
+}
+
+/**
+ * Generate event content but forcing a specific map key on the first line
+ */
+function generateEventContentWithKey(event, mapKey) {
+  // If we can use rawContent, swap just the leading key token
+  if (event.rawContent) {
+    const lines = event.rawContent.split('\n');
+    if (lines.length > 0) {
+      // Replace the left-hand key before the equals sign
+      const first = lines[0].trim();
+      const replaced = first.replace(/^([^=]+)=/, `${mapKey} =`);
+      lines[0] = replaced;
+    }
+    // Reuse the standard indentation logic
+    const indented = lines.map((line, index) => {
+      if (index === 0) return '                    ' + line.trim();
+      if (line.trim() === '') return '';
+      const trimmed = line.trim();
+      if (trimmed === '}') return '                    }';
+      if (trimmed.includes(' = ') || trimmed.startsWith('m')) return '                        ' + trimmed;
+      return '                            ' + trimmed;
+    });
+    return indented.join('\n');
+  }
+  // Fallback minimal reconstruction
+  const rawEventType = event.eventType || event.type;
+  const normalizedEventType = rawEventType === 'submesh' ? 'submeshVisibility' : rawEventType;
+  const eventType = getEventTypeString(normalizedEventType);
+  let content = `                    ${mapKey} = ${eventType} {`;
+  if (event.startFrame !== undefined) {
+    content += `\n                        mStartFrame: f32 = ${event.startFrame}`;
+  }
+  if (event.endFrame !== undefined) {
+    content += `\n                        mEndFrame: f32 = ${event.endFrame}`;
+  }
+  content += `\n                    }`;
+  return content;
+}
+
+/**
+ * Generate a deterministic 0xXXXXXXXX-style key from a base string, avoiding collisions
+ */
+function generateDeterministicHexKey(base, existingKeys) {
+  const baseHex = generateSimpleHash(base);
+  if (!existingKeys.has(baseHex)) return baseHex;
+  // Add a small salt counter until unique
+  let counter = 1;
+  while (true) {
+    const salted = generateSimpleHash(base + '#' + counter);
+    if (!existingKeys.has(salted)) return salted;
+    counter++;
+    if (counter > 1000) {
+      // Fallback to random if somehow too many collisions
+      let rnd = generateUniqueEventHash();
+      if (!existingKeys.has(rnd)) return rnd;
+    }
+  }
 }
 
 /**
