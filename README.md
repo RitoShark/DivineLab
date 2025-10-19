@@ -36,7 +36,7 @@ A comprehensive toolkit for League of Legends modding and visual effects editing
 - **Search Functionality**: Search for emitter names, vfxsystem names, and texture names
 - **Custom Palettes**: Create and save your own color palettes for reuse
 
-### Port - Stitch on Steroids
+### Port - Advanced VFX Porting
 - **Load Target & Donor**: Load target and donor bin files for porting operations
 - **Port Emitters**: Transfer individual emitters between projects
 - **Port VFXSystems**: Drag and drop entire vfxsystems from donor to target
@@ -53,7 +53,7 @@ A comprehensive toolkit for League of Legends modding and visual effects editing
 - **Image Support**: Add images to vfxsystems for better organization
 - **Download Menu**: Access uploaded vfxsystems from the top download menu
 - **Community Sharing**: Share and discover vfxsystems from other users
-- **Full Stitch Functionality**: Includes all features from the Port section
+- **Full Port Functionality**: Includes all features from the Port section
 
 ### Bineditor - Parameter Scaling
 - **Emitter & VFXSystem Selection**: Select either emitters or vfxsystems for editing
