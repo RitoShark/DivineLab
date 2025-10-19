@@ -9,6 +9,9 @@ A comprehensive toolkit for League of Legends modding and visual effects editing
 1. **Ritobin Folder**: Set your ritobin directory
 2. **Hashes Folder**: Set your hashes directory (most likely in the same direction as ritobin)
 
+<img width="471" height="282" alt="image" src="https://github.com/user-attachments/assets/28dba6a4-9a5b-4d47-8b53-8a19e961e0c3" />
+
+
 **These settings are required for most DivineLab features to function properly!**
 
 ## 🔗 Key Dependencies & Credits
