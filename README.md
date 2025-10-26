@@ -21,7 +21,8 @@ A comprehensive toolkit for League of Legends modding and visual effects editing
 - **[Upscayl](https://github.com/upscayl)** - Free and open source AI Image Upscaler for Linux, MacOS and Windows
 - **[Upscayl NCNN](https://github.com/upscayl/upscayl-ncnn)** - The Upscayl backend powered by the NCNN framework and Real-ESRGAN architecture
 - Discord: riven5522 - Artist of Celestia / Instagram: @riven_leonhardt
-<img width="600" height="370" alt="image" src="https://github.com/user-attachments/assets/5f7d3f59-cfff-4530-b4f4-2e5bcbebd77b" />
+<img width="1174" height="758" alt="image" src="https://github.com/user-attachments/assets/e0e73d7f-1438-4725-bf4a-f25d8ce66b44" />
+
 
 
 ## 🚀 Main Features
