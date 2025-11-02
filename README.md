@@ -2,21 +2,14 @@
 
 A comprehensive toolkit for League of Legends modding and visual effects editing, built with Electron and React.
 
-## ⚠️ IMPORTANT SETUP REQUIRED ⚠️
-
-**Before using any features, you MUST configure the following in Settings:**
-
-1. **Hash Files**: Hash files are automatically downloaded and managed. If missing, a reminder will appear on first launch to download them automatically.
-2. **Ritobin CLI**: The ritobin executable is automatically bundled and configured. You can set a custom path in Settings if needed.
-
-**These settings are required for most Quartz features to function properly!**
-
 ## 🔗 Key Dependencies & Credits
 
 - **[LtMAO](https://github.com/tarngaina/LtMAO)** - For foundational modding tools and inspiration
 - **Special thanks to [tarngaina](https://github.com/tarngaina)** for letting me use his tools
 - **[Upscayl](https://github.com/upscayl)** - Free and open source AI Image Upscaler for Linux, MacOS and Windows
 - **[Upscayl NCNN](https://github.com/upscayl/upscayl-ncnn)** - The Upscayl backend powered by the NCNN framework and Real-ESRGAN architecture
+
+<img width="1181" height="759" alt="image" src="https://github.com/user-attachments/assets/d8fa06a8-2610-4c91-9e97-e8b0a1dc3025" />
 
 ## 🚀 Main Features
 
