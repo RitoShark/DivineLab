@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './AniPortSimple.css';
-import { Snackbar, Alert } from '@mui/material';
+import { Snackbar, Alert, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
+import InfoIcon from '@mui/icons-material/Info';
 
 // Import existing utilities
 import { parseIndividualVFXSystems } from '../utils/vfxSystemParser.js';
@@ -258,6 +259,18 @@ const AniPortSimple = () => {
   
   // Toast notification state
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  
+  // Info tooltip state
+  const [showInfoTooltip, setShowInfoTooltip] = useState(false);
+  
+  // Delete confirmation dialog state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [clipToDelete, setClipToDelete] = useState(null);
+  
+  // VFX system deletion confirmation dialog state
+  const [vfxDeleteConfirmOpen, setVfxDeleteConfirmOpen] = useState(false);
+  const vfxDeleteCallbackRef = useRef(null);
+  const [vfxDeleteEffectKey, setVfxDeleteEffectKey] = useState(null);
   
   // Recent files state
   const [recentDonorFiles, setRecentDonorFiles] = useState([]);
@@ -989,8 +1002,8 @@ const AniPortSimple = () => {
       }
 
       // Generate the modified Python content
-      // Use the current file content as base (not original content) to preserve previous deletions
-      const currentContent = targetData.currentFileContent || targetData.originalAnimationContent || targetData.originalSkinsContent || '';
+      // Read the current file content to preserve previous deletions
+      const currentContent = fsModule.readFileSync(targetAnimationFile, 'utf8');
       
       // First, remove any deleted events from the current content
       let modifiedContent = removeDeletedEventsFromContent(currentContent, deletedEvents);
@@ -1733,40 +1746,39 @@ const AniPortSimple = () => {
       if (eventType === 'particle' && event.effectKey) {
         console.log('🗑️ DELETE: Particle event detected with effect key:', event.effectKey);
         
-        try {
-          // Ask user if they want to delete the associated VFX system
-          const { ipcRenderer } = window.require('electron');
-          console.log('🗑️ DELETE: About to show dialog...');
+        // Ask user if they want to delete the associated VFX system using custom dialog
+        console.log('🗑️ DELETE: About to show dialog...');
+        
+        // Create a Promise that waits for user input
+        const dialogResult = await new Promise((resolve) => {
+          // Store the resolve function in a ref so it persists across renders
+          vfxDeleteCallbackRef.current = (result) => {
+            // Clean up state
+            setVfxDeleteConfirmOpen(false);
+            vfxDeleteCallbackRef.current = null;
+            setVfxDeleteEffectKey(null);
+            // Resolve the promise with the result
+            resolve(result);
+          };
           
-          const result = await ipcRenderer.invoke('dialog:showMessageBox', {
-            type: 'question',
-            title: 'Delete VFX System?',
-            message: `This particle event uses effect key "${event.effectKey}".`,
-            detail: 'Do you also want to delete the associated VFX system and its ResourceResolver entry?',
-            buttons: ['Delete VFX System Too', 'Delete Event Only', 'Cancel'],
-            defaultId: 0,
-            cancelId: 2
+          // Set the effect key and open the dialog
+          setVfxDeleteEffectKey(event.effectKey);
+          // Use requestAnimationFrame to ensure DOM is ready
+          requestAnimationFrame(() => {
+            setVfxDeleteConfirmOpen(true);
           });
-          
-          console.log('🗑️ DELETE: Dialog result:', result);
-          
-          if (result.response === 2) {
-            // User cancelled
-            console.log('🗑️ DELETE: User cancelled deletion');
-            return;
-          }
-          
-          shouldDeleteVfxSystem = (result.response === 0);
-          console.log('🗑️ DELETE: User choice - delete VFX system:', shouldDeleteVfxSystem);
-        } catch (dialogError) {
-          console.error('🗑️ DELETE: Error showing dialog:', dialogError);
-          // Fallback: ask user via confirm dialog
-          const fallbackResult = window.confirm(
-            `This particle event uses effect key "${event.effectKey}".\n\nDo you also want to delete the associated VFX system and its ResourceResolver entry?`
-          );
-          shouldDeleteVfxSystem = fallbackResult;
-          console.log('🗑️ DELETE: Fallback dialog result - delete VFX system:', shouldDeleteVfxSystem);
+        });
+        
+        console.log('🗑️ DELETE: Dialog result:', dialogResult);
+        
+        if (dialogResult === 'cancel') {
+          // User cancelled
+          console.log('🗑️ DELETE: User cancelled deletion');
+          return;
         }
+        
+        shouldDeleteVfxSystem = (dialogResult === 'delete-vfx');
+        console.log('🗑️ DELETE: User choice - delete VFX system:', shouldDeleteVfxSystem);
       }
       
       // Save state before deletion
@@ -1950,10 +1962,15 @@ const AniPortSimple = () => {
   };
 
   // Delete entire clip from target animation
-  const handleDeleteClip = async (clipName) => {
-    if (!confirm(`Are you sure you want to delete the entire "${clipName}" clip?`)) {
-      return;
-    }
+  const handleDeleteClipClick = (clipName) => {
+    setClipToDelete(clipName);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteClip = async () => {
+    if (!clipToDelete) return;
+    const clipName = clipToDelete;
+    setDeleteConfirmOpen(false);
     
     // Check if this is a SelectorClipData and use specialized deletion
     const clip = targetData?.animationData?.clips?.[clipName];
@@ -2029,7 +2046,13 @@ const AniPortSimple = () => {
     } finally {
       // Always clear loading state
       setIsLoading(false);
+      setClipToDelete(null);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmOpen(false);
+    setClipToDelete(null);
   };
 
   // Handle drag start for whole clip
@@ -2197,9 +2220,7 @@ const AniPortSimple = () => {
     if (clipType === 'AtomicClipData') {
       lines.push('                mEventDataMap: map[hash,pointer] = {');
       lines.push('                }');
-      // Optional placeholder properties commonly found
-      lines.push('                mTrackDataName: hash = ""');
-      lines.push('                mAnimationFilePath: string = ""');
+      // Don't add mTrackDataName and mAnimationFilePath - user will add them manually when needed
     } else if (clipType === 'SequencerClipData') {
       lines.push('                mClipNameList: list[hash] = {');
       lines.push('                }');
@@ -3283,21 +3304,116 @@ const AniPortSimple = () => {
       const clipContent = currentContent.substring(clipStartIndex, clipEndIndex + 1);
       console.log(`🔧 ANIMATION PATH: Clip content length: ${clipContent.length}`);
       
-      // Find and replace the mAnimationFilePath line
-      const pathPattern = /mAnimationFilePath:\s*string\s*=\s*"([^"]+)"/;
-      const pathMatch = clipContent.match(pathPattern);
+      // Find and replace the mAnimationFilePath line (could be standalone or inside mAnimationResourceData), or insert it if it doesn't exist
+      // First check if it's inside mAnimationResourceData
+      const resourceDataPattern = /mAnimationResourceData:\s*embed\s*=\s*AnimationResourceData\s*\{[\s\S]*?mAnimationFilePath:\s*string\s*=\s*"([^"]+)"[\s\S]*?\}/;
+      const resourceDataMatch = clipContent.match(resourceDataPattern);
       
-      if (!pathMatch) {
-        throw new Error(`Could not find mAnimationFilePath in clip "${clipName}"`);
+      // Also check for standalone mAnimationFilePath
+      const standalonePathPattern = /mAnimationFilePath:\s*string\s*=\s*"([^"]+)"/;
+      const standalonePathMatch = clipContent.match(standalonePathPattern);
+      
+      let updatedClipContent;
+      if (resourceDataMatch) {
+        // Replace mAnimationFilePath inside existing mAnimationResourceData
+        console.log(`🔧 ANIMATION PATH: Found existing mAnimationResourceData with path: "${resourceDataMatch[1]}"`);
+        updatedClipContent = clipContent.replace(
+          /mAnimationResourceData:\s*embed\s*=\s*AnimationResourceData\s*\{[\s\S]*?mAnimationFilePath:\s*string\s*=\s*"([^"]+)"/,
+          (match, oldPath) => match.replace(`"${oldPath}"`, `"${newValue}"`)
+        );
+      } else if (standalonePathMatch) {
+        // Replace standalone mAnimationFilePath and wrap it in mAnimationResourceData
+        console.log(`🔧 ANIMATION PATH: Found standalone path: "${standalonePathMatch[1]}", converting to mAnimationResourceData`);
+        const lines = clipContent.split('\n');
+        const standaloneIndex = lines.findIndex(line => line.includes('mAnimationFilePath:') && line.includes(standalonePathMatch[1]));
+        if (standaloneIndex !== -1) {
+          const line = lines[standaloneIndex];
+          const indentMatch = line.match(/^(\s+)/);
+          const indent = indentMatch ? indentMatch[1] : '                ';
+          const innerIndent = indent + '    ';
+          
+          // Replace the standalone line with the nested structure
+          lines[standaloneIndex] = indent + 'mAnimationResourceData: embed = AnimationResourceData {';
+          lines.splice(standaloneIndex + 1, 0, innerIndent + `mAnimationFilePath: string = "${newValue}"`);
+          lines.splice(standaloneIndex + 2, 0, indent + '}');
+          updatedClipContent = lines.join('\n');
+        } else {
+          updatedClipContent = clipContent.replace(
+            standalonePathPattern,
+            `mAnimationFilePath: string = "${newValue}"`
+          );
+        }
+      } else {
+        // Insert new mAnimationResourceData with mAnimationFilePath inside it
+        console.log(`🔧 ANIMATION PATH: mAnimationFilePath not found, inserting new mAnimationResourceData property`);
+        
+        // Find the indent level by looking at mEventDataMap or other properties
+        let indent = '                '; // Default 16 spaces
+        const lines = clipContent.split('\n');
+        for (const line of lines) {
+          if (line.trim().startsWith('mEventDataMap:') || line.trim().startsWith('mTrackDataName:')) {
+            const indentMatch = line.match(/^(\s+)/);
+            if (indentMatch) {
+              indent = indentMatch[1];
+              break;
+            }
+          }
+        }
+        
+        // Try to find mEventDataMap to insert after it
+        let insertPosition = -1;
+        let foundEventMap = false;
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          // Look for mEventDataMap declaration
+          if (line.trim().startsWith('mEventDataMap:')) {
+            foundEventMap = true;
+            // Now find the matching closing brace
+            let braceCount = 0;
+            let inEventMap = false;
+            for (let j = i; j < lines.length; j++) {
+              const checkLine = lines[j];
+              const openBraces = (checkLine.match(/\{/g) || []).length;
+              const closeBraces = (checkLine.match(/\}/g) || []).length;
+              if (openBraces > 0) inEventMap = true;
+              braceCount += openBraces - closeBraces;
+              
+              // When we've closed all braces for mEventDataMap
+              if (inEventMap && braceCount === 0) {
+                insertPosition = j + 1; // Insert after the closing brace line
+                break;
+              }
+            }
+            break;
+          }
+        }
+        
+        if (insertPosition === -1) {
+          // mEventDataMap not found or couldn't determine position, insert after opening brace
+          const firstBraceIndex = clipContent.indexOf('{');
+          if (firstBraceIndex !== -1) {
+            // Find the line after the opening brace
+            const beforeBrace = clipContent.substring(0, firstBraceIndex + 1);
+            // Count newlines before brace to find the line number
+            const lineNum = beforeBrace.split('\n').length - 1;
+            insertPosition = lineNum + 1;
+          } else {
+            throw new Error(`Could not determine where to insert mAnimationResourceData in clip "${clipName}"`);
+          }
+        }
+        
+        // Build the nested structure: mAnimationResourceData with mAnimationFilePath inside
+        const innerIndent = indent + '    '; // 4 more spaces for nested content
+        const newProperty = [
+          indent + 'mAnimationResourceData: embed = AnimationResourceData {',
+          innerIndent + `mAnimationFilePath: string = "${newValue}"`,
+          indent + '}'
+        ].join('\n');
+        
+        // Insert the new property at the calculated position
+        lines.splice(insertPosition, 0, newProperty);
+        updatedClipContent = lines.join('\n');
       }
-      
-      console.log(`🔧 ANIMATION PATH: Found path: "${pathMatch[1]}"`);
-      
-      // Replace the path in the clip content
-      const updatedClipContent = clipContent.replace(
-        pathPattern,
-        `mAnimationFilePath: string = "${newValue}"`
-      );
       
       console.log(`🔧 ANIMATION PATH: Updated clip content length: ${updatedClipContent.length}`);
       
@@ -4107,22 +4223,40 @@ const AniPortSimple = () => {
 
   return (
     <div className="aniport-container">
-      
-      {/* Production Warning */}
+      {/* Info Button */}
       <div style={{
-        background: 'linear-gradient(135deg, #ff6b6b, #ee5a24)',
-        color: 'white',
-        padding: '12px 20px',
-        margin: '0 0 20px 0',
-        borderRadius: '8px',
-        border: '1px solid #ff4757',
-        boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3), 0 2px 8px rgba(0, 0, 0, 0.6), 0 1px 4px rgba(0, 0, 0, 0.8)',
-        textAlign: 'center',
-        fontWeight: 'bold',
-        fontSize: '14px',
-        textShadow: '1px 1px 2px rgba(0, 0, 0, 0.8), 0 0 4px rgba(0, 0, 0, 0.6)'
+        position: 'fixed',
+        top: '20px',
+        right: '20px',
+        zIndex: 1000
       }}>
-        ⚠️ <strong>AniPort Simple is still in production!</strong> Please check the Python file while the program processes to ensure nothing breaks.
+        <Tooltip
+          open={showInfoTooltip}
+          onClose={() => setShowInfoTooltip(false)}
+          title={
+            <div style={{ fontSize: '0.875rem', padding: '4px 0' }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>⚠️ AniPort Simple is still in production!</div>
+              <div>Please check the Python file while the program processes to ensure nothing breaks.</div>
+            </div>
+          }
+          arrow
+          placement="left"
+        >
+          <IconButton
+            onClick={() => setShowInfoTooltip(!showInfoTooltip)}
+            sx={{
+              backgroundColor: 'rgba(255, 152, 0, 0.1)',
+              border: '1px solid rgba(255, 152, 0, 0.3)',
+              color: '#ff9800',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 152, 0, 0.2)',
+              }
+            }}
+            size="small"
+          >
+            <InfoIcon />
+          </IconButton>
+        </Tooltip>
       </div>
       
       {/* Loading Overlay */}
@@ -4383,7 +4517,7 @@ const AniPortSimple = () => {
                               className="clip-delete-btn"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteClip(clip.name);
+                                handleDeleteClipClick(clip.name);
                               }}
                               title="Delete entire clip"
                             >
@@ -5319,12 +5453,177 @@ const AniPortSimple = () => {
             backdropFilter: 'blur(10px)',
             '& .MuiAlert-icon': {
               color: 'var(--accent)'
+          }
+        }}
+      >
+        {snackbar.message}
+      </Alert>
+    </Snackbar>
+
+    {/* Delete Confirmation Dialog */}
+    <Dialog
+      open={deleteConfirmOpen}
+      onClose={handleDeleteCancel}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          background: 'var(--glass-bg)',
+          border: '1px solid var(--glass-border)',
+          backdropFilter: 'saturate(180%) blur(16px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(16px)',
+        },
+      }}
+    >
+      <DialogTitle sx={{ 
+        color: 'var(--accent)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 1,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        fontWeight: 600
+      }}>
+        ⚠️ Delete Clip
+      </DialogTitle>
+      
+      <DialogContent sx={{ pt: 2 }}>
+        <div style={{ 
+          color: '#e5e7eb', 
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          lineHeight: 1.5
+        }}>
+          Are you sure you want to delete the entire "{clipToDelete}" clip? This action cannot be undone.
+        </div>
+      </DialogContent>
+
+      <DialogActions sx={{ p: 2, gap: 1 }}>
+        <Button
+          onClick={handleDeleteCancel}
+          sx={{ 
+            color: 'var(--accent2)',
+            '&:hover': {
+              backgroundColor: 'rgba(139, 92, 246, 0.1)',
             }
           }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+          Cancel
+        </Button>
+        <Button
+          variant="contained"
+          onClick={handleDeleteClip}
+          sx={{
+            background: '#ef4444',
+            color: '#ffffff',
+            borderRadius: '4px',
+            px: 2,
+            '&:hover': {
+              background: '#dc2626',
+            },
+          }}
+        >
+          Delete
+        </Button>
+      </DialogActions>
+    </Dialog>
+
+    {/* VFX System Deletion Confirmation Dialog */}
+    <Dialog
+      open={vfxDeleteConfirmOpen}
+      onClose={() => {
+        if (vfxDeleteCallbackRef.current) {
+          vfxDeleteCallbackRef.current('cancel');
+        }
+      }}
+      maxWidth="sm"
+      fullWidth
+      disableEscapeKeyDown={false}
+      PaperProps={{
+        sx: {
+          background: 'var(--glass-bg)',
+          border: '1px solid var(--glass-border)',
+          backdropFilter: 'saturate(180%) blur(16px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(16px)',
+        },
+      }}
+    >
+      <DialogTitle sx={{ 
+        color: 'var(--accent)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 1,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        fontWeight: 600
+      }}>
+        🗑️ Delete VFX System?
+      </DialogTitle>
+      
+      <DialogContent sx={{ pt: 2 }}>
+        <div style={{ 
+          color: '#e5e7eb', 
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          lineHeight: 1.5
+        }}>
+          <div style={{ marginBottom: '8px' }}>
+            This particle event uses effect key <strong style={{ color: 'var(--accent)' }}>"{vfxDeleteEffectKey}"</strong>.
+          </div>
+          <div>
+            Do you also want to delete the associated VFX system and its ResourceResolver entry?
+          </div>
+        </div>
+      </DialogContent>
+
+      <DialogActions sx={{ p: 2, gap: 1 }}>
+        <Button
+          onClick={() => {
+            if (vfxDeleteCallbackRef.current) {
+              vfxDeleteCallbackRef.current('cancel');
+            }
+          }}
+          sx={{ 
+            color: 'var(--accent2)',
+            '&:hover': {
+              backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            }
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={() => {
+            if (vfxDeleteCallbackRef.current) {
+              vfxDeleteCallbackRef.current('delete-event-only');
+            }
+          }}
+          sx={{
+            color: 'var(--accent2)',
+            '&:hover': {
+              backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            }
+          }}
+        >
+          Delete Event Only
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => {
+            if (vfxDeleteCallbackRef.current) {
+              vfxDeleteCallbackRef.current('delete-vfx');
+            }
+          }}
+          sx={{
+            background: '#ef4444',
+            color: '#ffffff',
+            borderRadius: '4px',
+            px: 2,
+            '&:hover': {
+              background: '#dc2626',
+            },
+          }}
+        >
+          Delete VFX System Too
+        </Button>
+      </DialogActions>
+    </Dialog>
     </div>
   );
 };

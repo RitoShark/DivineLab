@@ -129,7 +129,7 @@ const generateShades = (shadesActive, mode, shadesColorDebounced, shadesCount, s
   }
 };
 
-const CreatePicker = (paletteIndex, event, Palette, setPalette, mode, savePaletteForMode, setColors, clickedColorDot, options = {}) => {
+const CreatePicker = (paletteIndex, event, Palette, setPalette, mode, savePaletteForMode, setColors, clickedColorDot, options = {}, setSavedPalettes = null) => {
   try {
     if (!Palette[paletteIndex]) return;
 
@@ -508,13 +508,45 @@ const CreatePicker = (paletteIndex, event, Palette, setPalette, mode, savePalett
 
     const commit = (hex) => {
       try {
-        if (mode === 'shades' && options && typeof options.onShadesCommit === 'function') {
-            options.onShadesCommit(hex);
-          } else if (Palette[paletteIndex]) {
+        // Use a function updater to get the latest Palette state
+        // This ensures we're working with the current palette, not a stale closure
+        if (setPalette) {
+          setPalette(currentPalette => {
+            if (mode === 'shades' && options && typeof options.onShadesCommit === 'function') {
+              options.onShadesCommit(hex);
+              return currentPalette; // No change to palette
+            } else if (currentPalette[paletteIndex]) {
+              // Create a new array to avoid mutation
+              const updatedPalette = [...currentPalette];
+              updatedPalette[paletteIndex].InputHex(hex);
+              
+              // Update colors display
+              if (setColors) {
+                MapPalette(updatedPalette, setColors);
+              }
+              
+              // Save the palette to prevent it from being restored to old state
+              if (savePaletteForMode && mode && setSavedPalettes) {
+                savePaletteForMode(mode, updatedPalette, setSavedPalettes);
+              }
+              
+              return updatedPalette;
+            }
+            return currentPalette;
+          });
+        } else {
+          // Fallback if setPalette is not available (shouldn't happen in normal usage)
+          if (Palette[paletteIndex]) {
             Palette[paletteIndex].InputHex(hex);
             if (setColors) MapPalette(Palette, setColors);
+            if (savePaletteForMode && mode && setSavedPalettes) {
+              savePaletteForMode(mode, Palette, setSavedPalettes);
+            }
+          }
         }
-      } catch (e) { console.error('Error committing color:', e); }
+      } catch (e) { 
+        console.error('Error committing color:', e); 
+      }
       try { if (container.parentNode) container.parentNode.removeChild(container); } catch {}
     };
 

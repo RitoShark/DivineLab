@@ -14,12 +14,13 @@ import FrogImg from './pages/FrogImg';
 import BinEditor from './pages/BinEditor';
 import Tools from './pages/Tools';
 import Settings from './pages/Settings';
-import HUDEditor from './pages/HUDEditor';
+// HUD Editor moved to archived/removed-features/hud-editor/
 import Upscale from './pages/Upscale';
 import UniversalFileRandomizer from './pages/UniversalFileRandomizer';
 import Bumpath from './pages/Bumpath';
 import AniPort from './pages/AniPortSimple';
 import FrogChanger from './pages/FrogChanger';
+import HashReminderModal from './components/HashReminderModal';
 
 
 import fontManager from './utils/fontManager.js';
@@ -311,6 +312,7 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Router>
+        <HashReminderModal />
         <FontPersistenceHandler />
         <CelestiaNavigationBridge />
         <Box sx={{ 
@@ -346,7 +348,7 @@ function App() {
               <Route path="/bineditor" element={<BinEditor />} />
               <Route path="/upscale" element={<Upscale />} />
               <Route path="/file-randomizer" element={<UniversalFileRandomizer />} />
-              <Route path="/hud-editor" element={<HUDEditor />} />
+              {/* HUD Editor removed - moved to archived/removed-features/hud-editor/ */}
               <Route path="/tools" element={<Tools />} />
               <Route path="/bumpath" element={<Bumpath />} />
               <Route path="/aniport" element={<AniPort />} />
@@ -383,7 +385,7 @@ function App() {
                   🔄
                 </Box>
                 <Box sx={{ fontSize: '1.5rem', mb: 1, fontWeight: 'bold' }}>
-                  Closing DivineLab...
+                  Closing Quartz...
                 </Box>
                 <Box sx={{ fontSize: '1rem', opacity: 0.8 }}>
                   Stopping backends and cleaning up processes

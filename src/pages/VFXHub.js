@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Port.css'; // Reuse existing styles
 import themeManager from '../utils/themeManager.js';
 import electronPrefs from '../utils/electronPrefs.js';
-import { Box, IconButton, Tooltip } from '@mui/material';
+import { Box, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import { Apps as AppsIcon, Add as AddIcon, Folder as FolderIcon } from '@mui/icons-material';
 import GlowingSpinner from '../components/GlowingSpinner';
 import { ToPyWithPath } from '../utils/fileOperations.js';
@@ -142,6 +143,9 @@ const findProjectRoot = (startPath) => {
   const [fileSaved, setFileSaved] = useState(true);
   const [selectedTargetSystem, setSelectedTargetSystem] = useState(null);
   const [deletedEmitters, setDeletedEmitters] = useState(new Map());
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const pendingNavigationPathRef = useRef(null);
+  const navigate = useNavigate();
 
   // Simplified undo system state - only undo, no redo
   const [undoHistory, setUndoHistory] = useState([]);
@@ -222,7 +226,95 @@ const findProjectRoot = (startPath) => {
     checkAuthStatus();
   }, []);
 
-  // Warn on close if unsaved
+  // Reflect unsaved state globally for navigation guard
+  useEffect(() => {
+    try { window.__DL_unsavedBin = !fileSaved; } catch {}
+  }, [fileSaved]);
+
+  // Intercept navigation when unsaved changes exist
+  useEffect(() => {
+    const handleNavigationBlock = (e) => {
+      console.log('🔒 Navigation blocked event received:', e.detail);
+      
+      if (!fileSaved && !window.__DL_forceClose) {
+        // Prevent default and stop propagation
+        if (e.preventDefault) e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+        
+        const targetPath = e.detail?.path;
+        console.log('🔒 Target path:', targetPath, 'File saved:', fileSaved);
+        
+        if (targetPath) {
+          // Store navigation path in ref (not state) to avoid render issues
+          pendingNavigationPathRef.current = targetPath;
+          setShowUnsavedDialog(true);
+        }
+      }
+    };
+
+    // Listen for custom navigation-block event from ModernNavigation
+    // Use capture phase to catch event early
+    window.addEventListener('navigation-blocked', handleNavigationBlock, true);
+    return () => {
+      window.removeEventListener('navigation-blocked', handleNavigationBlock, true);
+    };
+  }, [fileSaved, navigate]);
+
+  // Handle unsaved dialog actions
+  const handleUnsavedSave = async () => {
+    const targetPath = pendingNavigationPathRef.current;
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+    
+    try {
+      await handleSave();
+      // After save, allow navigation
+      window.__DL_forceClose = true;
+      window.__DL_unsavedBin = false;
+      
+      if (targetPath) {
+        // Execute navigation after state updates
+        setTimeout(() => {
+          console.log('🚀 Executing navigation to:', targetPath);
+          navigate(targetPath);
+          setTimeout(() => {
+            window.__DL_forceClose = false;
+          }, 100);
+        }, 50);
+      }
+    } catch (error) {
+      console.error('Error saving before navigation:', error);
+    }
+  };
+
+  const handleUnsavedDiscard = () => {
+    const targetPath = pendingNavigationPathRef.current;
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+    
+    // Clear the unsaved flag to allow navigation
+    setFileSaved(true);
+    window.__DL_forceClose = true;
+    window.__DL_unsavedBin = false;
+    
+    if (targetPath) {
+      // Execute navigation after state updates
+      setTimeout(() => {
+        console.log('🚀 Executing navigation to:', targetPath);
+        navigate(targetPath);
+        setTimeout(() => {
+          window.__DL_forceClose = false;
+        }, 100);
+      }, 50);
+    }
+  };
+
+  const handleUnsavedCancel = () => {
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+  };
+
+  // Warn on window/tab close if unsaved (native dialog for window closing)
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       try {
@@ -1054,12 +1146,40 @@ const findProjectRoot = (startPath) => {
         updatedTargetSystems[selectedTargetSystem].emitters.push(fullEmitterData);
         console.log(`After adding emitter: ${updatedTargetSystems[selectedTargetSystem].emitters.length} emitters`);
         setTargetSystems(updatedTargetSystems);
-        setStatusMessage(`Porting emitter "${emitter.name}" to "${updatedTargetSystems[selectedTargetSystem].name}"`);
+        setStatusMessage(`Ported emitter "${emitter.name}" to "${updatedTargetSystems[selectedTargetSystem].name}"`);
 
         // Debug: Check if save button should be active
         console.log(`hasChangesToSave(): ${hasChangesToSave()}`);
         console.log(`deletedEmitters.size: ${deletedEmitters.size}`);
         console.log(`Target systems with emitters:`, Object.values(updatedTargetSystems).filter(s => s.emitters && s.emitters.length > 0).map(s => ({ name: s.name, emitterCount: s.emitters.length, ported: s.ported })));
+      }
+
+      // Copy associated asset files for the emitter (like system porting does)
+      try {
+        if (targetPath && donorPath && donorPath !== 'VFX Hub - GitHub Collections') {
+          // Find assets referenced in the emitter data
+          const assetFiles = findAssetFiles(fullEmitterData);
+          if (assetFiles.length > 0) {
+            setStatusMessage(`Copying ${assetFiles.length} asset files for emitter "${emitter.name}"...`);
+            const { copiedFiles, skippedFiles, failedFiles } = copyAssetFiles(donorPath, targetPath, assetFiles);
+
+            if (copiedFiles.length > 0 || skippedFiles.length > 0) {
+              const actionText = copiedFiles.length > 0 ? `copied ${copiedFiles.length}` : '';
+              const skipText = skippedFiles.length > 0 ? `skipped ${skippedFiles.length}` : '';
+              const combinedText = [actionText, skipText].filter(Boolean).join(', ');
+              setStatusMessage(`Ported emitter "${emitter.name}" and ${combinedText} asset files`);
+            } else if (failedFiles.length > 0) {
+              setStatusMessage(`Ported emitter "${emitter.name}" but some assets failed to copy`);
+            } else {
+              setStatusMessage(`Ported emitter "${emitter.name}"`);
+            }
+          } else {
+            setStatusMessage(`Ported emitter "${emitter.name}" (no assets to copy)`);
+          }
+        }
+      } catch (assetError) {
+        console.error('Error copying emitter assets:', assetError);
+        setStatusMessage(`Ported emitter "${emitter.name}" but failed to copy some assets`);
       }
     } catch (error) {
       console.error('Error porting emitter:', error);
@@ -1100,7 +1220,58 @@ const findProjectRoot = (startPath) => {
       if (updatedTargetSystems[selectedTargetSystem]) {
         updatedTargetSystems[selectedTargetSystem].emitters.push(...fullEmitterData);
         setTargetSystems(updatedTargetSystems);
-        setStatusMessage(`Porting ${fullEmitterData.length} emitters to "${updatedTargetSystems[selectedTargetSystem].name}"`);
+        setStatusMessage(`Ported ${fullEmitterData.length} emitters to "${updatedTargetSystems[selectedTargetSystem].name}"`);
+      }
+
+      // Copy associated asset files for all emitters (like system porting does)
+      try {
+        let assetMessage = '';
+
+        // Handle downloaded assets (from GitHub)
+        if (donorSystem.assets && donorSystem.assets.length > 0) {
+          setStatusMessage(`Copying ${donorSystem.assets.length} downloaded assets for "${donorSystem.name}"...`);
+          
+          try {
+            const copiedAssets = await downloadAndCopyAssets(donorSystem.assets, donorSystem.name);
+            assetMessage = ` and copied ${copiedAssets.length} assets`;
+          } catch (assetError) {
+            console.error('Error copying downloaded assets:', assetError);
+            assetMessage = ' (asset copy failed)';
+          }
+        } else if (targetPath && donorPath && donorPath !== 'VFX Hub - GitHub Collections') {
+          // Handle local assets (from local files) - collect assets from all emitters
+          const allAssetFiles = new Set();
+          for (const emitterData of fullEmitterData) {
+            const emitterAssets = findAssetFiles(emitterData);
+            emitterAssets.forEach(asset => allAssetFiles.add(asset));
+          }
+
+          if (allAssetFiles.size > 0) {
+            const assetFilesArray = Array.from(allAssetFiles);
+            setStatusMessage(`Copying ${assetFilesArray.length} asset files for all emitters...`);
+            const { copiedFiles, skippedFiles, failedFiles } = copyAssetFiles(donorPath, targetPath, assetFilesArray);
+
+            if (copiedFiles.length > 0 || skippedFiles.length > 0) {
+              const actionText = copiedFiles.length > 0 ? `copied ${copiedFiles.length}` : '';
+              const skipText = skippedFiles.length > 0 ? `skipped ${skippedFiles.length}` : '';
+              const combinedText = [actionText, skipText].filter(Boolean).join(', ');
+              assetMessage = ` and ${combinedText} asset files`;
+            } else if (failedFiles.length > 0) {
+              assetMessage = ' but some assets failed to copy';
+            } else {
+              assetMessage = ' (no assets were copied)';
+            }
+          } else {
+            assetMessage = ' (no assets to copy)';
+          }
+        }
+
+        if (assetMessage) {
+          setStatusMessage(`Ported ${fullEmitterData.length} emitters from "${donorSystem.name}"${assetMessage}`);
+        }
+      } catch (assetError) {
+        console.error('Error copying assets:', assetError);
+        setStatusMessage(`Ported ${fullEmitterData.length} emitters but failed to copy some assets`);
       }
     } catch (error) {
       console.error('Error porting all emitters:', error);
@@ -5723,6 +5894,84 @@ const findProjectRoot = (startPath) => {
         filePath={targetPath !== 'This will show target bin' ? targetPath.replace('.bin', '.py') : null}
         component="VFXHub"
       />
+
+      {/* Unsaved Changes Dialog */}
+      <Dialog
+        open={showUnsavedDialog}
+        onClose={handleUnsavedCancel}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+            backdropFilter: 'saturate(180%) blur(16px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(16px)',
+          },
+        }}
+      >
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          fontWeight: 600
+        }}>
+          ⚠️ Unsaved Changes
+        </DialogTitle>
+        
+        <DialogContent sx={{ pt: 2 }}>
+          <div style={{ 
+            color: '#e5e7eb', 
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            lineHeight: 1.5
+          }}>
+            You have unsaved changes. What would you like to do?
+          </div>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={handleUnsavedCancel}
+            sx={{ 
+              color: 'var(--accent2)',
+              '&:hover': {
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUnsavedDiscard}
+            sx={{
+              color: 'var(--accent2)',
+              '&:hover': {
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: '#ef4444',
+              }
+            }}
+          >
+            Discard Changes
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleUnsavedSave}
+            sx={{
+              background: 'var(--accent)',
+              color: 'var(--bg)',
+              borderRadius: '4px',
+              px: 2,
+              '&:hover': {
+                background: 'var(--accent2)',
+              },
+            }}
+          >
+            Save & Leave
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };

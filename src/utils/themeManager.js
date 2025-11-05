@@ -180,38 +180,8 @@ const THEMES = {
     accentGreen: '#22c55e',
     accentGreenMuted: '#14532d'
   },
-  // Galaxy theme (cosmic purple + nebula blue + stardust gold)
-  galaxy: {
-    accent: '#8b5cf6', // cosmic purple
-    accent2: '#3b82f6', // nebula blue
-    accentMuted: '#6366f1', // indigo
-    bg: '#0a0a1a', // deep space black
-    bg2: '#1a1a3a', // cosmic void
-    surface: '#0f0f2a', // starfield
-    surface2: '#2a2a5a', // nebula cloud
-    text: '#e0e7ff', // starlight white
-    text2: '#a5b4fc', // cosmic blue
-    glassBg: 'rgba(15,15,42,0.35)',
-    glassBorder: 'rgba(139,92,246,0.20)',
-    glassShadow: '0 12px 28px rgba(139,92,246,0.15)',
-    // MUI specific colors
-    muiPrimary: '#8b5cf6',
-    muiPrimaryLight: '#a78bfa',
-    muiPrimaryDark: '#6d28d9',
-    muiSecondary: '#3b82f6',
-    muiSecondaryLight: '#60a5fa',
-    muiSecondaryDark: '#1d4ed8',
-    muiBackground: '#0a0a1a',
-    muiPaper: '#0f0f2a',
-    muiTextPrimary: '#e0e7ff',
-    muiTextSecondary: '#a5b4fc',
-    muiDivider: '#2a2a5a',
-    // Green accent for success/ported states
-    accentGreen: '#10b981',
-    accentGreenMuted: '#047857'
-  },
   // Divine Lab theme (inspired by the flask + galaxy icon)
-  divineLab: {
+  quartz: {
     accent: '#f8fafc', // laboratory white (flask color)
     accent2: '#c0c5ce', // light grey (flask liquid)
     accentMuted: '#cbd5e1', // muted grey
@@ -239,6 +209,66 @@ const THEMES = {
     // Green accent for success/ported states (lab success indicator)
     accentGreen: '#10b981',
     accentGreenMuted: '#047857'
+  },
+  // Futurist Quartz theme (inspired by natural quartz stone - rose, clear, and smoky tones)
+  futuristQuartz: {
+    accent: '#f8d7d9', // soft rose quartz pink (like rose quartz)
+    accent2: '#e8d5d0', // pale smoky quartz gray-pink
+    accentMuted: '#d4a5a8', // deeper rose quartz
+    bg: '#0f0d0f', // deep stone black (like quartz base)
+    bg2: '#1a181a', // smoky quartz dark gray
+    surface: '#141214', // quartz crystal dark surface
+    surface2: '#1f1d1f', // lighter smoky quartz
+    text: '#f5e6e8', // pale rose-white (quartz crystal clarity)
+    text2: '#e8d5d0', // soft smoky pink-gray
+    glassBg: 'rgba(20,18,20,0.40)',
+    glassBorder: 'rgba(248,215,217,0.20)',
+    glassShadow: '0 12px 32px rgba(248,215,217,0.12)',
+    // MUI specific colors
+    muiPrimary: '#f8d7d9',
+    muiPrimaryLight: '#fce8e9',
+    muiPrimaryDark: '#d4a5a8',
+    muiSecondary: '#e8d5d0',
+    muiSecondaryLight: '#f0e5e0',
+    muiSecondaryDark: '#c4b5b0',
+    muiBackground: '#0f0d0f',
+    muiPaper: '#141214',
+    muiTextPrimary: '#f5e6e8',
+    muiTextSecondary: '#e8d5d0',
+    muiDivider: '#2a262a',
+    // Green accent for success/ported states (natural stone green)
+    accentGreen: '#9db4a8',
+    accentGreenMuted: '#6b8a7a'
+  },
+  // Cyber Quartz theme (cyberpunk crystal aesthetic)
+  cyberQuartz: {
+    accent: '#00d9ff', // bright cyan (quartz crystal glow)
+    accent2: '#a855f7', // vibrant purple (futuristic tech accent)
+    accentMuted: '#0099cc', // deep cyan
+    bg: '#0a0f1a', // deep blue-black (void)
+    bg2: '#0f1a2e', // dark blue slate
+    surface: '#0d1526', // tech surface dark blue
+    surface2: '#152238', // elevated tech surface
+    text: '#e0f2fe', // bright cyan-white (crystal light)
+    text2: '#c4b5fd', // light purple-cyan
+    glassBg: 'rgba(13,21,38,0.40)',
+    glassBorder: 'rgba(0,217,255,0.25)',
+    glassShadow: '0 12px 32px rgba(0,217,255,0.15)',
+    // MUI specific colors
+    muiPrimary: '#00d9ff',
+    muiPrimaryLight: '#33e0ff',
+    muiPrimaryDark: '#0099cc',
+    muiSecondary: '#a855f7',
+    muiSecondaryLight: '#c084fc',
+    muiSecondaryDark: '#7c3aed',
+    muiBackground: '#0a0f1a',
+    muiPaper: '#0d1526',
+    muiTextPrimary: '#e0f2fe',
+    muiTextSecondary: '#c4b5fd',
+    muiDivider: '#1a2744',
+    // Green accent for success/ported states (neon success)
+    accentGreen: '#00ff88',
+    accentGreenMuted: '#00cc6a'
   }
 };
 

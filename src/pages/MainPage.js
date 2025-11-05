@@ -12,6 +12,9 @@ import {
   Tooltip,
   useTheme,
   useMediaQuery,
+  Alert,
+  CircularProgress,
+  Collapse,
 } from '@mui/material';
 import {
   PlayArrow as PlayIcon,
@@ -24,6 +27,9 @@ import {
   Code as BinEditorIcon,
   Build as ToolsIcon,
   Settings as SettingsIcon,
+  SystemUpdateAlt as UpdateIcon,
+  Close as CloseIcon,
+  CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import CelestialWelcome from '../components/CelestialWelcome';
 import CelestiaGuide from '../components/CelestiaGuide';
@@ -41,6 +47,15 @@ const MainPage = () => {
   });
   const [showGuide, setShowGuide] = useState(false);
   const [renderKey, setRenderKey] = useState(0);
+  
+  // Update notification state
+  const [updateStatus, setUpdateStatus] = useState('idle');
+  const [currentVersion, setCurrentVersion] = useState('');
+  const [newVersion, setNewVersion] = useState('');
+  const [updateProgress, setUpdateProgress] = useState({ percent: 0, transferred: 0, total: 0 });
+  const [updateError, setUpdateError] = useState('');
+  const [showUpdateNotification, setShowUpdateNotification] = useState(true);
+  const [showUpToDateMessage, setShowUpToDateMessage] = useState(false);
   // Debug helpers to trace hover color flashes
   const logThemeVars = (label) => {
     try {
@@ -98,6 +113,92 @@ const MainPage = () => {
       }
     }
   }, [showWelcome]);
+
+  // Setup update listeners and check version on mount
+  useEffect(() => {
+    const setupUpdateListeners = async () => {
+      if (!window.require) return;
+
+      const { ipcRenderer } = window.require('electron');
+
+      // Get current version
+      try {
+        const versionResult = await ipcRenderer.invoke('update:get-version');
+        if (versionResult.success) {
+          setCurrentVersion(versionResult.version);
+        }
+      } catch (error) {
+        console.error('Error getting version:', error);
+      }
+
+      // Listen for update events from main process
+      ipcRenderer.on('update:checking', () => {
+        setUpdateStatus('checking');
+        setUpdateError('');
+      });
+
+      // Trigger immediate update check on mount
+      try {
+        setUpdateStatus('checking'); // Show loading state immediately
+        ipcRenderer.invoke('update:check').catch(err => {
+          console.error('Error triggering update check:', err);
+          setUpdateStatus('idle');
+        });
+      } catch (error) {
+        console.error('Error checking for updates:', error);
+        setUpdateStatus('idle');
+      }
+
+      ipcRenderer.on('update:available', (event, data) => {
+        setUpdateStatus('available');
+        setNewVersion(data.version);
+        setUpdateError('');
+        setShowUpdateNotification(true); // Show notification when update is available
+        // Don't show downloading/downloaded states on main page
+      });
+
+      ipcRenderer.on('update:not-available', (event, data) => {
+        setUpdateStatus('not-available'); // Keep status to show message
+        setNewVersion(data.version);
+        setUpdateError('');
+        setShowUpdateNotification(false);
+        setShowUpToDateMessage(true); // Show "up to date" message
+        
+        // Hide message after 3 seconds
+        setTimeout(() => {
+          setShowUpToDateMessage(false);
+          setUpdateStatus('idle'); // Reset to idle after message is hidden
+        }, 3000);
+      });
+
+      ipcRenderer.on('update:error', (event, data) => {
+        setUpdateStatus('idle'); // Hide loading state on error
+        setUpdateError(data.message || 'Unknown error');
+      });
+
+      ipcRenderer.on('update:download-progress', (event, data) => {
+        // Hide notification on main page during download (user should be in Settings)
+        setShowUpdateNotification(false);
+      });
+
+      ipcRenderer.on('update:downloaded', (event, data) => {
+        // Hide notification on main page when downloaded (user should be in Settings)
+        setShowUpdateNotification(false);
+      });
+
+      // Cleanup listeners on unmount
+      return () => {
+        ipcRenderer.removeAllListeners('update:checking');
+        ipcRenderer.removeAllListeners('update:available');
+        ipcRenderer.removeAllListeners('update:not-available');
+        ipcRenderer.removeAllListeners('update:error');
+        ipcRenderer.removeAllListeners('update:download-progress');
+        ipcRenderer.removeAllListeners('update:downloaded');
+      };
+    };
+
+    setupUpdateListeners();
+  }, []);
   
   // Dark glass effect to match RGBA/Paint
   const glassPanelSx = {
@@ -173,7 +274,7 @@ const MainPage = () => {
     },
     {
       title: 'Bin Editor',
-      description: 'Primarily designed for editing parameters like birthscale directly within DivineLab.',
+      description: 'Primarily designed for editing parameters like birthscale directly within Quartz.',
       icon: <BinEditorIcon />,
       path: '/bineditor',
       featured: true,
@@ -196,7 +297,7 @@ const MainPage = () => {
 
   const guideSteps = [
     {
-      title: 'Welcome to DivineLab',
+      title: 'Welcome to Quartz',
       text: 'Visit our Main Page to explore custom skins.',
       targetSelector: '[data-tour="hero-cta-website"]',
       padding: 14,
@@ -246,6 +347,11 @@ const MainPage = () => {
       scrollingElement.scrollTo({ left: 0, top: 0, behavior: 'auto' });
     } catch {}
     setShowGuide(true);
+  };
+
+  // Update handlers
+  const handleDismissUpdate = () => {
+    setShowUpdateNotification(false);
   };
 
   return (
@@ -308,6 +414,223 @@ const MainPage = () => {
         />
       ))}
 
+      {/* Update Notification Banner - Centered (loading state) */}
+      <Collapse in={updateStatus === 'checking'}>
+        <Box
+          sx={{
+            position: 'fixed',
+            top: { xs: 16, sm: 20, md: 24 },
+            left: { xs: 80, sm: 80, md: 80 }, // Account for navbar (64px) + padding
+            right: { xs: 16, sm: 20, md: 24 },
+            zIndex: 10000,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Alert
+            severity="info"
+            icon={<CircularProgress size={20} sx={{ color: 'var(--accent2)' }} />}
+            sx={{
+              background: 'var(--glass-bg)',
+              border: '1px solid var(--glass-border)',
+              backdropFilter: 'saturate(220%) blur(18px)',
+              WebkitBackdropFilter: 'saturate(220%) blur(18px)',
+              boxShadow: 'var(--glass-shadow)',
+              borderRadius: 2,
+              maxWidth: 'fit-content',
+              '& .MuiAlert-icon': {
+                color: 'var(--accent2)',
+                alignItems: 'center',
+              },
+              '& .MuiAlert-message': {
+                color: 'var(--text)',
+                display: 'flex',
+                alignItems: 'center',
+              },
+            }}
+          >
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontWeight: 500,
+                fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                color: 'var(--text)',
+              }}
+            >
+              Checking for updates...
+            </Typography>
+          </Alert>
+        </Box>
+      </Collapse>
+
+      {/* Update Notification Banner - Centered (up to date message) */}
+      <Collapse in={showUpToDateMessage}>
+        <Box
+          sx={{
+            position: 'fixed',
+            top: { xs: 16, sm: 20, md: 24 },
+            left: { xs: 80, sm: 80, md: 80 }, // Account for navbar (64px) + padding
+            right: { xs: 16, sm: 20, md: 24 },
+            zIndex: 10000,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Alert
+            severity="success"
+            icon={<CheckCircleIcon sx={{ color: 'var(--accent)' }} />}
+            sx={{
+              background: 'var(--glass-bg)',
+              border: '1px solid var(--glass-border)',
+              backdropFilter: 'saturate(220%) blur(18px)',
+              WebkitBackdropFilter: 'saturate(220%) blur(18px)',
+              boxShadow: 'var(--glass-shadow)',
+              borderRadius: 2,
+              maxWidth: 'fit-content',
+              '& .MuiAlert-icon': {
+                color: 'var(--accent)',
+                alignItems: 'center',
+              },
+              '& .MuiAlert-message': {
+                color: 'var(--text)',
+                display: 'flex',
+                alignItems: 'center',
+              },
+            }}
+          >
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontWeight: 500,
+                fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                color: 'var(--text)',
+              }}
+            >
+              Version is up to date
+            </Typography>
+          </Alert>
+        </Box>
+      </Collapse>
+
+      {/* Update Notification Banner - Fixed at top (update available) */}
+      <Collapse in={showUpdateNotification && updateStatus === 'available'}>
+        <Box
+          sx={{
+            position: 'fixed',
+            top: { xs: 12, sm: 16, md: 20 },
+            left: { xs: 80, sm: 80, md: 80 }, // Account for navbar (64px) + padding
+            right: { xs: 12, sm: 16, md: 20 },
+            zIndex: 10000,
+          }}
+        >
+          <Alert
+            severity="info"
+            icon={<UpdateIcon />}
+            action={
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, flexWrap: 'nowrap' }}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => {
+                    // Set flag in localStorage to highlight update section
+                    try {
+                      localStorage.setItem('settings:highlight-update', 'true');
+                    } catch (e) {
+                      console.error('Error setting highlight flag:', e);
+                    }
+                    navigate('/settings');
+                  }}
+                  startIcon={<SettingsIcon />}
+                  sx={{
+                    background: 'var(--accent)',
+                    color: 'var(--bg)',
+                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                    px: { xs: 1, sm: 1.5 },
+                    py: 0.5,
+                    minWidth: 'auto',
+                    whiteSpace: 'nowrap',
+                    '&:hover': {
+                      background: 'color-mix(in srgb, var(--accent) 90%, black)',
+                    }
+                  }}
+                >
+                  Go to Settings
+                </Button>
+                <IconButton
+                  aria-label="close"
+                  color="inherit"
+                  size="small"
+                  onClick={handleDismissUpdate}
+                  sx={{ 
+                    color: 'inherit',
+                    flexShrink: 0,
+                    ml: 0.5,
+                  }}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            }
+            sx={{
+              background: 'var(--glass-bg)',
+              border: '1px solid var(--glass-border)',
+              backdropFilter: 'saturate(220%) blur(18px)',
+              WebkitBackdropFilter: 'saturate(220%) blur(18px)',
+              boxShadow: 'var(--glass-shadow)',
+              borderRadius: 2,
+              '& .MuiAlert-icon': {
+                color: 'var(--accent2)',
+                alignItems: 'flex-start',
+                mt: 0.5,
+              },
+              '& .MuiAlert-message': {
+                color: 'var(--text)',
+                flex: 1,
+                overflow: 'hidden',
+                pr: 1,
+              },
+              '& .MuiAlert-action': {
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingTop: 0.5,
+                flexShrink: 0,
+              }
+            }}
+          >
+            <Box sx={{ overflow: 'hidden' }}>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontWeight: 600, 
+                  mb: 0.5,
+                  fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                  color: 'var(--text)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                Update Available: Quartz {newVersion}
+              </Typography>
+              <Typography 
+                variant="caption" 
+                sx={{ 
+                  opacity: 0.8,
+                  fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                  color: 'var(--text)',
+                  display: 'block',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                A new version is available. Go to Settings to download and install.
+              </Typography>
+            </Box>
+          </Alert>
+        </Box>
+      </Collapse>
+
       <Container 
         key={renderKey}
         maxWidth="lg" 
@@ -319,6 +642,7 @@ const MainPage = () => {
           flexDirection: 'column',
           py: { xs: 1.5, sm: 2, md: 3 },
           px: { xs: 1.5, sm: 2, md: 3 },
+          pt: { xs: 1.5, sm: 2, md: 3 }, // Fixed padding - notification is fixed overlay, doesn't push content
         }}
       >
         <Box sx={{ ...glassPanelSx, display: 'flex', flexDirection: 'column', flex: 1 }}>
@@ -350,7 +674,7 @@ const MainPage = () => {
                },
              }}
            >
-                           DivineLab
+                           Quartz
            </Typography>
 
           {/* Golden Underline */}

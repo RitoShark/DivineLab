@@ -115,9 +115,34 @@ const Bumpath = () => {
   useEffect(() => {
     const loadSettings = async () => {
       await electronPrefs.initPromise;
-      setHashesPath(electronPrefs.obj.BumpathHashesPath || '');
-      setIgnoreMissing(electronPrefs.obj.BumpathIgnoreMissing || false);
-      setCombineLinked(electronPrefs.obj.BumpathCombineLinked || false);
+      // Always use integrated hash directory
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        const hashDirResult = await ipcRenderer.invoke('hashes:get-directory');
+        setHashesPath(hashDirResult.hashDir || '');
+      } else {
+        // Fallback for development - show placeholder
+        // Old BumpathHashesPath is deprecated, using integrated location
+        setHashesPath('AppData\\Roaming\\FrogTools\\hashes (Integrated)');
+      }
+      // Check if this is the first time (preferences not set)
+      const isFirstTime = electronPrefs.obj.BumpathIgnoreMissing === undefined && 
+                         electronPrefs.obj.BumpathCombineLinked === undefined;
+      
+      if (isFirstTime) {
+        // First time: set both to true by default
+        const defaultIgnoreMissing = true;
+        const defaultCombineLinked = true;
+        setIgnoreMissing(defaultIgnoreMissing);
+        setCombineLinked(defaultCombineLinked);
+        // Save the defaults
+        await electronPrefs.set('BumpathIgnoreMissing', defaultIgnoreMissing);
+        await electronPrefs.set('BumpathCombineLinked', defaultCombineLinked);
+      } else {
+        // Not first time: use saved values or default to false
+        setIgnoreMissing(electronPrefs.obj.BumpathIgnoreMissing || false);
+        setCombineLinked(electronPrefs.obj.BumpathCombineLinked || false);
+      }
     };
     loadSettings();
   }, []);
@@ -236,18 +261,7 @@ const Bumpath = () => {
     }
   }, [sourceDirs]);
 
-  // Handle hashes directory selection
-  const handleSelectHashesDir = useCallback(async () => {
-    try {
-      const result = await electronPrefs.selectDirectory();
-      if (result) {
-        setHashesPath(result);
-        await saveSettings('BumpathHashesPath', result);
-      }
-    } catch (error) {
-      setError('Failed to select hashes directory: ' + error.message);
-    }
-  }, []);
+  // Hash directory is now automatically managed (integrated system)
 
   // Remove source directory
   const handleRemoveSourceDir = useCallback((index) => {
@@ -1705,27 +1719,26 @@ const Bumpath = () => {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField
               fullWidth
-              label="Hash Folder"
+              label="Hash Directory (Automatic)"
               value={hashesPath}
-              placeholder="Select hash folder containing hash files"
+              placeholder="Loading..."
               InputProps={{
                 readOnly: true,
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton onClick={handleSelectHashesDir} edge="end">
-                      <FolderIcon />
-                    </IconButton>
-                  </InputAdornment>
-                ),
               }}
+              helperText="Hash files are automatically managed. Use Settings page to download/update hash files."
               sx={{
-                '& .MuiOutlinedInput-root': { color: 'var(--accent)' },
+                '& .MuiOutlinedInput-root': { 
+                  color: 'var(--accent)',
+                  backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                },
                 '& .MuiInputLabel-root': { color: 'var(--accent2)' },
                 '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--accent2)' },
+                '& .MuiFormHelperText-root': { color: 'var(--accent-muted)', fontSize: '0.75rem' },
               }}
             />
             <Typography variant="body2" sx={{ color: 'var(--accent2)', fontSize: '0.8rem' }}>
-              The hash folder should contain the hash files required for BIN file analysis.
+              Hash files are downloaded automatically from CommunityDragon. 
+              Go to Settings → Hash Files section to download or update hash files.
             </Typography>
           </Box>
         </DialogContent>

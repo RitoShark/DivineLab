@@ -1,8 +1,8 @@
 {
-  "name": "divinelab",
-  "productName": "DivineLab",
-  "version": "1.0.0",
-  "description": "DivineLab - League of Legends Modding Suite",
+  "name": "quartz",
+  "productName": "Quartz",
+  "version": "1.1.6",
+  "description": "Quartz - League of Legends Modding Suite",
   "homepage": "./",
   "main": "electron-main.js",
   "repository": {
@@ -10,12 +10,13 @@
     "url": "https://github.com/RitoShark/DivineLab"
   },
   "build": {
-    "appId": "com.github.ritoshark.divinelab",
+    "appId": "com.github.ritoshark.quartz",
     "files": [
       "build/**/*",
       "electron-main.js",
       "package.json",
-      "javascript/utils.js"
+      "javascript/utils.js",
+      "src/utils/hashManager.js"
     ],
     "extraMetadata": {
       "main": "electron-main.js"
@@ -27,7 +28,7 @@
       "icon": "./public/divinelab.ico"
     },
     "nsis": {
-      "artifactName": "divinelab-${version}-setup.${ext}",
+      "artifactName": "quartz-${version}-setup.${ext}",
       "oneClick": false,
       "perMachine": false,
       "runAfterFinish": false,
@@ -66,13 +67,26 @@
       {
         "from": "dist/bumpath_backend.exe",
         "to": "bumpath_backend.exe"
+      },
+      {
+        "from": "tools/ritobin_cli.exe",
+        "to": "ritobin_cli.exe"
+      },
+      {
+        "from": "public/your-logo.gif",
+        "to": "assets/navbar.gif"
+      },
+      {
+        "from": "public/celestia.webp",
+        "to": "assets/celestia.webp"
       }
     ],
     "publish": [
       {
         "provider": "github",
         "owner": "RitoShark",
-        "repo": "DivineLab"
+        "repo": "Quartz",
+        "releaseType": "release"
       }
     ]
   },
@@ -88,7 +102,9 @@
     "release:win": "npm run build && electron-builder --win --publish never",
     "build:backend": "python build_backend.py",
     "build:all": "npm run build:backend && npm run build && npm run electron-build",
-    "dist": "npm run build:backend && npm run build && electron-builder --win --publish never"
+    "dist": "npm run build:backend && npm run build && electron-builder --win --publish never",
+    "dist:no-backend": "npm run build && electron-builder --win --publish never",
+    "dev:test-updates": "cross-env ENABLE_AUTO_UPDATER=true concurrently \"react-scripts start\" \"wait-on http://localhost:3000 && electron .\""
   },
   "keywords": [
     "league-of-legends",
@@ -118,7 +134,8 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.1",
     "react-scripts": "5.0.1",
-    "ts-ritofile": "^1.4.0"
+    "ts-ritofile": "^1.4.0",
+    "electron-updater": "^6.1.7"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

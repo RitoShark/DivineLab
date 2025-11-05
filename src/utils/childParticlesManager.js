@@ -520,7 +520,7 @@ export function extractChildParticleEmitters(pyContent, systemKey) {
 }
 
 /**
- * Check if an emitter is a DivineLab-created child particle
+ * Check if an emitter is a Quartz-created child particle
  * @param {string} emitterName - The emitter name to check
  * @returns {boolean} - True if emitter ends with "_cbdl"
  */
@@ -529,7 +529,7 @@ export function isDivineLabChildParticle(emitterName) {
 }
 
 /**
- * Extract child particle data from a DivineLab-created emitter
+ * Extract child particle data from a Quartz-created emitter
  * @param {string} pyContent - The Python file content
  * @param {string} systemKey - The VFX system key
  * @param {string} emitterName - The emitter name (with _cbdl suffix)
@@ -680,7 +680,7 @@ export function extractChildParticleData(pyContent, systemKey, emitterName) {
 }
 
 /**
- * Update an existing DivineLab-created child particle emitter
+ * Update an existing Quartz-created child particle emitter
  * @param {string} pyContent - The Python file content
  * @param {string} systemKey - The VFX system key
  * @param {string} emitterName - The emitter name (with _cbdl suffix)

@@ -15,6 +15,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sys
 import io
+from pathlib import Path
 
 # Import pyRitoFile from resources directory
 try:
@@ -164,6 +165,38 @@ except ImportError:
 
 app = Flask(__name__)
 CORS(app)
+
+# Helper function to get integrated hash directory (AppData/Roaming/FrogTools/hashes)
+def get_integrated_hash_directory():
+    """Get the integrated hash directory path (AppData/Roaming/FrogTools/hashes)
+    Creates the full directory structure: FrogTools/hashes/
+    """
+    if sys.platform == 'win32':
+        appdata = os.getenv('APPDATA', os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming'))
+    elif sys.platform == 'darwin':
+        appdata = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support')
+    else:  # Linux
+        appdata = os.path.join(os.path.expanduser('~'), '.local', 'share')
+    
+    # Create FrogTools directory first
+    frog_tools_dir = Path(appdata) / 'FrogTools'
+    frog_tools_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create hashes subfolder inside FrogTools
+    hash_dir = frog_tools_dir / 'hashes'
+    hash_dir.mkdir(parents=True, exist_ok=True)
+    
+    return str(hash_dir)
+
+# Helper function to get hash path (uses integrated location if not provided)
+def get_hash_path(user_provided_path):
+    """Get hash path, using integrated location if not provided"""
+    if user_provided_path and user_provided_path.strip() and os.path.exists(user_provided_path):
+        return user_provided_path
+    # Fall back to integrated location
+    integrated_path = get_integrated_hash_directory()
+    print(f"Using integrated hash directory: {integrated_path}")
+    return integrated_path
 
 # Global bumpath instance
 bumpath = None
@@ -672,12 +705,14 @@ def update_bin_selection():
 def scan():
     try:
         data = request.get_json()
-        hashes_path = data.get('hashesPath', '')
+        hashes_path = data.get('hashesPath', '') or data.get('hashPath', '')
+        
+        # Use integrated location if not provided
+        hashes_path = get_hash_path(hashes_path)
         
         print(f"Starting scan with hashes path: {hashes_path}")
         
-        if hashes_path:
-            bumpath.set_hashes_path(hashes_path)
+        bumpath.set_hashes_path(hashes_path)
         
         bumpath.scan()
         
@@ -820,7 +855,9 @@ def bumpath_repath():
         source_dir = data.get('sourceDir')
         output_dir = data.get('outputDir')
         selected_skin_ids = data.get('selectedSkinIds', [])
-        hash_path = data.get('hashPath', '')
+        hash_path = data.get('hashPath', '') or data.get('hashesPath', '')
+        # Use integrated location if not provided
+        hash_path = get_hash_path(hash_path)
         ignore_missing = data.get('ignoreMissing', True)
         combine_linked = data.get('combineLinked', True)
         custom_prefix = data.get('customPrefix', 'bum')
@@ -1121,6 +1158,8 @@ def extract_wad():
         chroma_id = data.get('chromaId')
         # accept both keys from UI/backends
         hash_path = data.get('hashesPath') or data.get('hashPath') or ''
+        # Use integrated location if not provided
+        hash_path = get_hash_path(hash_path)
         
         print(f"Extracted parameters:")
         print(f"  wad_path: {wad_path} (type: {type(wad_path)})")
@@ -1151,6 +1190,27 @@ def extract_wad():
         
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
+        
+        # Check for OneDrive and path length issues
+        if 'OneDrive' in output_dir:
+            print(f"WARNING: OneDrive path detected: {output_dir}")
+            print("OneDrive can cause sync delays and file creation issues")
+            print("Consider using a local path like C:\\Quartz\\ for better performance")
+            
+        # Check path length
+        if len(output_dir) > 200:
+            print(f"WARNING: Long output path detected ({len(output_dir)} chars): {output_dir}")
+            print("This may cause Windows path length issues")
+            print("Path breakdown:")
+            print(f"  - Base path: {output_dir[:100]}...")
+            print(f"  - Remaining: {output_dir[100:]}")
+            
+        # Log extraction environment
+        print(f"Extraction environment:")
+        print(f"  - Output directory: {output_dir}")
+        print(f"  - Path length: {len(output_dir)} characters")
+        print(f"  - OneDrive path: {'Yes' if 'OneDrive' in output_dir else 'No'}")
+        print(f"  - WAD file size: {os.path.getsize(wad_path) if os.path.exists(wad_path) else 'Unknown'} bytes")
         
         # Reset cancellation flag at start of new operation
         global cancellation_requested
@@ -1275,8 +1335,54 @@ def extract_wad():
             
             # Extract the WAD file using LtMAO's unpack function
             print(f"Starting WAD extraction from {wad_path} to {output_dir}")
-            wad_tool.unpack(wad_path, output_dir, hash_helper.Storage.hashtables)
-            print(f"WAD extraction completed successfully")
+            
+            try:
+                print(f"Starting WAD extraction with enhanced OneDrive/path handling...")
+                wad_tool.unpack(wad_path, output_dir, hash_helper.Storage.hashtables)
+                print(f"WAD extraction completed successfully")
+                
+                # Log extraction results
+                import glob
+                extracted_files = glob.glob(os.path.join(output_dir, "**", "*"), recursive=True)
+                bin_files = [f for f in extracted_files if f.endswith('.bin')]
+                print(f"Extraction results:")
+                print(f"  - Total files extracted: {len(extracted_files)}")
+                print(f"  - .bin files extracted: {len(bin_files)}")
+                if bin_files:
+                    print(f"  - Sample .bin files: {[os.path.basename(f) for f in bin_files[:5]]}")
+                
+            except Exception as e:
+                print(f"Error during WAD extraction: {e}")
+                print(f"Error type: {type(e).__name__}")
+                print(f"Error details: {str(e)}")
+                
+                # Don't fail completely - some files might have been extracted
+                # Check if any files were created
+                import glob
+                extracted_files = glob.glob(os.path.join(output_dir, "**", "*"), recursive=True)
+                bin_files = [f for f in extracted_files if f.endswith('.bin')]
+                
+                if extracted_files:
+                    print(f"Partial extraction successful:")
+                    print(f"  - Total files extracted: {len(extracted_files)}")
+                    print(f"  - .bin files extracted: {len(bin_files)}")
+                    print(f"  - Extraction directory: {output_dir}")
+                    
+                    if bin_files:
+                        print(f"  - Sample .bin files: {[os.path.basename(f) for f in bin_files[:5]]}")
+                        print(f"  - This should be sufficient for Port functionality")
+                    else:
+                        print(f"  - WARNING: No .bin files extracted - Port may not work properly")
+                        print(f"  - This is likely due to OneDrive sync issues or path length problems")
+                    
+                    # Continue with partial success
+                else:
+                    print(f"Complete extraction failure - no files were extracted")
+                    print(f"  - Output directory: {output_dir}")
+                    print(f"  - Directory exists: {os.path.exists(output_dir)}")
+                    print(f"  - Directory writable: {os.access(output_dir, os.W_OK) if os.path.exists(output_dir) else 'N/A'}")
+                    # Re-raise if no files were extracted at all
+                    raise e
             
             # If chroma_id is specified, we could add chroma-specific processing here
             # For now, we'll just log it

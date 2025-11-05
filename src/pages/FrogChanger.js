@@ -315,6 +315,215 @@ const FrogChanger = () => {
   const [currentSkinIndex, setCurrentSkinIndex] = useState(0);
   const [skinPrefixes, setSkinPrefixes] = useState({});
   const [applyToAll, setApplyToAll] = useState(false);
+  const [showLeaguePathTooltip, setShowLeaguePathTooltip] = useState(false);
+  const [showExtractionPathTooltip, setShowExtractionPathTooltip] = useState(false);
+
+  // Get user Desktop path (handles OneDrive)
+  const getUserDesktopPath = () => {
+    if (!window.require) return null;
+    
+    try {
+      const path = window.require('path');
+      const os = window.require('os');
+      const fs = window.require('fs');
+      
+      const homeDir = os.homedir();
+      
+      // Check standard Desktop locations
+      const desktopPaths = [
+        path.join(homeDir, 'Desktop'),
+        path.join(homeDir, 'OneDrive', 'Desktop'),
+        path.join(homeDir, 'OneDrive - Personal', 'Desktop'),
+      ];
+      
+      // Also check for OneDrive business
+      const onedriveBusiness = process.env.ONEDRIVE || '';
+      if (onedriveBusiness) {
+        desktopPaths.push(path.join(onedriveBusiness, 'Desktop'));
+      }
+      
+      // Find first existing Desktop folder
+      for (const desktopPath of desktopPaths) {
+        try {
+          if (fs.existsSync(desktopPath)) {
+            const stats = fs.statSync(desktopPath);
+            if (stats.isDirectory()) {
+              console.log('✅ Found Desktop folder:', desktopPath);
+              return desktopPath;
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
+      
+      // Fallback to standard Desktop
+      return path.join(homeDir, 'Desktop');
+    } catch (error) {
+      console.error('Error getting Desktop path:', error);
+      return null;
+    }
+  };
+
+  // Auto-detect League of Legends Champions folder
+  const detectChampionsFolder = async () => {
+    if (!window.require) {
+      console.log('⚠️ window.require not available');
+      return null;
+    }
+    
+    try {
+      const path = window.require('path');
+      const fs = window.require('fs');
+      
+      // Build list of paths to check
+      const commonPaths = [];
+      
+      // Standard paths on C drive
+      commonPaths.push(path.join('C:\\', 'Riot Games', 'League of Legends', 'Game', 'DATA', 'FINAL', 'Champions'));
+      commonPaths.push(path.join('C:\\', 'Program Files', 'Riot Games', 'League of Legends', 'Game', 'DATA', 'FINAL', 'Champions'));
+      commonPaths.push(path.join('C:\\', 'Program Files (x86)', 'Riot Games', 'League of Legends', 'Game', 'DATA', 'FINAL', 'Champions'));
+      commonPaths.push(path.join('C:\\', 'Apps', 'Riot Games', 'League of Legends', 'Game', 'DATA', 'FINAL', 'Champions'));
+      
+      // Check other drives for custom installations
+      const drives = ['C:', 'D:', 'E:', 'F:', 'G:', 'H:'];
+      for (const drive of drives) {
+        commonPaths.push(path.join(drive, 'Riot Games', 'League of Legends', 'Game', 'DATA', 'FINAL', 'Champions'));
+        commonPaths.push(path.join(drive, 'Apps', 'Riot Games', 'League of Legends', 'Game', 'DATA', 'FINAL', 'Champions'));
+      }
+      
+      // Also check alternative structure (some installs might be different)
+      for (const drive of drives) {
+        commonPaths.push(path.join(drive, 'Riot Games', 'League of Legends', 'Game', 'Champions'));
+        commonPaths.push(path.join(drive, 'Riot Games', 'League of Legends', 'DATA', 'FINAL', 'Champions'));
+        commonPaths.push(path.join(drive, 'Apps', 'Riot Games', 'League of Legends', 'Game', 'Champions'));
+        commonPaths.push(path.join(drive, 'Apps', 'Riot Games', 'League of Legends', 'DATA', 'FINAL', 'Champions'));
+      }
+      
+      console.log('🔍 Checking', commonPaths.length, 'possible paths for Champions folder...');
+      
+      // Check each path
+      for (const testPath of commonPaths) {
+        try {
+          if (fs.existsSync(testPath)) {
+            console.log('✅ Found path exists:', testPath);
+            // Verify it's actually a champions folder (check for at least one champion folder)
+            const files = fs.readdirSync(testPath);
+            console.log('📁 Contents of Champions folder:', files.slice(0, 10));
+            
+            const hasChampionFolders = files.some(file => {
+              try {
+                const fullPath = path.join(testPath, file);
+                const stats = fs.statSync(fullPath);
+                const isDir = stats.isDirectory();
+                if (isDir) {
+                  console.log('   ✓ Found directory:', file);
+                }
+                return isDir;
+              } catch (error) {
+                console.log('   ✗ Error checking:', file, error.message);
+                return false;
+              }
+            });
+            
+            if (hasChampionFolders) {
+              console.log('✅ Auto-detected Champions folder:', testPath);
+              const dirs = files.filter(f => {
+                try {
+                  return fs.statSync(path.join(testPath, f)).isDirectory();
+                } catch {
+                  return false;
+                }
+              });
+              console.log('📁 Found champion folders:', dirs.slice(0, 5));
+              return testPath;
+            } else {
+              console.log('⚠️ Path exists but no champion folders found. Total items:', files.length);
+              if (files.length > 0) {
+                console.log('   First few items:', files.slice(0, 5));
+                // Check if items are files with .wad or .bin extensions
+                const hasGameFiles = files.some(f => {
+                  const ext = path.extname(f).toLowerCase();
+                  return ext === '.wad' || ext === '.bin' || ext === '.tex';
+                });
+                if (hasGameFiles) {
+                  console.log('   ℹ️ Found game files (WAD/BIN/TEX) - accepting this as Champions folder');
+                  return testPath;
+                }
+              }
+              
+              // If the path is the correct Champions path structure and exists, accept it anyway
+              // (might be empty or have different structure)
+              if (testPath.toLowerCase().includes('champions') && 
+                  testPath.toLowerCase().includes('league of legends')) {
+                console.log('✅ Path matches Champions folder structure, accepting:', testPath);
+                return testPath;
+              }
+            }
+          }
+        } catch (error) {
+          // Path doesn't exist or can't access, continue checking
+          continue;
+        }
+      }
+      
+      // If direct path doesn't work, try searching from League root
+      console.log('🔍 Trying to find League installation root...');
+      for (const drive of drives) {
+        const leagueRoots = [
+          path.join(drive, 'Riot Games', 'League of Legends'),
+          path.join(drive, 'Program Files', 'Riot Games', 'League of Legends'),
+          path.join(drive, 'Program Files (x86)', 'Riot Games', 'League of Legends'),
+          path.join(drive, 'Apps', 'Riot Games', 'League of Legends'),
+        ];
+        
+        for (const root of leagueRoots) {
+          try {
+            if (fs.existsSync(root)) {
+              console.log('✅ Found League root:', root);
+              // Try different possible Champions paths from root
+              const possibleChampionsPaths = [
+                path.join(root, 'Game', 'DATA', 'FINAL', 'Champions'),
+                path.join(root, 'Game', 'Champions'),
+                path.join(root, 'DATA', 'FINAL', 'Champions'),
+                path.join(root, 'Champions'),
+              ];
+              
+              for (const championsPath of possibleChampionsPaths) {
+                try {
+                  if (fs.existsSync(championsPath)) {
+                    const files = fs.readdirSync(championsPath);
+                    const hasChampionFolders = files.some(file => {
+                      try {
+                        return fs.statSync(path.join(championsPath, file)).isDirectory();
+                      } catch {
+                        return false;
+                      }
+                    });
+                    
+                    if (hasChampionFolders) {
+                      console.log('✅ Auto-detected Champions folder:', championsPath);
+                      return championsPath;
+                    }
+                  }
+                } catch {
+                  continue;
+                }
+              }
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+      
+      console.log('⚠️ Could not auto-detect Champions folder after checking all paths');
+      return null;
+    } catch (error) {
+      console.error('❌ Error detecting Champions folder:', error);
+      return null;
+    }
+  };
 
   // Load champions and settings on component mount
   useEffect(() => {
@@ -333,12 +542,49 @@ const FrogChanger = () => {
   const loadSettings = async () => {
     try {
       await electronPrefs.initPromise;
-      setHashPath(electronPrefs.obj.BumpathHashesPath || '');
-      setLeaguePath(electronPrefs.obj.FrogChangerLeaguePath || '');
-      setExtractionPath(electronPrefs.obj.FrogChangerExtractionPath || '');
+      // Always use integrated hash directory
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        const hashDirResult = await ipcRenderer.invoke('hashes:get-directory');
+        setHashPath(hashDirResult.hashDir || '');
+      } else {
+        // Fallback for development - show placeholder
+        // Old BumpathHashesPath is deprecated, using integrated location
+        setHashPath('AppData\\Roaming\\FrogTools\\hashes (Integrated)');
+      }
+      // Load saved league path, or try to auto-detect
+      let savedPath = electronPrefs.obj.FrogChangerLeaguePath || '';
+      if (!savedPath && window.require) {
+        // Auto-detect if no saved path
+        const detectedPath = await detectChampionsFolder();
+        if (detectedPath) {
+          savedPath = detectedPath;
+          setLeaguePath(detectedPath);
+          electronPrefs.obj.FrogChangerLeaguePath = detectedPath;
+          await electronPrefs.save();
+          console.log('💾 Auto-detected and saved Champions folder path');
+        }
+      } else {
+        setLeaguePath(savedPath);
+      }
+      
+      // Auto-set extraction path to Desktop if not set
+      let savedExtractionPath = electronPrefs.obj.FrogChangerExtractionPath || '';
+      if (!savedExtractionPath && window.require) {
+        const desktopPath = getUserDesktopPath();
+        if (desktopPath) {
+          savedExtractionPath = desktopPath;
+          setExtractionPath(desktopPath);
+          electronPrefs.obj.FrogChangerExtractionPath = desktopPath;
+          await electronPrefs.save();
+          console.log('💾 Auto-set extraction path to Desktop:', desktopPath);
+        }
+      } else {
+        setExtractionPath(savedExtractionPath);
+      }
       setExtractVoiceover(electronPrefs.obj.FrogChangerExtractVoiceover !== undefined ? electronPrefs.obj.FrogChangerExtractVoiceover : false);
       console.log('Loaded settings:', {
-        hashPath: electronPrefs.obj.BumpathHashesPath,
+        hashPath: hashPath,
         leaguePath: electronPrefs.obj.FrogChangerLeaguePath,
         extractionPath: electronPrefs.obj.FrogChangerExtractionPath,
         extractVoiceover: electronPrefs.obj.FrogChangerExtractVoiceover
@@ -1280,7 +1526,7 @@ const FrogChanger = () => {
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
-          <p className="text-green-400">Loading FrogChanger...</p>
+                  <p className="text-green-400">Loading Asset Extractor...</p>
         </div>
       </div>
     );
@@ -1305,13 +1551,21 @@ const FrogChanger = () => {
   }
 
   return (
-    <div className="h-screen bg-black text-white relative overflow-hidden">
+    <div className="frogchanger-wrapper h-screen bg-black text-white relative overflow-hidden">
       {/* Header */}
       <header className="border-b border-gray-800 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-green-400 to-green-600 rounded-lg flex items-center justify-center">
-              <span className="text-black font-bold text-sm">🐸</span>
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ 
+              background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%)',
+              color: 'var(--text)'
+            }}>
+              <CollectionsBookmarkIcon sx={{ 
+                fontSize: '2rem', 
+                color: 'var(--text)',
+                filter: 'drop-shadow(0 0.5px 1px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.5))',
+                textShadow: '0 1px 2px rgba(0, 0, 0, 0.8), 0 0 1px rgba(0, 0, 0, 0.5)'
+              }} />
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">
@@ -1322,9 +1576,9 @@ const FrogChanger = () => {
           </div>
           <div className="flex items-center gap-2">
             {/* Console Display */}
-            <div className="flex-1 max-w-md">
-              <div className="bg-gray-900 border border-gray-700 rounded-lg p-2 h-8 overflow-hidden">
-                <div className="text-xs text-gray-300 font-mono">
+            <div className="flex-1 min-w-0 mr-4">
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-2 h-8 overflow-x-auto overflow-y-hidden">
+                <div className="text-xs text-gray-300 font-mono whitespace-nowrap">
                   {consoleLogs.length > 0 ? (
                     <div className="animate-pulse">
                       {consoleLogs[consoleLogs.length - 1]?.message || 'Ready...'}
@@ -1879,7 +2133,11 @@ const FrogChanger = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300"
-            onClick={() => setShowSettings(false)}
+            onClick={() => {
+              setShowSettings(false);
+              setShowLeaguePathTooltip(false);
+              setShowExtractionPathTooltip(false);
+            }}
           />
           <div className="relative bg-gray-900 border border-green-400/30 rounded-lg p-4 max-w-lg w-full mx-4 animate-in zoom-in-95 duration-300 shadow-xl">
             <div className="flex items-center justify-between mb-4">
@@ -1890,7 +2148,11 @@ const FrogChanger = () => {
                 <h2 className="text-lg font-bold text-white">Settings</h2>
               </div>
               <button
-                onClick={() => setShowSettings(false)}
+                onClick={() => {
+                  setShowSettings(false);
+                  setShowLeaguePathTooltip(false);
+                  setShowExtractionPathTooltip(false);
+                }}
                 className="w-6 h-6 rounded-full bg-gray-800 hover:bg-red-600 text-gray-400 hover:text-white transition-all duration-200 flex items-center justify-center text-sm"
               >
                 ×
@@ -1901,35 +2163,70 @@ const FrogChanger = () => {
               <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
                 <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
                   📁 League Champions Path
-                  <div className="relative group">
-                    <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
-                      Select the Champions folder inside your League of Legends directory<br/>
-                      Example: C:\Riot Games\League of Legends\Game\DATA\FINAL\Champions
-                    </div>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowLeaguePathTooltip(!showLeaguePathTooltip)}
+                      className="text-blue-400 cursor-help text-xs hover:text-blue-300 transition-colors"
+                      title="Click for info"
+                    >
+                      ℹ️
+                    </button>
+                    {showLeaguePathTooltip && (
+                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg z-10 border border-gray-600 shadow-lg max-w-xs">
+                        Select the Champions folder inside your League of Legends directory<br/>
+                        Example: C:\Riot Games\League of Legends\Game\DATA\FINAL\Champions
+                      </div>
+                    )}
                   </div>
                 </h3>
-                <div className="flex gap-2">
-                  <button 
-                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
-                    onClick={async () => {
-                      try {
-                        const result = await electronPrefs.selectDirectory();
-                        if (result) {
-                          setLeaguePath(result);
-                          electronPrefs.obj.FrogChangerLeaguePath = result;
-                          await electronPrefs.save();
-                          console.log('Saved league path:', result);
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <button 
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm flex items-center gap-1"
+                      onClick={async () => {
+                        try {
+                          const detectedPath = await detectChampionsFolder();
+                          if (detectedPath) {
+                            setLeaguePath(detectedPath);
+                            electronPrefs.obj.FrogChangerLeaguePath = detectedPath;
+                            await electronPrefs.save();
+                            console.log('Auto-detected and saved league path:', detectedPath);
+                            addConsoleLog(`Auto-detected Champions folder: ${detectedPath}`, 'success');
+                          } else {
+                            alert('Could not automatically detect the Champions folder. Please browse manually.');
+                          }
+                        } catch (error) {
+                          console.error('Error auto-detecting directory:', error);
+                          alert('Error auto-detecting directory. Please try browsing manually.');
                         }
-                      } catch (error) {
-                        console.error('Error selecting directory:', error);
-                        alert('Error selecting directory. Please try again.');
-                      }
-                    }}
-                  >
-                    📁 Browse
-                  </button>
-                  <div className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-xs text-gray-300 flex items-center truncate">
+                      }}
+                      title="Automatically detect League of Legends Champions folder"
+                    >
+                      🔍 Auto-Detect
+                    </button>
+                    <button 
+                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
+                      onClick={async () => {
+                        try {
+                          // Always show directory picker to allow selection/change
+                          const result = await electronPrefs.selectDirectory();
+                          if (result) {
+                            setLeaguePath(result);
+                            electronPrefs.obj.FrogChangerLeaguePath = result;
+                            await electronPrefs.save();
+                            console.log('Saved league path:', result);
+                          }
+                        } catch (error) {
+                          console.error('Error selecting directory:', error);
+                          alert('Error selecting directory. Please try again.');
+                        }
+                      }}
+                      title="Browse for Champions folder"
+                    >
+                      📁 Browse
+                    </button>
+                  </div>
+                  <div className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-xs text-gray-300 flex items-center truncate">
                     {leaguePath || 'No path selected'}
                   </div>
                 </div>
@@ -1938,12 +2235,20 @@ const FrogChanger = () => {
               <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
                 <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
                   📁 WAD Output Path
-                  <div className="relative group">
-                    <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
-                      Select where extracted WAD files should be saved<br/>
-                      Example: C:\Users\YourName\Desktop\ExtractedWADs
-                    </div>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowExtractionPathTooltip(!showExtractionPathTooltip)}
+                      className="text-blue-400 cursor-help text-xs hover:text-blue-300 transition-colors"
+                      title="Click for info"
+                    >
+                      ℹ️
+                    </button>
+                    {showExtractionPathTooltip && (
+                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg z-10 border border-gray-600 shadow-lg max-w-xs">
+                        Select where extracted WAD files should be saved<br/>
+                        Example: C:\Users\YourName\Desktop\ExtractedWADs
+                      </div>
+                    )}
                   </div>
                 </h3>
                 <div className="flex gap-2">
@@ -1951,6 +2256,7 @@ const FrogChanger = () => {
                     className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
                     onClick={async () => {
                       try {
+                        // Always show directory picker to allow selection/change
                         const result = await electronPrefs.selectDirectory();
                         if (result) {
                           setExtractionPath(result);
@@ -1963,6 +2269,7 @@ const FrogChanger = () => {
                         alert('Error selecting directory. Please try again.');
                       }
                     }}
+                    title="Browse for output folder"
                   >
                     📁 Browse
                   </button>
@@ -1974,28 +2281,22 @@ const FrogChanger = () => {
 
               <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
                 <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
-                  🔑 Hash Tables Path
+                  🔑 Hash Tables Path (Automatic)
                   <div className="relative group">
                     <span className="text-blue-400 cursor-help text-xs">ℹ️</span>
                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
-                      Configure hash tables in Bumpath settings for proper file processing
+                      Hash files are automatically managed. Use Settings page to download/update hash files.
                     </div>
                   </div>
                 </h3>
                 <div className="flex gap-2">
-                  <button 
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm flex items-center gap-1"
-                    onClick={() => {
-                      window.location.hash = '#/bumpath';
-                      setShowSettings(false);
-                    }}
-                  >
-                    ⚙️ Configure
-                  </button>
                   <div className="flex-1 bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-xs text-gray-300 flex items-center truncate">
-                    {hashPath || 'No hash path configured'}
+                    {hashPath || 'Loading...'}
                   </div>
                 </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Hash files are automatically downloaded from CommunityDragon. Go to Settings → Hash Files to download or update.
+                </p>
               </div>
 
               <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">

@@ -9,11 +9,25 @@ def unpack(wad_file, raw_dir, hashtables, filter=None):
     wad = pyRitoFile.wad.WAD().read(wad_file)
     wad.un_hash(hashtables)
     hashed_files = {}
-    # create dirs first
+    # create dirs first with OneDrive handling
     with pyRitoFile.stream.BytesStream.reader(wad_file) as bs:
         for chunk in wad.chunks:
             file_path = lepath.join(raw_dir, chunk.hash)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            dir_path = os.path.dirname(file_path)
+            
+            # OneDrive-aware directory creation (optimized)
+            try:
+                os.makedirs(dir_path, exist_ok=True)
+                # Only apply OneDrive delay for critical .bin files
+                if 'OneDrive' in dir_path and chunk.hash.endswith('.bin'):
+                    import time
+                    time.sleep(0.01)  # Minimal delay only for .bin files
+                    print(f"wad_tool: OneDrive sync delay applied for: {os.path.basename(dir_path)}")
+            except (OSError, PermissionError) as e:
+                print(f"wad_tool: Warning: Failed to create directory {dir_path}: {e}")
+                print(f"wad_tool: Directory path length: {len(dir_path)} chars")
+                print(f"wad_tool: OneDrive path: {'Yes' if 'OneDrive' in dir_path else 'No'}")
+                # Continue anyway - the file creation will handle it
     # actual extract
     with pyRitoFile.stream.BytesStream.reader(wad_file) as bs:
         for chunk in wad.chunks:
@@ -44,8 +58,48 @@ def unpack(wad_file, raw_dir, hashtables, filter=None):
                 hashed_files[basename] = chunk.hash
                 file_path = hashed_file
             # write out chunk data to file
-            with open(file_path, 'wb') as fo:
-                fo.write(chunk.data)
+            try:
+                # Ensure directory exists (OneDrive sync issue fix)
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                
+                # Wait for OneDrive sync if path contains OneDrive (optimized)
+                if 'OneDrive' in file_path and file_path.endswith('.bin'):
+                    import time
+                    time.sleep(0.01)  # Minimal delay only for critical .bin files
+                    print(f"wad_tool: OneDrive sync delay applied for: {os.path.basename(file_path)}")
+                # Skip delay for all other files to maintain speed
+                
+                with open(file_path, 'wb') as fo:
+                    fo.write(chunk.data)
+                    
+            except (FileNotFoundError, OSError) as e:
+                # Handle path length issues and OneDrive sync problems
+                print(f"wad_tool: Warning: Failed to write {file_path}: {e}")
+                print(f"wad_tool: Path length: {len(file_path)} chars, OneDrive: {'Yes' if 'OneDrive' in file_path else 'No'}")
+                
+                # Try with shorter path by using hash
+                if len(file_path) > 200:  # Windows path limit safety
+                    print(f"wad_tool: Attempting fallback with shorter path...")
+                    basename = pyRitoFile.wad.WADHasher.raw_to_hex(chunk.hash)
+                    if chunk.extension != None:
+                        basename += f'.{chunk.extension}'
+                    short_file_path = lepath.join(raw_dir, basename)
+                    
+                    print(f"wad_tool: Fallback path: {short_file_path} (length: {len(short_file_path)} chars)")
+                    
+                    try:
+                        os.makedirs(os.path.dirname(short_file_path), exist_ok=True)
+                        with open(short_file_path, 'wb') as fo:
+                            fo.write(chunk.data)
+                        print(f'wad_tool: Fallback: Unpack: {basename} (original: {chunk.hash})')
+                    except Exception as e2:
+                        print(f"wad_tool: Error: Failed to write even with short path {short_file_path}: {e2}")
+                        print(f"wad_tool: This may indicate OneDrive sync issues or permission problems")
+                        continue
+                else:
+                    print(f"wad_tool: Error: Failed to write {file_path}: {e}")
+                    print(f"wad_tool: This may be due to OneDrive sync delays or permission issues")
+                    continue
             chunk.free_data()
             print(f'wad_tool: Finish: Unpack: {chunk.hash}')
     # remove empty dirs

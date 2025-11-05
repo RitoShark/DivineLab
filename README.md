@@ -1,112 +1,145 @@
-# DivineLab
+# Quartz - League of Legends Modding Suite
 
-A comprehensive toolkit for League of Legends modding and visual effects editing.
+A comprehensive toolkit for League of Legends modding and visual effects editing, built with Electron and React.
 
 ## ⚠️ IMPORTANT SETUP REQUIRED ⚠️
 
 **Before using any features, you MUST configure the following in Settings:**
 
-1. **Hashes Folder**: Set your League of Legends hashes directory
-2. **Ritobin Folder**: Set your ritobin directory
+1. **Hash Files**: Hash files are automatically downloaded and managed. If missing, a reminder will appear on first launch to download them automatically.
+2. **Ritobin CLI**: The ritobin executable is automatically bundled and configured. You can set a custom path in Settings if needed.
 
-**These settings are required for most DivineLab features to function properly!**
+**These settings are required for most Quartz features to function properly!**
 
-## Credits
+## 🔗 Key Dependencies & Credits
 
-**Special thanks to the original developers of some Tools it uses:**
+- **[LtMAO](https://github.com/tarngaina/LtMAO)** - For foundational modding tools and inspiration
+- **Special thanks to [tarngaina](https://github.com/tarngaina)** for letting me use his tools
+- **[Upscayl](https://github.com/upscayl)** - Free and open source AI Image Upscaler for Linux, MacOS and Windows
+- **[Upscayl NCNN](https://github.com/upscayl/upscayl-ncnn)** - The Upscayl backend powered by the NCNN framework and Real-ESRGAN architecture
 
-- **[tarngaina](https://github.com/tarngaina/LtMAO)** - Creator of [LtMAO](https://github.com/tarngaina/LtMAO), the foundational toolpack for League modding that inspired and contributed to this project
-- **[Upscayl](https://upscayl.github.io/)** - Open-source AI image upscaling tool that powers our upscale feature
-
-## Main Features
+## 🚀 Main Features
 
 ### Settings
-- **Own Theme Creator**: Create and customize your own themes
-- **Font Manager**: Manage fonts for the application
-- **Page Visibility**: Control which pages are visible
+- **Theme Creator**: Create and customize your own themes with full control over colors, fonts, and styling
+  - **Custom Color Picker**: Same advanced color picker used in RGBA and Paint pages
+  - **Live Preview**: See theme changes in real-time
+  - **Advanced Options**: Fine-tune derived colors with sliders
+- **Font Manager**: Manage and customize fonts throughout the application
+- **Page Visibility**: Control which pages and features are visible in the interface
+- **Hash Management**: Automatic hash file download and management
+- **External Tools**: Configure ritobin CLI and manage backend services
 
-### Paint
-- **Recolor Particles**: Mainly for recoloring particle effects
-- **Shades Generator**: Create custom shades
-- **Shift Hue**: Shifts hue while keeping lightness and saturation intact
-- **Backup Button**: Located in bottom right corner
-- **Blend Mode Selection**: Select by blend modes (e.g., blendmode 1 for black coloring)
+### Paint - Advanced Particle Recoloring
+- **Recolor Particles**: Mainly focused on recoloring particle effects with precision
+- **Shades Generator**: Create custom shades and color variations
+- **Shift Hue**: Shifts hue while keeping lightness and saturation intact for consistent results
+- **Backup Button**: Located in bottom right corner for quick saves
+- **Blend Mode Selection**: Choose blend modes for specific coloring effects (e.g., blendmode 1 for black coloring)
 - **Random Gradient**: Places colors randomly with customizable color count
-- **Image Texture Preview**: Hover over image symbol for preview
+- **Image Texture Preview**: Hover over image symbol for instant texture preview
 - **Search Functionality**: Search for emitter names, vfxsystem names, and texture names
-- **Custom Palettes**: Create and save your own color palettes
+- **Custom Palettes**: Create and save your own color palettes for reuse
 
-### Port
+### Port - Advanced VFX Porting
+- **Load Target & Donor**: Load target and donor bin files for porting operations
+- **Port Emitters**: Transfer individual emitters between projects
+- **Port VFXSystems**: Drag and drop entire vfxsystems from donor to target
+- **Automatic Asset Management**: Automatically places textures into your target bin project folder
+- **Persistent Effects**: Add persistent effects via bottom right persistent button
+- **Idle Particle Setup**: Set vfxsystem as Idle particle
+- **Matrix Support**: Add matrix transformations to vfxsystems
+- **Child Emitters**: Create child emitters for child particles
+- **Advanced Filtering**: Filter by emitter name, vfxsystem name, texture name
+- **Empty VFXSystem Creation**: Create empty vfxsystems for nesting with emitters
 
-- Load target and donor bin files
-- Port emitters and whole vfxsystems via drag and drop
-- Automatic texture placement into target bin project folder
-- Add persistent effects via bottom right persistent button
-- Set vfxsystem as Idle particle
-- Add matrix to vfxsystem
-- Create child emitters for child particles
-- Filter by emitter name, vfxsystem name, texture name
-- Create empty vfxsystems for nesting with emitters
+### VfxHub - Community VFX Database
+- **Upload VFXSystems**: Upload vfxsystems to GitHub-hosted database
+- **Image Support**: Add images to vfxsystems for better organization
+- **Download Menu**: Access uploaded vfxsystems from the top download menu
+- **Community Sharing**: Share and discover vfxsystems from other users
+- **Full Port Functionality**: Includes all features from the Port section
 
-### Frogchanger
-- Extract assets by selecting champions and skin IDs
-- Automatically repaths mods or extracts filters
-- **Important**: Requires output directory defined in settings (top right corner) same as League of Legends champion folder and hashes folder
+### Asset Extractor - WAD Extraction & Repathing
+- **Champion & Skin Selection**: Extract assets by selecting champions and skin IDs
+- **Auto-Detection**: Automatically detects League of Legends Champions folder
+- **WAD Extraction**: Extract WAD files with automatic output directory management
+- **Automatic Repathing**: Automatically repaths mods or extracts filters
+- **Voiceover Support**: Optional voiceover file extraction
+- **Important**: Requires League of Legends Champions folder and WAD output directory configured in settings
 
-### VfxHub
-- Upload vfxsystems to GitHub-hosted database
-- Add images to vfxsystems
-- Download menu at the top displays uploaded vfxsystems
-- Includes all Stitch functionality
+### Bineditor - Parameter Scaling
+- **Emitter & VFXSystem Selection**: Select either emitters or vfxsystems for editing
+- **Scale Operations**: Scale birthscale and scale by desired values (e.g., 2x multiplier)
+- **Matrix Bug Fixes**: Useful when matrix transformations don't work properly
+- **Batch Processing**: Apply scaling to multiple elements at once
 
-Working but not for public
+### Frog Image - Batch Image Processing
+- **Folder Loading**: Load folders containing tex dds files
+- **Batch Recoloring**: Automatically recolor images in batch process
+- **Greyscale Detection**: Automatically detects and filters out greyscale images
+- **Smart Processing**: Optimized for League of Legends texture formats
 
-### Bineditor
-- Select emitters or vfxsystems and scale birthscale and scale by desired value (e.g., 2x)
-- Useful when matrix bugs and doesn't work properly
+### Upscale - AI-Powered Image Enhancement
+- **Upscayl Integration**: Powered by Upscayl for high-quality image upscaling
+- **Batch Processing**: Upscale multiple images at once
+- **Quality Preservation**: Maintains image quality during upscaling
 
-### Frog Image
-- Load folder with tex dds files
-- Batch recolor images automatically
+### RGBA - Color Code Generator
+- **Custom Color Picker**: Advanced color picker with HSV, RGB, and HEX inputs
+- **Color Picker**: Pick any color with alpha value support
+- **League RGB Codes**: Get League of Legends RGB color codes
+- **Alpha Support**: Full alpha channel support for transparency
 
-### Upscale
-- Upscale images powered by Upscayl
+### AniPort Simple - Animation Porting
+- **Animation Porting**: Port animations between different champions and skins
+- **Clip Data Management**: Create and manage AtomicClipData with event maps
+- **Animation File Path**: Automatic resource data structure management
+- **VFX System Integration**: Full integration with VFX systems for complete animation porting
 
-### RGBA
-- Pick a color and its alpha value to get League RGB code
+### Tools - Custom Executable Integration
+- **Drag & Drop Exes**: Add custom executables by drag and dropping them into the window
+- **Folder Processing**: Drag and drop folders onto exes for batch processing
+- **Static Mat Fix**: Store tools like staticmatfix exe for easy access
+- **Custom Workflows**: Create custom processing workflows
 
-### HUD Editor
-- **Warning**: Failed project - too complex and needs standalone program
-- Will be discontinued but is to a degree working
+### File Handler - Advanced File Management
+Two distinct modes:
 
-### Tools
-- Add custom executables by drag and drop
-- Drag and drop folders onto exes for processing
-- Store tools like staticmatfix exe for easy access
+#### Randomizer Mode
+- **Custom Emotes**: Perfect for creating custom emotes
+- **Image Selection**: Select any amount of images for randomization
+- **Target Folder**: Choose target folder for processed files
+- **Batch Randomization**: Randomizes every tex or dds with provided images
 
-### File Handler
-Two different modes:
+#### Renamer Mode
+- **Map Mod Support**: Designed for editing map mods
+- **Prefix/Suffix Management**: Add or delete custom prefixes and suffixes
+- **Riot Compatibility**: Handles Riot's texture naming conventions
+- **Batch Renaming**: Process multiple files at once
 
-**Randomizer**: 
-- Select multiple images and target folder
-- Randomizes every tex or dds with provided images
-- Great for custom emotes
+### Bumpath - Mod Repathing
+- **LtMAO Integration**: Taken from LtMAO for reliable mod repathing
+- **Path Management**: Repath your mod files efficiently
+- **Automatic Hash Management**: Uses integrated hash files for seamless operation
+- **Smart Defaults**: "Ignore Missing Files" and "Combine Linked BINs" enabled by default
+- **Compatibility**: Ensures mod compatibility across different setups
 
-**Renamer**: 
-- Add or delete prefixes/suffixes from textures
-- Mainly for map mods where Riot adds prefixes/suffixes
 
-### Bumpath
-- Repath your mod (taken from LtMAO)
+## 🔗 Links
 
-## Getting Started
+- **GitHub Repository**: [Quartz](https://github.com/RitoShark/Quartz)
+- **Issues**: Report bugs and request features
+- **Discussions**: Community discussions and support
 
-1. Set up your output directory in settings (top right corner)
-2. Ensure League of Legends champion folder and hashes folder are properly configured
-3. Start with Paint for basic recoloring or Port for advanced vfxsystem management
+## 🆕 Recent Updates
 
-## Notes
+- **Automatic Hash Management**: Hash files are now automatically downloaded and managed
+- **Asset Extractor**: Renamed from FrogChanger with improved auto-detection
+- **Custom Color Picker**: Theme editor now uses the same advanced color picker as RGBA and Paint
+- **Texture Cache**: Automatic cleanup of temporary texture files on app close
+- **Log Management**: Automatic cleanup of log files on app startup
 
-- The HUD Editor is experimental and may cause crashes
-- Some features require specific folder structures to work properly
-- Custom themes and palettes can be saved for reuse
+---
+
+**Quartz** - Empowering League of Legends modders with professional-grade tools.

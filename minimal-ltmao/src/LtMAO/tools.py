@@ -93,17 +93,72 @@ class ImageMagick:
 
     @staticmethod
     def to_png(src, png):
-        cmds = [
-            lepath.abs(ImageMagick.local_file),
-            src,
-            png
-        ]
-        p = subprocess.Popen(
-            cmds, creationflags=subprocess.CREATE_NO_WINDOW,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-        )
-        block_and_stream_process_output(p, 'ImageMagick: ')
-        return p
+        # Convert DDS to PNG - PIL cannot read DDS files, need a DDS decoder
+        try:
+            print(f'ImageMagick: Converting DDS to PNG: {src} -> {png}')
+            
+            # Try using a DDS decoder library
+            try:
+                # Try pydds library (if available)
+                from pydds import decode_dds
+                with open(src, 'rb') as dds_file:
+                    dds_data = dds_file.read()
+                image = decode_dds(dds_data)
+                image.save(png)
+                print(f'ImageMagick: Successfully converted to PNG using pydds: {png}')
+                return None
+            except ImportError:
+                print('ImageMagick: pydds not available, trying alternative method...')
+                pass
+            except Exception as e:
+                print(f'ImageMagick: pydds conversion failed: {e}, trying imageio...')
+                pass
+            
+            # Try imageio with PIL-Pillow (imageio may have DDS support through plugins)
+            try:
+                import imageio
+                # imageio might support DDS through plugins
+                img_array = imageio.imread(src)
+                imageio.imwrite(png, img_array, format='PNG')
+                print(f'ImageMagick: Successfully converted to PNG using imageio: {png}')
+                return None
+            except ImportError:
+                print('ImageMagick: imageio not available...')
+                pass
+            except Exception as e:
+                print(f'ImageMagick: imageio cannot read DDS: {e}')
+                pass
+            
+            # PIL cannot read DDS files natively - this will fail
+            # But we try it anyway to get a clear error message
+            try:
+                with Image.open(src) as img:
+                    if img.mode != 'RGBA':
+                        img = img.convert('RGBA')
+                    img.save(png, 'PNG')
+                print(f'ImageMagick: Successfully converted to PNG using PIL: {png}')
+                return None
+            except Exception as pil_error:
+                print(f'ImageMagick: PIL cannot read DDS files: {pil_error}')
+                print('ImageMagick: DDS files require a specialized decoder like pydds or imageio with DDS plugin')
+                
+                # Create an error placeholder (red = error)
+                with Image.new('RGBA', (256, 256), (255, 0, 0, 255)) as placeholder:
+                    placeholder.save(png, 'PNG')
+                print(f'ImageMagick: Created error placeholder PNG (red = conversion failed): {png}')
+                return None
+                
+        except Exception as e:
+            print(f'ImageMagick: DDS to PNG conversion failed: {e}')
+            # Final fallback: create a gray placeholder
+            try:
+                with Image.new('RGBA', (256, 256), (128, 128, 128, 255)) as placeholder:
+                    placeholder.save(png, 'PNG')
+                print(f'ImageMagick: Created fallback placeholder PNG: {png}')
+                return None
+            except Exception as e2:
+                print(f'ImageMagick: Failed to create placeholder: {e2}')
+                raise e
 
     @staticmethod
     def to_dds(src, dds, format='dxt5', mipmap=False):

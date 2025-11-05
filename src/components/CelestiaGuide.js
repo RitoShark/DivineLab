@@ -26,6 +26,63 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState(null);
   const scrollLockRef = useRef(null);
+  const [celestiaSrc, setCelestiaSrc] = useState(`${process.env.PUBLIC_URL}/celestia.webp`);
+
+  // Get celestia image source, checking AppData/FrogTools/assets first
+  useEffect(() => {
+    const getCelestiaSrc = () => {
+      if (!window.require) {
+        return `${process.env.PUBLIC_URL}/celestia.webp`;
+      }
+      
+      try {
+        const path = window.require('path');
+        const fs = window.require('fs');
+        
+        // Check app installation directory assets folder first (user can replace this file)
+        const appPath = path.dirname(process.execPath);
+        const userCelestiaPath = path.join(appPath, 'assets', 'celestia.webp');
+        
+        if (fs.existsSync(userCelestiaPath)) {
+          try {
+            const fileBuffer = fs.readFileSync(userCelestiaPath);
+            const ext = path.extname(userCelestiaPath).toLowerCase();
+            const mimeType = ext === '.webp' ? 'image/webp' : 
+                            ext === '.png' ? 'image/png' :
+                            ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/webp';
+            const base64 = fileBuffer.toString('base64');
+            setCelestiaSrc(`data:${mimeType};base64,${base64}`);
+            return;
+          } catch (error) {
+            console.error('Error reading user celestia image:', error);
+          }
+        }
+        
+        // Check resources/assets (bundled default)
+        if (process.resourcesPath) {
+          const resourcesCelestiaPath = path.join(process.resourcesPath, 'assets', 'celestia.webp');
+          if (fs.existsSync(resourcesCelestiaPath)) {
+            try {
+              const fileBuffer = fs.readFileSync(resourcesCelestiaPath);
+              const base64 = fileBuffer.toString('base64');
+              setCelestiaSrc(`data:image/webp;base64,${base64}`);
+              return;
+            } catch (error) {
+              console.error('Error reading resources celestia image:', error);
+            }
+          }
+        }
+        
+        // Fallback to default
+        setCelestiaSrc(`${process.env.PUBLIC_URL}/celestia.webp`);
+      } catch (error) {
+        console.error('Error getting celestia source:', error);
+        setCelestiaSrc(`${process.env.PUBLIC_URL}/celestia.webp`);
+      }
+    };
+    
+    getCelestiaSrc();
+  }, []);
 
   const total = steps.length;
   const current = steps[stepIndex] || {};
@@ -133,7 +190,7 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
       {/* Character */}
       <div className="relative" style={{ position: 'relative', zIndex: 9000 }}>
         <img
-          src={`${process.env.PUBLIC_URL}/celestia.webp`}
+          src={celestiaSrc || `${process.env.PUBLIC_URL}/celestia.webp`}
           alt="Celestial"
           className="w-48 h-48 object-contain drop-shadow-2xl brightness-110 contrast-110"
           onError={(e) => {

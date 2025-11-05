@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useReducer } from 'react';
 import ReactDOM from 'react-dom/client';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -14,6 +15,10 @@ import {
   Checkbox,
   Tooltip,
   IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { glassButton, glassButtonOutlined, glassPanel } from '../utils/glassStyles';
 import CropOriginalIcon from '@mui/icons-material/CropOriginal';
@@ -209,6 +214,8 @@ const Paint = () => {
   const [fileSaved, setFileSaved] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Ready - Select a .bin file to start editing');
   const [manualRitobinPath, setManualRitobinPath] = useState('');
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const pendingNavigationPathRef = useRef(null);
 
   // Python-based data structures
   const [pyContent, setPyContent] = useState('');
@@ -421,12 +428,97 @@ const Paint = () => {
     boxShadow: '0 12px 28px var(--shadow-medium)'
   };
 
-  // Reflect unsaved state globally for cross-page navigation guards
+  const navigate = useNavigate();
+
+  // Reflect unsaved state globally for navigation guard
   useEffect(() => {
     try { window.__DL_unsavedBin = !fileSaved; } catch {}
   }, [fileSaved]);
 
-  // Warn on window/tab close if unsaved
+  // Intercept navigation when unsaved changes exist
+  useEffect(() => {
+    const handleNavigationBlock = (e) => {
+      console.log('🔒 Navigation blocked event received:', e.detail);
+      
+      if (!fileSaved && !window.__DL_forceClose) {
+        // Prevent default and stop propagation
+        if (e.preventDefault) e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+        
+        const targetPath = e.detail?.path;
+        console.log('🔒 Target path:', targetPath, 'File saved:', fileSaved);
+        
+        if (targetPath) {
+          // Store navigation path in ref (not state) to avoid render issues
+          pendingNavigationPathRef.current = targetPath;
+          setShowUnsavedDialog(true);
+        }
+      }
+    };
+
+    // Listen for custom navigation-block event from ModernNavigation
+    // Use capture phase to catch event early
+    window.addEventListener('navigation-blocked', handleNavigationBlock, true);
+    return () => {
+      window.removeEventListener('navigation-blocked', handleNavigationBlock, true);
+    };
+  }, [fileSaved, navigate]);
+
+  // Handle unsaved dialog actions
+  const handleUnsavedSave = async () => {
+    const targetPath = pendingNavigationPathRef.current;
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+    
+    try {
+      await handleSave();
+      // After save, allow navigation
+      window.__DL_forceClose = true;
+      window.__DL_unsavedBin = false;
+      
+      if (targetPath) {
+        // Execute navigation after state updates
+        setTimeout(() => {
+          console.log('🚀 Executing navigation to:', targetPath);
+          navigate(targetPath);
+          setTimeout(() => {
+            window.__DL_forceClose = false;
+          }, 100);
+        }, 50);
+      }
+    } catch (error) {
+      console.error('Error saving before navigation:', error);
+    }
+  };
+
+  const handleUnsavedDiscard = () => {
+    const targetPath = pendingNavigationPathRef.current;
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+    
+    // Clear the unsaved flag to allow navigation
+    setFileSaved(true);
+    window.__DL_forceClose = true;
+    window.__DL_unsavedBin = false;
+    
+    if (targetPath) {
+      // Execute navigation after state updates
+      setTimeout(() => {
+        console.log('🚀 Executing navigation to:', targetPath);
+        navigate(targetPath);
+        setTimeout(() => {
+          window.__DL_forceClose = false;
+        }, 100);
+      }, 50);
+    }
+  };
+
+  const handleUnsavedCancel = () => {
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+  };
+
+  // Warn on window/tab close if unsaved (native dialog for window closing)
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       try {
@@ -3274,7 +3366,6 @@ const Paint = () => {
       const newPalette = [...Palette];
 
       if (TempLength < Count) {
-        // Adding colors logging removed for cleaner console
         // Add new colors, but try to make them harmonious with existing ones
         for (let ID = 0; ID < Count - TempLength; ID++) {
           let newColor;
@@ -3292,7 +3383,6 @@ const Paint = () => {
           newPalette.push(newColor);
         }
       } else if (TempLength > Count) {
-        // Removing colors logging removed for cleaner console
         // Remove colors from the end
         for (let ID = 0; ID < TempLength - Count; ID++) {
           newPalette.pop();
@@ -3317,9 +3407,9 @@ const Paint = () => {
       }
 
       // Update the colors display with the new palette
-              setTimeout(() => {
-          MapPalette(newPalette, setColors);
-        }, 0);
+      setTimeout(() => {
+        MapPalette(newPalette, setColors);
+      }, 0);
     } catch (error) {
       console.error('Error in ChangeColorCount:', error);
     }
@@ -3653,7 +3743,8 @@ const Paint = () => {
             console.warn('Failed to set shades base from picker:', e);
           }
         }
-      }
+      },
+      setSavedPalettes
     );
   };
 
@@ -3958,9 +4049,9 @@ const Paint = () => {
   }, []);
 
   useEffect(() => {
-          if (suppressAutoPalette) return;
-      if (mode !== 'shades') {
-        // Color generation logging removed for cleaner console
+    if (suppressAutoPalette) return;
+    
+    if (mode !== 'shades') {
       // Don't regenerate colors if we already have a palette with the right count
       // Also don't regenerate if we're in the middle of a recolor operation
       // Don't regenerate if we have user-modified colors
@@ -3968,8 +4059,7 @@ const Paint = () => {
       const hasUserColors = Palette.some(color => !isDefaultHex(color.ToHEX()));
       const hasOnlyDefaultColors = Palette.length > 0 && Palette.every(color => isDefaultHex(color.ToHEX()));
 
-              if ((Palette.length === 0 || Palette.length !== colorCount || hasOnlyDefaultColors) && !isRecoloring && !hasUserColors) {
-          // Palette regeneration logging removed for cleaner console
+      if ((Palette.length === 0 || Palette.length !== colorCount || hasOnlyDefaultColors) && !isRecoloring && !hasUserColors) {
         // Create new colors for the palette
         const newPalette = [];
         for (let i = 0; i < colorCount; i++) {
@@ -3985,15 +4075,12 @@ const Paint = () => {
           colorHandler.time = colorCount === 1 ? 0 : i / (colorCount - 1);
           newPalette.push(colorHandler);
         }
-                  setPalette(newPalette);
-          MapPalette(newPalette, setColors);
-          setIsPaletteReady(true);
-        } else {
-          // Keeping existing palette logging removed for cleaner console
-          if (Palette.length > 0) setIsPaletteReady(true);
-        }
-      } else if (isRecoloring) {
-        // Skipping palette regeneration logging removed for cleaner console
+        setPalette(newPalette);
+        MapPalette(newPalette, setColors);
+        setIsPaletteReady(true);
+      } else {
+        if (Palette.length > 0) setIsPaletteReady(true);
+      }
     }
   }, [colorCount, mode, Palette.length, hueValue, isRecoloring, suppressAutoPalette]);
 
@@ -5845,6 +5932,84 @@ const Paint = () => {
         filePath={pyPath}
         component="Paint"
       />
+
+      {/* Unsaved Changes Dialog */}
+      <Dialog
+        open={showUnsavedDialog}
+        onClose={handleUnsavedCancel}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+            backdropFilter: 'saturate(180%) blur(16px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(16px)',
+          },
+        }}
+      >
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          fontWeight: 600
+        }}>
+          ⚠️ Unsaved Changes
+        </DialogTitle>
+        
+        <DialogContent sx={{ pt: 2 }}>
+          <div style={{ 
+            color: '#e5e7eb', 
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            lineHeight: 1.5
+          }}>
+            You have unsaved changes. What would you like to do?
+          </div>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={handleUnsavedCancel}
+            sx={{ 
+              color: 'var(--accent2)',
+              '&:hover': {
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUnsavedDiscard}
+            sx={{
+              color: 'var(--accent2)',
+              '&:hover': {
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: '#ef4444',
+              }
+            }}
+          >
+            Discard Changes
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleUnsavedSave}
+            sx={{
+              background: 'var(--accent)',
+              color: 'var(--bg)',
+              borderRadius: '4px',
+              px: 2,
+              '&:hover': {
+                background: 'var(--accent2)',
+              },
+            }}
+          >
+            Save & Leave
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

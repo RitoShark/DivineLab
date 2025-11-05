@@ -80,7 +80,7 @@ async function getLtmaoPaths() {
 let textureCache = new Map();
 
 // AppData cache directory for PNG files
-const appDataCacheDir = path ? path.join(os.homedir(), 'AppData', 'Local', 'DivineLab', 'TextureCache') : null;
+const appDataCacheDir = path ? path.join(os.homedir(), 'AppData', 'Local', 'Quartz', 'TextureCache') : null;
 
 // Initialize cache directory
 function initializeCacheDirectory() {
@@ -278,222 +278,262 @@ async function convertTEXToAppDataPNG(inputPath, outputPath) {
   }
 }
 
-// Check if ImageMagick is available
-async function isImageMagickAvailable() {
-  if (!exec) return false;
+// Enhanced logging system for production debugging
+function logTextureConversion(level, message, data = null) {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] [TEXTURE-${level}] ${message}`;
+  
+  console.log(logMessage);
+  if (data) {
+    console.log(`[TEXTURE-${level}] Data:`, data);
+  }
+  
+  // Send to main process logging (which writes to the actual log files)
+  try {
+    if (ipcRenderer && typeof ipcRenderer.invoke === 'function') {
+      ipcRenderer.invoke('log-texture-conversion', {
+        level: level.toLowerCase(),
+        message: message,
+        data: data
+      }).catch(() => {
+        // Ignore IPC errors - logging is best effort
+      });
+    }
+  } catch (e) {
+    // Ignore logging errors
+  }
+}
+
+// Convert DDS to PNG using LtMAO CLI only
+async function convertDDSToPNG(inputPath, outputPath) {
+  if (!fs || !path || !exec) return null;
+  
+  logTextureConversion('INFO', 'Starting DDS to PNG conversion', {
+    inputPath,
+    outputPath,
+    inputExists: fs.existsSync(inputPath)
+  });
+  
+  // Check if output PNG already exists (cache hit)
+  if (fs.existsSync(outputPath)) {
+    logTextureConversion('INFO', 'PNG already exists, using cached version', { outputPath });
+    return outputPath;
+  }
   
   try {
+    // Find LtMAO runtime path via main process
+    const { base: ltmaoPath, pythonPath, cliScript } = await getLtmaoPaths();
+
+    logTextureConversion('INFO', 'LtMAO paths resolved', { 
+      ltmaoPath, 
+      pythonPath, 
+      cliScript,
+      ltmaoExists: fs.existsSync(ltmaoPath),
+      pythonExists: fs.existsSync(pythonPath),
+      cliExists: fs.existsSync(cliScript)
+    });
+
+    if (!ltmaoPath || !fs.existsSync(ltmaoPath)) {
+      const error = `LtMAO runtime not found at: ${ltmaoPath}`;
+      logTextureConversion('ERROR', error);
+      throw new Error(error);
+    }
+
+    if (!pythonPath || !fs.existsSync(pythonPath)) {
+      const error = `Python executable not found at: ${pythonPath}`;
+      logTextureConversion('ERROR', error);
+      throw new Error(error);
+    }
+
+    if (!cliScript || !fs.existsSync(cliScript)) {
+      const error = `CLI script not found at: ${cliScript}`;
+      logTextureConversion('ERROR', error);
+      throw new Error(error);
+    }
+
+    // Use LtMAO CLI to convert DDS to PNG
+    const ddsToPngCommand = `"${pythonPath}" "${cliScript}" -t dds2png -src "${inputPath}" -dst "${outputPath}"`;
+    logTextureConversion('INFO', 'Executing LtMAO DDS conversion command', { 
+      command: ddsToPngCommand,
+      workingDir: ltmaoPath
+    });
+
     await new Promise((resolve, reject) => {
-      exec('"C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe" -version', { timeout: 5000 }, (error, stdout, stderr) => {
+      const timeoutId = setTimeout(() => {
+        logTextureConversion('ERROR', 'DDS to PNG conversion timed out after 30 seconds', {
+          command: ddsToPngCommand,
+          timeout: 30000
+        });
+        reject(new Error('DDS to PNG conversion timed out'));
+      }, 30000);
+
+      exec(ddsToPngCommand, {
+        cwd: ltmaoPath,
+        timeout: 25000 // Slightly less than the timeout above
+      }, (error, stdout, stderr) => {
+        clearTimeout(timeoutId);
+        
         if (error) {
+          logTextureConversion('ERROR', 'LtMAO CLI conversion failed', {
+            error: error.message,
+            stdout,
+            stderr,
+            command: ddsToPngCommand,
+            exitCode: error.code,
+            signal: error.signal
+          });
           reject(error);
         } else {
+          logTextureConversion('INFO', 'LtMAO CLI conversion completed', {
+            stdout,
+            stderr: stderr || 'No stderr output',
+            command: ddsToPngCommand
+          });
           resolve();
         }
       });
     });
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
 
-// Convert DDS to PNG using optimized ImageMagick or LtMAO CLI
-async function convertDDSToPNG(inputPath, outputPath) {
-  if (!fs || !path || !exec) return null;
-  
-  // Check if output PNG already exists (cache hit)
-  if (fs.existsSync(outputPath)) {
-    console.log('✅ PNG already exists, using cached version:', outputPath);
-    return outputPath;
-  }
-  
-  try {
-    // Check if ImageMagick is available first
-    const imageMagickAvailable = await isImageMagickAvailable();
-    
-    if (imageMagickAvailable) {
-      console.log('🚀 Using ImageMagick for DDS conversion (optimized)');
-      
-      try {
-        await new Promise((resolve, reject) => {
-          // Optimized ImageMagick command with better quality and alpha handling
-          const command = `"C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe" "${inputPath}" -alpha on -quality 95 -define png:compression-level=1 "${outputPath}"`;
-
-          exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-            if (error) {
-              console.warn('⚠️ ImageMagick conversion failed:', error.message);
-              reject(error);
-            } else {
-              console.log('✅ ImageMagick conversion successful');
-              resolve();
-            }
-          });
+    // Check if PNG was created successfully
+    if (fs.existsSync(outputPath)) {
+      // Verify the PNG file is valid by checking its size
+      const stats = fs.statSync(outputPath);
+      if (stats.size < 100) {
+        logTextureConversion('WARN', 'PNG file created but appears to be corrupted (too small)', {
+          outputPath,
+          fileSize: stats.size
         });
-
-        // Check if PNG was created successfully
-        if (fs.existsSync(outputPath)) {
-          console.log('✅ PNG file created successfully with ImageMagick:', outputPath);
-          return outputPath;
-        }
-      } catch (imageMagickError) {
-        console.warn('⚠️ ImageMagick conversion failed, falling back to LtMAO:', imageMagickError.message);
-      }
-    } else {
-      console.log('⚠️ ImageMagick not available, using LtMAO CLI');
-    }
-
-    // If ImageMagick failed, try LtMAO CLI
-    try {
-      console.log('🔄 Trying LtMAO CLI for DDS conversion...');
-      // Find LtMAO runtime path via main process
-      const { base: ltmaoPath, pythonPath, cliScript } = await getLtmaoPaths();
-
-      console.log('🔍 LtMAO paths:', { ltmaoPath, pythonPath, cliScript });
-
-      if (!ltmaoPath || !fs.existsSync(ltmaoPath)) {
-        throw new Error(`LtMAO runtime not found at: ${ltmaoPath}`);
-      }
-
-      if (!pythonPath || !fs.existsSync(pythonPath)) {
-        throw new Error(`Python executable not found at: ${pythonPath}`);
-      }
-
-      if (!cliScript || !fs.existsSync(cliScript)) {
-        throw new Error(`CLI script not found at: ${cliScript}`);
-      }
-
-      // Use LtMAO CLI to convert DDS to PNG
-      const ddsToPngCommand = `"${pythonPath}" "${cliScript}" -t dds2png -src "${inputPath}" -dst "${outputPath}"`;
-      console.log('🚀 Executing command:', ddsToPngCommand);
-
-      await new Promise((resolve, reject) => {
-        exec(ddsToPngCommand, {
-          cwd: ltmaoPath,
-          timeout: 30000
-        }, (error, stdout, stderr) => {
-          if (error) {
-            console.error('❌ LtMAO CLI error:', error);
-            console.error('❌ stdout:', stdout);
-            console.error('❌ stderr:', stderr);
-            reject(error);
-          } else {
-            console.log('✅ LtMAO CLI stdout:', stdout);
-            if (stderr) console.log('⚠️ LtMAO CLI stderr:', stderr);
-            resolve();
-          }
-        });
-      });
-
-      // Check if PNG was created successfully
-      if (fs.existsSync(outputPath)) {
-        console.log('✅ PNG file created successfully:', outputPath);
+        // Try to create a placeholder instead
+        createDDSPreviewPlaceholder(inputPath, outputPath);
         return outputPath;
-      } else {
-        throw new Error(`PNG file not found after LtMAO CLI conversion: ${outputPath}`);
       }
-    } catch (ltmaoError) {
-      console.error('❌ LtMAO CLI conversion failed:', ltmaoError.message);
+
+      logTextureConversion('SUCCESS', 'PNG file created successfully', { 
+        outputPath,
+        fileSize: stats.size
+      });
+      return outputPath;
+    } else {
+      const error = `PNG file not found after LtMAO CLI conversion: ${outputPath}`;
+      logTextureConversion('ERROR', error);
+      throw new Error(error);
     }
 
-    // If both methods failed, create a placeholder
-    createDDSPreviewPlaceholder(inputPath, outputPath);
-    return outputPath;
-
   } catch (error) {
-    console.error(`DDS conversion error: ${error.message}`);
+    logTextureConversion('ERROR', 'DDS conversion failed, creating placeholder', {
+      error: error.message,
+      inputPath,
+      outputPath
+    });
     createDDSPreviewPlaceholder(inputPath, outputPath);
     return outputPath;
   }
 }
 
-// Smart format detection and conversion
+// Smart format detection and conversion (LtMAO only)
 async function smartConvertToPNG(inputPath, outputPath) {
   if (!fs || !path || !exec) return null;
   
+  logTextureConversion('INFO', 'Starting smart format conversion', {
+    inputPath,
+    outputPath,
+    inputExists: fs.existsSync(inputPath)
+  });
+  
   // Check if output PNG already exists (cache hit)
   if (fs.existsSync(outputPath)) {
-    console.log('✅ PNG already exists, using cached version:', outputPath);
+    logTextureConversion('INFO', 'PNG already exists, using cached version', { outputPath });
     return outputPath;
   }
   
   const ext = path.extname(inputPath).toLowerCase();
-  const imageMagickAvailable = await isImageMagickAvailable();
   
-  // Direct conversion for supported formats
-  if (imageMagickAvailable && (ext === '.dds' || ext === '.tga' || ext === '.bmp')) {
-    console.log(`🚀 Using ImageMagick for direct ${ext.toUpperCase()} conversion`);
-    
-    try {
-      await new Promise((resolve, reject) => {
-        const command = `"C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe" "${inputPath}" -alpha on -quality 95 -define png:compression-level=1 "${outputPath}"`;
-        
-        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
-        });
-      });
-      
-      if (fs.existsSync(outputPath)) {
-        console.log(`✅ Direct ${ext.toUpperCase()} conversion successful with ImageMagick`);
-        return outputPath;
-      }
-    } catch (error) {
-      console.warn(`⚠️ Direct ${ext.toUpperCase()} conversion failed:`, error.message);
-    }
-  }
+  logTextureConversion('INFO', 'Detected file format', { 
+    extension: ext,
+    filename: path.basename(inputPath)
+  });
   
-  // Fallback to LtMAO for TEX files or if ImageMagick fails
-  if (ext === '.tex') {
+  // Direct conversion for supported formats using LtMAO
+  if (ext === '.dds') {
+    logTextureConversion('INFO', 'Converting DDS file using LtMAO');
+    return await convertDDSToPNG(inputPath, outputPath);
+  } else if (ext === '.tex') {
+    logTextureConversion('INFO', 'Converting TEX file using LtMAO');
     return await convertTEXToPNG(inputPath, outputPath);
+  } else if (ext === '.tga' || ext === '.bmp') {
+    logTextureConversion('WARN', 'TGA/BMP conversion not supported by LtMAO, creating placeholder', {
+      extension: ext,
+      inputPath
+    });
+    // Create placeholder for unsupported formats
+    const placeholderText = `Unsupported Format: ${path.basename(inputPath)}\nExtension: ${ext}\n\nThis format is not supported by LtMAO.\nSupported formats: DDS, TEX`;
+    fs.writeFileSync(outputPath, placeholderText);
+    return outputPath;
   }
   
+  logTextureConversion('WARN', 'Unknown file format, creating placeholder', {
+    extension: ext,
+    inputPath
+  });
   return null;
 }
 
-// Convert TEX to PNG using optimized LtMAO CLI (TEX -> DDS -> PNG)
+// Convert TEX to PNG using LtMAO CLI (TEX -> DDS -> PNG)
 async function convertTEXToPNG(inputPath, outputPath) {
   if (!fs || !path || !exec) return null;
   
+  logTextureConversion('INFO', 'Starting TEX to PNG conversion', {
+    inputPath,
+    outputPath,
+    inputExists: fs.existsSync(inputPath)
+  });
+  
   // Check if output PNG already exists (cache hit)
   if (fs.existsSync(outputPath)) {
-    console.log('✅ PNG already exists, using cached version:', outputPath);
+    logTextureConversion('INFO', 'PNG already exists, using cached version', { outputPath });
     return outputPath;
   }
   
   try {
-    console.log('🔄 Starting TEX to PNG conversion...');
     // Find LtMAO runtime path via main process
     const { base: ltmaoPath, pythonPath, cliScript } = await getLtmaoPaths();
 
-    console.log('🔍 LtMAO paths for TEX conversion:', { ltmaoPath, pythonPath, cliScript });
+    logTextureConversion('INFO', 'LtMAO paths resolved for TEX conversion', { 
+      ltmaoPath, 
+      pythonPath, 
+      cliScript,
+      ltmaoExists: fs.existsSync(ltmaoPath),
+      pythonExists: fs.existsSync(pythonPath),
+      cliExists: fs.existsSync(cliScript)
+    });
 
     if (!ltmaoPath || !fs.existsSync(ltmaoPath)) {
-      console.warn('⚠️ LtMAO runtime not found, creating placeholder');
+      logTextureConversion('ERROR', 'LtMAO runtime not found, creating placeholder', { ltmaoPath });
       createTEXPreviewPlaceholder(inputPath, outputPath);
       return outputPath;
     }
 
     if (!pythonPath || !fs.existsSync(pythonPath)) {
-      console.warn('⚠️ Python executable not found, creating placeholder');
+      logTextureConversion('ERROR', 'Python executable not found, creating placeholder', { pythonPath });
       createTEXPreviewPlaceholder(inputPath, outputPath);
       return outputPath;
     }
 
     if (!cliScript || !fs.existsSync(cliScript)) {
-      console.warn('⚠️ CLI script not found, creating placeholder');
+      logTextureConversion('ERROR', 'CLI script not found, creating placeholder', { cliScript });
       createTEXPreviewPlaceholder(inputPath, outputPath);
       return outputPath;
     }
 
     // Step 1: Convert TEX to DDS
-    const tempDdsPath = path.join(os.tmpdir(), `divinelab-temp-${Date.now()}.dds`);
+    const tempDdsPath = path.join(os.tmpdir(), `quartz-temp-${Date.now()}.dds`);
 
     const texToDdsCommand = `"${pythonPath}" "${cliScript}" -t tex2dds -src "${inputPath}"`;
-    console.log('🚀 Executing TEX to DDS command:', texToDdsCommand);
+    logTextureConversion('INFO', 'Executing TEX to DDS command', { 
+      command: texToDdsCommand,
+      workingDir: ltmaoPath,
+      tempDdsPath
+    });
 
     await new Promise((resolve, reject) => {
       exec(texToDdsCommand, {
@@ -501,13 +541,18 @@ async function convertTEXToPNG(inputPath, outputPath) {
         timeout: 30000
       }, (error, stdout, stderr) => {
         if (error) {
-          console.error('❌ TEX to DDS error:', error);
-          console.error('❌ stdout:', stdout);
-          console.error('❌ stderr:', stderr);
+          logTextureConversion('ERROR', 'TEX to DDS conversion failed', {
+            error: error.message,
+            stdout,
+            stderr,
+            command: texToDdsCommand
+          });
           reject(error);
         } else {
-          console.log('✅ TEX to DDS stdout:', stdout);
-          if (stderr) console.log('⚠️ TEX to DDS stderr:', stderr);
+          logTextureConversion('INFO', 'TEX to DDS conversion completed', {
+            stdout,
+            stderr: stderr || 'No stderr output'
+          });
           resolve();
         }
       });
@@ -516,97 +561,103 @@ async function convertTEXToPNG(inputPath, outputPath) {
     // Check if DDS file was created (it should be in the same directory as the TEX file)
     const ddsPath = inputPath.replace('.tex', '.dds');
     if (!fs.existsSync(ddsPath)) {
+      logTextureConversion('ERROR', 'DDS file not created after TEX conversion', {
+        expectedDdsPath: ddsPath,
+        tempDdsPath
+      });
       createTEXPreviewPlaceholder(inputPath, outputPath);
       return outputPath;
     }
 
-    // Step 2: Convert DDS to PNG (use ImageMagick if available, otherwise LtMAO)
-    const imageMagickAvailable = await isImageMagickAvailable();
-    
-    if (imageMagickAvailable) {
-      console.log('🚀 Using ImageMagick for DDS to PNG conversion (optimized)');
-      
-      try {
-        await new Promise((resolve, reject) => {
-          const command = `"C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe" "${ddsPath}" -alpha on -quality 95 -define png:compression-level=1 "${outputPath}"`;
-          
-          exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-            if (error) {
-              console.warn('⚠️ ImageMagick DDS to PNG failed:', error.message);
-              reject(error);
-            } else {
-              console.log('✅ ImageMagick DDS to PNG successful');
-              resolve();
-            }
-          });
-        });
-      } catch (imageMagickError) {
-        console.warn('⚠️ ImageMagick DDS to PNG failed, falling back to LtMAO:', imageMagickError.message);
-        
-        // Fallback to LtMAO
-        const ddsToPngCommand = `"${pythonPath}" "${cliScript}" -t dds2png -src "${ddsPath}" -dst "${outputPath}"`;
-        console.log('🔄 Executing LtMAO DDS to PNG command:', ddsToPngCommand);
+    logTextureConversion('INFO', 'DDS file created successfully, converting to PNG', { ddsPath });
 
-        await new Promise((resolve, reject) => {
-          exec(ddsToPngCommand, {
-            cwd: ltmaoPath,
-            timeout: 30000
-          }, (error, stdout, stderr) => {
-            if (error) {
-              console.error('❌ LtMAO DDS to PNG error:', error);
-              console.error('❌ stdout:', stdout);
-              console.error('❌ stderr:', stderr);
-              reject(error);
-            } else {
-              console.log('✅ LtMAO DDS to PNG stdout:', stdout);
-              if (stderr) console.log('⚠️ LtMAO DDS to PNG stderr:', stderr);
-              resolve();
-            }
-          });
-        });
-      }
-    } else {
-      console.log('🔄 Using LtMAO for DDS to PNG conversion');
-      const ddsToPngCommand = `"${pythonPath}" "${cliScript}" -t dds2png -src "${ddsPath}" -dst "${outputPath}"`;
-      console.log('🚀 Executing DDS to PNG command:', ddsToPngCommand);
+    // Step 2: Convert DDS to PNG using LtMAO
+    const ddsToPngCommand = `"${pythonPath}" "${cliScript}" -t dds2png -src "${ddsPath}" -dst "${outputPath}"`;
+    logTextureConversion('INFO', 'Executing DDS to PNG command', { 
+      command: ddsToPngCommand,
+      workingDir: ltmaoPath
+    });
 
-      await new Promise((resolve, reject) => {
-        exec(ddsToPngCommand, {
-          cwd: ltmaoPath,
+    await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        logTextureConversion('ERROR', 'DDS to PNG conversion timed out after 30 seconds', {
+          command: ddsToPngCommand,
           timeout: 30000
-        }, (error, stdout, stderr) => {
-          if (error) {
-            console.error('❌ DDS to PNG error:', error);
-            console.error('❌ stdout:', stdout);
-            console.error('❌ stderr:', stderr);
-            reject(error);
-          } else {
-            console.log('✅ DDS to PNG stdout:', stdout);
-            if (stderr) console.log('⚠️ DDS to PNG stderr:', stderr);
-            resolve();
-          }
         });
+        reject(new Error('DDS to PNG conversion timed out'));
+      }, 30000);
+
+      exec(ddsToPngCommand, {
+        cwd: ltmaoPath,
+        timeout: 25000 // Slightly less than the timeout above
+      }, (error, stdout, stderr) => {
+        clearTimeout(timeoutId);
+        
+        if (error) {
+          logTextureConversion('ERROR', 'DDS to PNG conversion failed', {
+            error: error.message,
+            stdout,
+            stderr,
+            command: ddsToPngCommand,
+            exitCode: error.code,
+            signal: error.signal
+          });
+          reject(error);
+        } else {
+          logTextureConversion('INFO', 'DDS to PNG conversion completed', {
+            stdout,
+            stderr: stderr || 'No stderr output',
+            command: ddsToPngCommand
+          });
+          resolve();
+        }
       });
-    }
+    });
 
     // Check if PNG was created successfully
     if (fs.existsSync(outputPath)) {
+      // Verify the PNG file is valid by checking its size
+      const stats = fs.statSync(outputPath);
+      if (stats.size < 100) {
+        logTextureConversion('WARN', 'PNG file created but appears to be corrupted (too small)', {
+          outputPath,
+          fileSize: stats.size
+        });
+        // Try to create a placeholder instead
+        createTEXPreviewPlaceholder(inputPath, outputPath);
+        return outputPath;
+      }
+
       // Clean up temporary DDS file
       try {
         if (fs.existsSync(ddsPath)) {
           fs.unlinkSync(ddsPath);
+          logTextureConversion('INFO', 'Cleaned up temporary DDS file', { ddsPath });
         }
       } catch (cleanupError) {
-        // Ignore cleanup errors
+        logTextureConversion('WARN', 'Failed to clean up temporary DDS file', {
+          error: cleanupError.message,
+          ddsPath
+        });
       }
 
+      logTextureConversion('SUCCESS', 'TEX to PNG conversion completed successfully', { 
+        outputPath,
+        fileSize: stats.size
+      });
       return outputPath;
     } else {
+      logTextureConversion('ERROR', 'PNG file not created after DDS conversion', { outputPath });
       createTEXPreviewPlaceholder(inputPath, outputPath);
       return outputPath;
     }
 
   } catch (error) {
+    logTextureConversion('ERROR', 'TEX conversion failed, creating placeholder', {
+      error: error.message,
+      inputPath,
+      outputPath
+    });
     createTEXPreviewPlaceholder(inputPath, outputPath);
     return outputPath;
   }
@@ -652,9 +703,24 @@ function createTEXPreviewPlaceholder(inputPath, outputPath) {
   }
 }
 
-// Main texture conversion function with proper file path resolution
+// Main texture conversion function with comprehensive logging
 async function convertTextureToPNG(texturePath, targetPath = null, donorPath = null, basePath = null) {
-  if (!fs || !path || !os) return null;
+  if (!fs || !path || !os) {
+    logTextureConversion('ERROR', 'Required Node.js modules not available', {
+      fs: !!fs,
+      path: !!path,
+      os: !!os
+    });
+    return null;
+  }
+  
+  logTextureConversion('INFO', 'Starting texture conversion', {
+    texturePath,
+    targetPath,
+    donorPath,
+    basePath,
+    isAbsolute: path.isAbsolute(texturePath)
+  });
   
   try {
     // Handle absolute paths directly
@@ -662,20 +728,45 @@ async function convertTextureToPNG(texturePath, targetPath = null, donorPath = n
     
     // If it's not an absolute path, try to find it
     if (!path.isAbsolute(texturePath)) {
+      logTextureConversion('INFO', 'Resolving relative texture path', { texturePath });
       actualFilePath = findActualTexturePath(texturePath, targetPath, donorPath, basePath);
-    }
-    
-    if (!actualFilePath) {
-      return null;
+      
+      if (!actualFilePath) {
+        logTextureConversion('ERROR', 'Could not resolve texture path', {
+          originalPath: texturePath,
+          targetPath,
+          donorPath,
+          basePath
+        });
+        return null;
+      }
+      
+      logTextureConversion('INFO', 'Texture path resolved successfully', {
+        originalPath: texturePath,
+        resolvedPath: actualFilePath,
+        exists: fs.existsSync(actualFilePath)
+      });
+    } else {
+      logTextureConversion('INFO', 'Using absolute texture path', {
+        path: actualFilePath,
+        exists: fs.existsSync(actualFilePath)
+      });
     }
 
     // Output to AppData cache (avoid writing to source folders)
-    const cachedOutputPath = getCachedPngPath(actualFilePath) || path.join(os.tmpdir(), `divinelab-${Date.now()}.png`);
+    const cachedOutputPath = getCachedPngPath(actualFilePath) || path.join(os.tmpdir(), `quartz-${Date.now()}.png`);
+    
+    logTextureConversion('INFO', 'Cache path determined', {
+      cachedPath: cachedOutputPath,
+      cacheDir: appDataCacheDir,
+      usingTemp: !getCachedPngPath(actualFilePath)
+    });
 
     const ext = path.extname(actualFilePath).toLowerCase();
 
     // Handle data URL files specially
     if (ext === '.dataurl') {
+      logTextureConversion('INFO', 'Processing data URL file', { actualFilePath });
       const placeholderText = `Data URL File: ${path.basename(actualFilePath)}\n\nThis is a data URL file containing an SVG image.\nIt should be displayed directly in the preview.`;
       fs.writeFileSync(cachedOutputPath, placeholderText);
       return cachedOutputPath;
@@ -686,24 +777,49 @@ async function convertTextureToPNG(texturePath, targetPath = null, donorPath = n
       const data = fs.readFileSync(actualFilePath);
       const header = data.slice(0, 4).toString();
 
+      logTextureConversion('INFO', 'File analysis completed', {
+        extension: ext,
+        header: header,
+        fileSize: data.length,
+        actualFilePath
+      });
+
       if (ext === '.dds' || header === 'DDS ') {
+        logTextureConversion('INFO', 'Processing DDS file');
         return await smartConvertToPNG(actualFilePath, cachedOutputPath) || await convertDDSToAppDataPNG(actualFilePath, cachedOutputPath);
       } else if (ext === '.tex' || header === 'TEX\x00') {
+        logTextureConversion('INFO', 'Processing TEX file');
         return await smartConvertToPNG(actualFilePath, cachedOutputPath) || await convertTEXToAppDataPNG(actualFilePath, cachedOutputPath);
       } else if (ext === '.tga' || ext === '.bmp') {
+        logTextureConversion('INFO', 'Processing TGA/BMP file');
         return await smartConvertToPNG(actualFilePath, cachedOutputPath);
       } else {
         // Create a generic placeholder for unknown format
+        logTextureConversion('WARN', 'Unknown file format, creating placeholder', {
+          extension: ext,
+          header: header,
+          actualFilePath
+        });
         const stats = fs.statSync(actualFilePath);
         const placeholderText = `Unknown File: ${path.basename(actualFilePath)}\nSize: ${stats.size} bytes\nHeader: ${header}\nExtension: ${ext}\n\nThis file format is not recognized.\nSupported formats: DDS, TEX, PNG, dataurl`;
         fs.writeFileSync(cachedOutputPath, placeholderText);
         return cachedOutputPath;
       }
     } catch (error) {
-      console.error(`Failed to read file: ${error.message}`);
+      logTextureConversion('ERROR', 'Failed to read file', {
+        error: error.message,
+        actualFilePath
+      });
       throw new Error(`Failed to read file: ${error.message}`);
     }
   } catch (error) {
+    logTextureConversion('ERROR', 'Texture conversion failed', {
+      error: error.message,
+      texturePath,
+      targetPath,
+      donorPath,
+      basePath
+    });
     return null;
   }
 }
@@ -711,6 +827,25 @@ async function convertTextureToPNG(texturePath, targetPath = null, donorPath = n
 // Initialize cache on load
 if (appDataCacheDir) {
   initializeCacheDirectory();
+}
+
+// Test function to verify logging is working
+export function testTextureLogging() {
+  logTextureConversion('INFO', 'Testing texture conversion logging system', {
+    timestamp: new Date().toISOString(),
+    testData: { test: true, number: 42 }
+  });
+  
+  logTextureConversion('ERROR', 'Test error message', {
+    error: 'This is a test error',
+    stack: 'Test stack trace'
+  });
+  
+  logTextureConversion('SUCCESS', 'Test success message', {
+    result: 'Logging system is working'
+  });
+  
+  console.log('✅ Texture logging test completed - check log files for results');
 }
 
 export {
@@ -722,5 +857,5 @@ export {
   appDataCacheDir,
   findActualTexturePath,
   smartConvertToPNG,
-  isImageMagickAvailable
+  logTextureConversion
 }; 

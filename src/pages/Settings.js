@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Card,
@@ -21,6 +21,7 @@ import {
   Collapse,
   Container,
   Slider,
+  CircularProgress,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -40,12 +41,17 @@ import {
   RestartAlt as RestartIcon,
   Image as ImageIcon,
   Terminal as TerminalIcon,
+  Download as DownloadIcon,
+  SystemUpdateAlt as UpdateIcon,
+  CloudDownload as CloudDownloadIcon,
 } from '@mui/icons-material';
 
 // Import Electron preferences system
 import electronPrefs from '../utils/electronPrefs.js';
 import fontManager from '../utils/fontManager.js';
 import themeManager, { applyThemeFromObject, setCustomTheme, getCustomThemes, deleteCustomTheme } from '../utils/themeManager.js';
+import { CreatePicker, cleanupColorPickers } from '../utils/colorUtils.js';
+import ColorHandler from '../utils/ColorHandler.js';
 
 // Create message function for notifications
 const CreateMessage = (options, callback) => {
@@ -68,11 +74,11 @@ const Settings = () => {
     // Page visibility settings
     paintEnabled: true,
     portEnabled: true,
-    hudEditorEnabled: true,
+        // hudEditorEnabled: removed - HUD Editor archived
     vfxHubEnabled: true,
     rgbaEnabled: false, // Disabled by default for new users
     frogImgEnabled: false, // Disabled by default for new users
-    frogImgGreyscaleFilter: true, // Enabled by default for greyscale filtering
+    // frogImgGreyscaleFilter: removed - no longer used
     binEditorEnabled: true,
     toolsEnabled: false, // Disabled by default for new users
     fileRandomizerEnabled: false, // Disabled by default for new users
@@ -89,9 +95,25 @@ const Settings = () => {
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [isRestartingBackend, setIsRestartingBackend] = useState(false);
   const [backendStatus, setBackendStatus] = useState(null);
+  const [hashDirectory, setHashDirectory] = useState('');
+  const [hashStatus, setHashStatus] = useState(null);
+  const [downloadingHashes, setDownloadingHashes] = useState(false);
+  
+  // Update management state
+  const [updateStatus, setUpdateStatus] = useState('idle'); // idle, checking, available, downloading, downloaded, not-available, error
+  const [currentVersion, setCurrentVersion] = useState('');
+  const [newVersion, setNewVersion] = useState('');
+  const [updateProgress, setUpdateProgress] = useState({ percent: 0, transferred: 0, total: 0 });
+  const [updateError, setUpdateError] = useState('');
 
   // Custom Theme Creator state
   const [customThemeExpanded, setCustomThemeExpanded] = useState(false);
+  const [externalToolsExpanded, setExternalToolsExpanded] = useState(false);
+  
+  // Ref for Update Management section
+  const updateManagementRef = useRef(null);
+  // Track if we should highlight (only when coming from update notification)
+  const shouldHighlightUpdateRef = useRef(false);
   const [customThemesMap, setCustomThemesMap] = useState({});
   const [customThemeName, setCustomThemeName] = useState('My Theme');
   const [livePreview, setLivePreview] = useState(false);
@@ -175,8 +197,28 @@ const Settings = () => {
       if (rootEl?.style) rootEl.style.overflow = 'hidden';
     } catch {}
 
+    const loadHashSettings = async () => {
+      try {
+        if (window.require) {
+          const { ipcRenderer } = window.require('electron');
+          // Get hash directory
+          const hashDirResult = await ipcRenderer.invoke('hashes:get-directory');
+          setHashDirectory(hashDirResult.hashDir || '');
+          
+          // Check hash status
+          const statusResult = await ipcRenderer.invoke('hashes:check');
+          setHashStatus(statusResult);
+        }
+      } catch (error) {
+        console.error('Error loading hash settings:', error);
+      }
+    };
+
     const loadSettings = async () => {
       await electronPrefs.initPromise;
+      
+      // Load hash settings
+      loadHashSettings();
       
       // Wait for fontManager to be fully initialized
       if (!fontManager.initialized) {
@@ -206,8 +248,26 @@ const Settings = () => {
       
       console.log('💾 Loading Settings - DOM font:', domFont, 'Saved font:', savedFont, 'Current font:', currentFont, 'LocalStorage font:', localStorageFont, 'Using:', fontToUse);
       
+      // Load ritobin path - use saved path or default to FrogTools location
+      let ritobinPath = electronPrefs.obj.RitoBinPath || '';
+      
+      // If no saved path, check for default location in FrogTools
+      if (!ritobinPath && window.require) {
+        try {
+          const { ipcRenderer } = window.require('electron');
+          const defaultRitobin = await ipcRenderer.invoke('ritobin:get-default-path');
+          if (defaultRitobin.exists) {
+            ritobinPath = defaultRitobin.path;
+            // Save the default path automatically
+            await electronPrefs.set('RitoBinPath', ritobinPath);
+          }
+        } catch (error) {
+          console.error('Error getting default ritobin path:', error);
+        }
+      }
+      
       setSettings({
-        ritobinPath: electronPrefs.obj.RitoBinPath || '',
+        ritobinPath: ritobinPath,
         selectedFont: fontToUse,
           themeVariant: electronPrefs.obj.ThemeVariant || 'amethyst',
         githubUsername: electronPrefs.obj.GitHubUsername || '',
@@ -223,10 +283,10 @@ const Settings = () => {
         vfxHubEnabled: electronPrefs.obj.VFXHubEnabled !== false,
         binEditorEnabled: electronPrefs.obj.BinEditorEnabled !== false,
         frogImgEnabled: electronPrefs.obj.FrogImgEnabled !== false,
-        frogImgGreyscaleFilter: electronPrefs.obj.FrogImgGreyscaleFilter !== false,
+        // frogImgGreyscaleFilter: removed - no longer used
         UpscaleEnabled: electronPrefs.obj.UpscaleEnabled !== false,
         rgbaEnabled: electronPrefs.obj.RGBAEnabled !== false,
-        hudEditorEnabled: electronPrefs.obj.HUDEditorEnabled !== false, // Default to false for new users
+        // hudEditorEnabled: removed - HUD Editor archived
         toolsEnabled: electronPrefs.obj.ToolsEnabled !== false,
         fileRandomizerEnabled: electronPrefs.obj.FileRandomizerEnabled !== false,
         bumpathEnabled: electronPrefs.obj.BumpathEnabled !== false,
@@ -289,6 +349,7 @@ const Settings = () => {
       }
     };
     loadSettings();
+    
     // Restore global overflow on unmount
     return () => {
       try {
@@ -303,6 +364,141 @@ const Settings = () => {
   useEffect(() => {
     checkBackendStatus();
   }, []);
+
+  // Setup update listeners and check version on mount
+  useEffect(() => {
+    const setupUpdateListeners = async () => {
+      if (!window.require) return;
+
+      const { ipcRenderer } = window.require('electron');
+
+      // Get current version
+      try {
+        const versionResult = await ipcRenderer.invoke('update:get-version');
+        if (versionResult.success) {
+          setCurrentVersion(versionResult.version);
+        }
+      } catch (error) {
+        console.error('Error getting version:', error);
+      }
+
+      // Listen for update events from main process
+      ipcRenderer.on('update:checking', () => {
+        setUpdateStatus('checking');
+        setUpdateError('');
+      });
+
+      ipcRenderer.on('update:available', (event, data) => {
+        setUpdateStatus('available');
+        setNewVersion(data.version);
+        setUpdateError('');
+      });
+
+      ipcRenderer.on('update:not-available', (event, data) => {
+        setUpdateStatus('not-available');
+        setNewVersion(data.version);
+        setUpdateError('');
+      });
+
+      ipcRenderer.on('update:error', (event, data) => {
+        setUpdateStatus('error');
+        setUpdateError(data.message || 'Unknown error');
+      });
+
+      ipcRenderer.on('update:download-progress', (event, data) => {
+        setUpdateStatus('downloading');
+        setUpdateProgress(data);
+      });
+
+      ipcRenderer.on('update:downloaded', (event, data) => {
+        setUpdateStatus('downloaded');
+        setNewVersion(data.version);
+        setUpdateError('');
+      });
+
+      // Cleanup listeners on unmount
+      return () => {
+        ipcRenderer.removeAllListeners('update:checking');
+        ipcRenderer.removeAllListeners('update:available');
+        ipcRenderer.removeAllListeners('update:not-available');
+        ipcRenderer.removeAllListeners('update:error');
+        ipcRenderer.removeAllListeners('update:download-progress');
+        ipcRenderer.removeAllListeners('update:downloaded');
+      };
+    };
+
+    setupUpdateListeners();
+  }, []);
+
+  // Check for highlight update section flag on mount
+  useEffect(() => {
+    const checkHighlightFlag = () => {
+      try {
+        const shouldHighlight = localStorage.getItem('settings:highlight-update') === 'true';
+        if (shouldHighlight) {
+          // Clear the flag immediately
+          localStorage.removeItem('settings:highlight-update');
+          
+          // Set flag to indicate we should highlight
+          shouldHighlightUpdateRef.current = true;
+          
+          // Expand External Tools section
+          setExternalToolsExpanded(true);
+        }
+      } catch (e) {
+        console.error('Error checking highlight flag:', e);
+      }
+    };
+
+    // Check on mount
+    checkHighlightFlag();
+    // Also check after a short delay in case component is still mounting
+    const timeoutId = setTimeout(checkHighlightFlag, 100);
+    
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, []); // Only run on mount
+
+  // Handle highlight when External Tools section expands (only if flag is set)
+  useEffect(() => {
+    if (externalToolsExpanded && updateManagementRef.current && shouldHighlightUpdateRef.current) {
+      // Wait for Collapse animation to complete (MUI Collapse default timeout is 300ms)
+      const highlightTimeout = setTimeout(() => {
+        if (updateManagementRef.current) {
+          const element = updateManagementRef.current;
+          element.style.transition = 'box-shadow 0.3s ease, background-color 0.3s ease';
+          element.style.boxShadow = '0 0 20px rgba(184, 139, 242, 0.5), 0 0 40px rgba(184, 139, 242, 0.3)';
+          element.style.backgroundColor = 'rgba(184, 139, 242, 0.1)';
+        }
+      }, 400); // Wait for Collapse animation
+
+      return () => {
+        clearTimeout(highlightTimeout);
+      };
+    }
+  }, [externalToolsExpanded]);
+
+  // Clear highlight when update is downloaded or user leaves page
+  useEffect(() => {
+    const clearHighlight = () => {
+      if (updateManagementRef.current) {
+        const element = updateManagementRef.current;
+        element.style.boxShadow = '';
+        element.style.backgroundColor = '';
+      }
+    };
+
+    // Clear highlight when update is downloaded
+    if (updateStatus === 'downloaded') {
+      clearHighlight();
+    }
+
+    // Clear highlight on unmount (when leaving page)
+    return () => {
+      clearHighlight();
+    };
+  }, [updateStatus]);
 
   // Apply font when selectedFont changes (idempotent)
   useEffect(() => {
@@ -323,6 +519,40 @@ const Settings = () => {
   const safeSelectedFont = availableFonts.some(f => f.name === settings.selectedFont)
     ? settings.selectedFont
     : 'system';
+
+  // Hash download handler
+  const handleDownloadHashes = async () => {
+    setDownloadingHashes(true);
+    try {
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        const result = await ipcRenderer.invoke('hashes:download');
+        
+        if (result.success) {
+          CreateMessage({
+            message: `Successfully downloaded ${result.downloaded.length} hash file(s)!`,
+            type: 'success',
+          });
+          // Refresh hash status
+          const statusResult = await ipcRenderer.invoke('hashes:check');
+          setHashStatus(statusResult);
+        } else {
+          CreateMessage({
+            message: `Download completed with ${result.errors.length} error(s): ${result.errors.join(', ')}`,
+            type: 'warning',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error downloading hashes:', error);
+      CreateMessage({
+        message: `Failed to download hashes: ${error.message}`,
+        type: 'error',
+      });
+    } finally {
+      setDownloadingHashes(false);
+    }
+  };
 
   const handleSettingChange = async (key, value) => {
     setSettings(prev => ({
@@ -359,7 +589,8 @@ const Settings = () => {
           setConnectionStatus(null); // Reset connection status when repo URL changes
           break;
         case 'hudEditorEnabled':
-          await electronPrefs.set('HUDEditorEnabled', value);
+          // HUD Editor removed - setting disabled
+          // await electronPrefs.set('HUDEditorEnabled', value);
           break;
         case 'githubExpanded':
           await electronPrefs.set('GitHubExpanded', value);
@@ -386,7 +617,8 @@ const Settings = () => {
           await electronPrefs.set('FrogImgEnabled', value);
           break;
         case 'frogImgGreyscaleFilter':
-          await electronPrefs.set('FrogImgGreyscaleFilter', value);
+          // Auto Greyscale Filter removed - setting disabled
+          // await electronPrefs.set('FrogImgGreyscaleFilter', value);
           break;
         case 'binEditorEnabled':
           await electronPrefs.set('BinEditorEnabled', value);
@@ -416,7 +648,7 @@ const Settings = () => {
       }
 
       // Dispatch settings changed event for navigation updates
-      if (['themeVariant', 'paintEnabled', 'portEnabled', 'hudEditorEnabled', 'vfxHubEnabled', 'rgbaEnabled', 'frogImgEnabled', 'frogImgGreyscaleFilter', 'binEditorEnabled', 'toolsEnabled', 'fileRandomizerEnabled', 'bumpathEnabled', 'aniportEnabled', 'frogchangerEnabled', 'navExpandDisabled', 'UpscaleEnabled'].includes(key)) {
+      if (['themeVariant', 'paintEnabled', 'portEnabled', 'vfxHubEnabled', 'rgbaEnabled', 'frogImgEnabled', 'binEditorEnabled', 'toolsEnabled', 'fileRandomizerEnabled', 'bumpathEnabled', 'aniportEnabled', 'frogchangerEnabled', 'navExpandDisabled', 'UpscaleEnabled'].includes(key)) {
         window.dispatchEvent(new CustomEvent('settingsChanged'));
       }
     } catch (error) {
@@ -438,6 +670,48 @@ const Settings = () => {
       }, 120);
     }
   };
+
+  // Handle color picker click - opens custom color picker for theme colors
+  const handleThemeColorPickerClick = useCallback((event, field) => {
+    // Clean up any existing pickers
+    cleanupColorPickers();
+    
+    // Get current color value
+    const currentHex = customThemeValues[field] || '#ffffff';
+    
+    // Create a mock palette structure for the CreatePicker function
+    const mockPalette = [{
+      ToHEX: () => customThemeValues[field] || '#ffffff',
+      InputHex: (hex) => {
+        // Update the theme value when color is committed from picker
+        handleCustomThemeValueChange(field, hex.toUpperCase());
+      },
+      vec4: (() => {
+        const handler = new ColorHandler();
+        handler.InputHex(currentHex);
+        return handler.vec4;
+      })()
+    }];
+
+    // Create the custom color picker
+    CreatePicker(
+      0, // paletteIndex
+      event, // event for positioning
+      mockPalette, // mock palette
+      null, // setPalette (not needed)
+      'theme', // mode
+      null, // savePaletteForMode (not needed)
+      null, // setColors (not needed)
+      event.target // clickedColorDot for live preview
+    );
+  }, [customThemeValues, handleCustomThemeValueChange]);
+
+  // Cleanup color pickers on unmount
+  useEffect(() => {
+    return () => {
+      cleanupColorPickers();
+    };
+  }, []);
 
   const handleToggleLivePreview = (enabled) => {
     setLivePreview(enabled);
@@ -508,6 +782,7 @@ const Settings = () => {
     console.log('handleBrowseRitobin called');
     
     try {
+      // Always open file picker to select path
       const newPath = await electronPrefs.RitoBinPath();
       
       if (newPath) {
@@ -536,6 +811,32 @@ const Settings = () => {
       }
     }
   };
+
+  const handleOpenHashFolder = async () => {
+    try {
+      if (window.require && hashDirectory) {
+        const { ipcRenderer } = window.require('electron');
+        const result = await ipcRenderer.invoke('file:open-folder', hashDirectory);
+        if (!result.success && CreateMessage) {
+          CreateMessage({
+            type: "error",
+            title: "Error",
+            message: `Unable to open folder: ${result.error || 'Unknown error'}`
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error opening hash folder:', error);
+      if (CreateMessage) {
+        CreateMessage({
+          type: "error",
+          title: "Error",
+          message: "Unable to open hash folder."
+        });
+      }
+    }
+  };
+
 
   const handleSave = async () => {
     try {
@@ -576,6 +877,63 @@ const Settings = () => {
     } catch (error) {
       setBackendStatus('stopped');
       return false;
+    }
+  };
+
+  // Update handlers
+  const handleCheckForUpdates = async () => {
+    try {
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        setUpdateStatus('checking');
+        setUpdateError('');
+        const result = await ipcRenderer.invoke('update:check');
+        if (!result.success) {
+          setUpdateStatus('error');
+          setUpdateError(result.error || 'Failed to check for updates');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking for updates:', error);
+      setUpdateStatus('error');
+      setUpdateError(error.message);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    try {
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        setUpdateStatus('downloading');
+        setUpdateError('');
+        const result = await ipcRenderer.invoke('update:download');
+        if (!result.success) {
+          setUpdateStatus('error');
+          setUpdateError(result.error || 'Failed to download update');
+        }
+      }
+    } catch (error) {
+      console.error('Error downloading update:', error);
+      setUpdateStatus('error');
+      setUpdateError(error.message);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    try {
+      if (window.require) {
+        const { ipcRenderer } = window.require('electron');
+        const result = await ipcRenderer.invoke('update:install');
+        if (!result.success) {
+          setUpdateStatus('error');
+          setUpdateError(result.error || 'Failed to install update');
+        }
+        // Note: The app will restart automatically if installation succeeds
+      }
+    } catch (error) {
+      console.error('Error installing update:', error);
+      setUpdateStatus('error');
+      setUpdateError(error.message);
     }
   };
 
@@ -721,154 +1079,6 @@ const Settings = () => {
     }
   };
 
-  const handleSelectNavbarGif = async () => {
-    console.log('🎬 Select GIF button clicked');
-    
-    if (!window.require) {
-      console.error('❌ window.require not available');
-      if (CreateMessage) {
-        CreateMessage({
-          type: "error",
-          title: "Error",
-          message: "File selection requires Electron environment."
-        });
-      }
-      return;
-    }
-    
-    try {
-      console.log('🔍 Attempting to require Electron modules...');
-      const { ipcRenderer } = window.require('electron');
-      const path = window.require('path');
-      const fs = window.require('fs');
-      
-      console.log('✅ Electron modules loaded successfully');
-      
-      // Open file dialog to select a gif using IPC
-      console.log('📁 Opening file dialog via IPC...');
-      const result = await ipcRenderer.invoke('dialog:openFile', {
-        title: 'Select Navbar GIF',
-        filters: [
-          { name: 'GIF Images', extensions: ['gif'] },
-          { name: 'All Images', extensions: ['gif', 'png', 'jpg', 'jpeg', 'webp'] }
-        ]
-      });
-      
-      console.log('📁 Dialog result:', result);
-      
-      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-        return; // User cancelled
-      }
-      
-      const selectedFile = result.filePaths[0];
-      const fileExtension = path.extname(selectedFile).toLowerCase();
-      
-      // Validate file type
-      if (!['.gif', '.png', '.jpg', '.jpeg', '.webp'].includes(fileExtension)) {
-        if (CreateMessage) {
-          CreateMessage({
-            type: "error",
-            title: "Invalid File Type",
-            message: "Please select a valid image file (GIF, PNG, JPG, JPEG, or WEBP)."
-          });
-        }
-        return;
-      }
-      
-      // Get the app installation directory and create gif-icon folder
-      // Use process.execPath to get the actual app executable path, then get its directory
-      const appPath = path.dirname(process.execPath);
-      const gifIconDir = path.join(appPath, 'gif-icon');
-      const gifPath = path.join(gifIconDir, 'your-logo.gif');
-      
-      // Create the gif-icon directory if it doesn't exist
-      if (!fs.existsSync(gifIconDir)) {
-        fs.mkdirSync(gifIconDir, { recursive: true });
-      }
-      
-      // Copy the selected file to the assets directory
-      fs.copyFileSync(selectedFile, gifPath);
-      console.log('📁 Copied selected gif to:', gifPath);
-      
-      // Dispatch custom event to notify navbar of gif change
-      window.dispatchEvent(new CustomEvent('navbarGifChanged', {
-        detail: { gifPath: gifPath }
-      }));
-      
-      if (CreateMessage) {
-        CreateMessage({
-          type: "success",
-          title: "Navbar GIF Updated",
-          message: "Your custom navbar gif has been saved successfully! The change will take effect immediately."
-        });
-      }
-      
-    } catch (error) {
-      console.error('Error selecting navbar gif:', error);
-      if (CreateMessage) {
-        CreateMessage({
-          type: "error",
-          title: "Error",
-          message: "Failed to save the selected gif. Please try again."
-        });
-      }
-    }
-  };
-
-  const handleResetNavbarGif = () => {
-    console.log('🔄 Reset GIF button clicked');
-    
-    if (!window.require) {
-      if (CreateMessage) {
-        CreateMessage({
-          type: "error",
-          title: "Error",
-          message: "Reset requires Electron environment."
-        });
-      }
-      return;
-    }
-    
-    try {
-      const path = window.require('path');
-      const fs = window.require('fs');
-      
-      // Get the app installation directory and gif-icon folder
-      // Use process.execPath to get the actual app executable path, then get its directory
-      const appPath = path.dirname(process.execPath);
-      const gifIconDir = path.join(appPath, 'gif-icon');
-      const gifPath = path.join(gifIconDir, 'your-logo.gif');
-      
-      // Delete the custom gif if it exists
-      if (fs.existsSync(gifPath)) {
-        fs.unlinkSync(gifPath);
-        console.log('📁 Removed custom navbar gif');
-      }
-      
-      // Dispatch custom event to notify navbar of gif change
-      window.dispatchEvent(new CustomEvent('navbarGifChanged', {
-        detail: { gifPath: null }
-      }));
-      
-      if (CreateMessage) {
-        CreateMessage({
-          type: "success",
-          title: "Navbar GIF Reset",
-          message: "Navbar gif has been reset to default. The change will take effect immediately."
-        });
-      }
-      
-    } catch (error) {
-      console.error('Error resetting navbar gif:', error);
-      if (CreateMessage) {
-        CreateMessage({
-          type: "error",
-          title: "Error",
-          message: "Failed to reset navbar gif. Please try again."
-        });
-      }
-    }
-  };
 
   const handleRefreshFonts = async () => {
     setIsLoadingFonts(true);
@@ -1187,8 +1397,9 @@ const Settings = () => {
                       <MenuItem value="solar" sx={{ fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } }}>Solar (Orange + Gold)</MenuItem>
                       {/* Midnight removed */}
                       <MenuItem value="charcoalOlive" sx={{ fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } }}>CharcoalOlive (Graphite + Olive)</MenuItem>
-                    <MenuItem value="galaxy" sx={{ fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } }}>Galaxy (Cosmic Purple + Nebula Blue)</MenuItem>
-                    <MenuItem value="divineLab" sx={{ fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } }}>Divine Lab (Flask + Galaxy)</MenuItem>
+                    <MenuItem value="quartz" sx={{ fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } }}>Quartz (Flask + Galaxy)</MenuItem>
+                    <MenuItem value="futuristQuartz" sx={{ fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } }}>Futurist Quartz (Rose + Smoky)</MenuItem>
+                    <MenuItem value="cyberQuartz" sx={{ fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } }}>Cyber Quartz (Cyan + Purple)</MenuItem>
                       {Object.keys(customThemesMap).length > 0 && (
                         <MenuItem disabled divider sx={{ opacity: 0.7, fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.8rem' } }}>
                           Custom Themes
@@ -1263,59 +1474,7 @@ const Settings = () => {
                   >
                     {isLoadingFonts ? 'Loading...' : 'Refresh'}
                    </Button>
-                   
-                   <Button
-                     variant="outlined"
-                     onClick={handleSelectNavbarGif}
-                     size="small"
-                     startIcon={<ImageIcon />}
-                     sx={{ 
-                        borderColor: 'var(--accent2)', 
-                        color: 'var(--accent)', 
-                        '&:hover': { borderColor: 'var(--accent)' },
-                       textTransform: 'none',
-                       fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.875rem' },
-                      flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 4px)' },
-                      minWidth: { xs: '100px', sm: '120px' },
-                      px: { xs: 0.5, sm: 1 }
-                    }}
-                  >
-                    Select GIF
-                   </Button>
-                   
-                   <Button
-                     variant="outlined"
-                     onClick={handleResetNavbarGif}
-                     size="small"
-                     startIcon={<RestoreIcon />}
-                     sx={{ 
-                        borderColor: 'var(--accent2)', 
-                        color: 'var(--accent)', 
-                        '&:hover': { borderColor: 'var(--accent)' },
-                       textTransform: 'none',
-                       fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.875rem' },
-                      flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 4px)' },
-                      minWidth: { xs: '100px', sm: '120px' },
-                      px: { xs: 0.5, sm: 1 }
-                    }}
-                  >
-                    Reset GIF
-                   </Button>
                  </Box>
-                   
-                   <Typography 
-                     variant="body2" 
-                     sx={{ 
-                       color: 'var(--accent2)',
-                       fontSize: { xs: '0.6rem', sm: '0.7rem', md: '0.75rem' },
-                       mb: 1
-                     }}
-                   >
-                     Choose a custom GIF for the navbar logo
-                   </Typography>
-                   
                    
                 {/* Page Visibility Settings - Expandable */}
                 <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid var(--mui-divider)' }}>
@@ -1358,31 +1517,106 @@ const Settings = () => {
                           {/* Accent */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'nowrap' }}>
                             <Typography sx={{ color: 'var(--accent2)', fontSize: { xs: '0.75rem', sm: '0.8rem' }, minWidth: 80, fontWeight: 500 }}>Accent</Typography>
-                            <input type="color" value={customThemeValues.accent} onChange={(e) => handleCustomThemeValueChange('accent', e.target.value)} style={{ width: 40, height: 32, border: '2px solid rgba(255,255,255,0.2)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }} />
+                            <Box
+                              onClick={(e) => handleThemeColorPickerClick(e, 'accent')}
+                              sx={{
+                                width: 40,
+                                height: 32,
+                                border: '2px solid rgba(255,255,255,0.2)',
+                                borderRadius: 6,
+                                background: customThemeValues.accent || '#ffffff',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                  borderColor: 'rgba(255,255,255,0.4)',
+                                  transform: 'scale(1.05)'
+                                }
+                              }}
+                            />
                             <TextField size="small" value={customThemeValues.accent} onChange={(e) => handleCustomThemeValueChange('accent', e.target.value)} sx={{ minWidth: 140, flex: 1 }} />
                           </Box>
                           {/* Accent2 */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'nowrap' }}>
                             <Typography sx={{ color: 'var(--accent2)', fontSize: { xs: '0.75rem', sm: '0.8rem' }, minWidth: 80, fontWeight: 500 }}>Accent 2</Typography>
-                            <input type="color" value={customThemeValues.accent2} onChange={(e) => handleCustomThemeValueChange('accent2', e.target.value)} style={{ width: 40, height: 32, border: '2px solid rgba(255,255,255,0.2)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }} />
+                            <Box
+                              onClick={(e) => handleThemeColorPickerClick(e, 'accent2')}
+                              sx={{
+                                width: 40,
+                                height: 32,
+                                border: '2px solid rgba(255,255,255,0.2)',
+                                borderRadius: 6,
+                                background: customThemeValues.accent2 || '#ffffff',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                  borderColor: 'rgba(255,255,255,0.4)',
+                                  transform: 'scale(1.05)'
+                                }
+                              }}
+                            />
                             <TextField size="small" value={customThemeValues.accent2} onChange={(e) => handleCustomThemeValueChange('accent2', e.target.value)} sx={{ minWidth: 140, flex: 1 }} />
                           </Box>
                           {/* Background */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'nowrap' }}>
                             <Typography sx={{ color: 'var(--accent2)', fontSize: { xs: '0.75rem', sm: '0.8rem' }, minWidth: 80, fontWeight: 500 }}>Background</Typography>
-                            <input type="color" value={customThemeValues.bg} onChange={(e) => handleCustomThemeValueChange('bg', e.target.value)} style={{ width: 40, height: 32, border: '2px solid rgba(255,255,255,0.2)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }} />
+                            <Box
+                              onClick={(e) => handleThemeColorPickerClick(e, 'bg')}
+                              sx={{
+                                width: 40,
+                                height: 32,
+                                border: '2px solid rgba(255,255,255,0.2)',
+                                borderRadius: 6,
+                                background: customThemeValues.bg || '#ffffff',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                  borderColor: 'rgba(255,255,255,0.4)',
+                                  transform: 'scale(1.05)'
+                                }
+                              }}
+                            />
                             <TextField size="small" value={customThemeValues.bg} onChange={(e) => handleCustomThemeValueChange('bg', e.target.value)} sx={{ minWidth: 140, flex: 1 }} />
                           </Box>
                           {/* Surface */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'nowrap' }}>
                             <Typography sx={{ color: 'var(--accent2)', fontSize: { xs: '0.75rem', sm: '0.8rem' }, minWidth: 80, fontWeight: 500 }}>Surface</Typography>
-                            <input type="color" value={customThemeValues.surface} onChange={(e) => handleCustomThemeValueChange('surface', e.target.value)} style={{ width: 40, height: 32, border: '2px solid rgba(255,255,255,0.2)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }} />
+                            <Box
+                              onClick={(e) => handleThemeColorPickerClick(e, 'surface')}
+                              sx={{
+                                width: 40,
+                                height: 32,
+                                border: '2px solid rgba(255,255,255,0.2)',
+                                borderRadius: 6,
+                                background: customThemeValues.surface || '#ffffff',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                  borderColor: 'rgba(255,255,255,0.4)',
+                                  transform: 'scale(1.05)'
+                                }
+                              }}
+                            />
                             <TextField size="small" value={customThemeValues.surface} onChange={(e) => handleCustomThemeValueChange('surface', e.target.value)} sx={{ minWidth: 140, flex: 1 }} />
                           </Box>
                           {/* Text */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'nowrap' }}>
                             <Typography sx={{ color: 'var(--accent2)', fontSize: { xs: '0.75rem', sm: '0.8rem' }, minWidth: 80, fontWeight: 500 }}>Text</Typography>
-                            <input type="color" value={customThemeValues.text} onChange={(e) => handleCustomThemeValueChange('text', e.target.value)} style={{ width: 40, height: 32, border: '2px solid rgba(255,255,255,0.2)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }} />
+                            <Box
+                              onClick={(e) => handleThemeColorPickerClick(e, 'text')}
+                              sx={{
+                                width: 40,
+                                height: 32,
+                                border: '2px solid rgba(255,255,255,0.2)',
+                                borderRadius: 6,
+                                background: customThemeValues.text || '#ffffff',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                  borderColor: 'rgba(255,255,255,0.4)',
+                                  transform: 'scale(1.05)'
+                                }
+                              }}
+                            />
                             <TextField size="small" value={customThemeValues.text} onChange={(e) => handleCustomThemeValueChange('text', e.target.value)} sx={{ minWidth: 140, flex: 1 }} />
                           </Box>
                         </Box>
@@ -1396,7 +1630,42 @@ const Settings = () => {
                         </Box>
                         <Collapse in={showAdvancedTheme} timeout="auto" unmountOnExit>
                           <Grid container spacing={1}>
-                            {['accentMuted','bg2','surface2','text2','glassBg','glassBorder','glassShadow'].map((field) => (
+                            {['accentMuted','bg2','surface2','text2'].map((field) => (
+                              <Grid item xs={12} sm={6} key={field}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'nowrap' }}>
+                                  <Box
+                                    onClick={(e) => handleThemeColorPickerClick(e, field)}
+                                    sx={{
+                                      width: 36,
+                                      height: 32,
+                                      border: '2px solid rgba(255,255,255,0.2)',
+                                      borderRadius: 6,
+                                      background: customThemeValues[field] || '#ffffff',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s ease',
+                                      flexShrink: 0,
+                                      '&:hover': {
+                                        borderColor: 'rgba(255,255,255,0.4)',
+                                        transform: 'scale(1.05)'
+                                      }
+                                    }}
+                                  />
+                                  <TextField
+                                    fullWidth
+                                    size="small"
+                                    label={field}
+                                    value={customThemeValues[field] || ''}
+                                    onChange={(e) => handleCustomThemeValueChange(field, e.target.value)}
+                                    sx={{
+                                      '& .MuiOutlinedInput-root': { color: 'var(--accent)', fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' }, '& fieldset': { borderColor: 'var(--accent2)' }, '&:hover fieldset': { borderColor: 'var(--accent)' }, '&.Mui-focused fieldset': { borderColor: 'var(--accent)' } },
+                                      '& .MuiInputLabel-root': { color: 'var(--accent2)', fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' } },
+                                    }}
+                                  />
+                                </Box>
+                              </Grid>
+                            ))}
+                            {/* Glass colors use rgba format, so keep them as text input only */}
+                            {['glassBg','glassBorder','glassShadow'].map((field) => (
                               <Grid item xs={12} sm={6} key={field}>
                                 <TextField
                                   fullWidth
@@ -1665,33 +1934,6 @@ const Settings = () => {
                       <FormControlLabel
                         control={
                           <Switch
-                            checked={settings.frogImgGreyscaleFilter}
-                            onChange={(e) => handleSettingChange('frogImgGreyscaleFilter', e.target.checked)}
-                            sx={{
-                              '& .MuiSwitch-switchBase.Mui-checked': {
-                                color: 'var(--accent)',
-                                '&:hover': {
-                                  backgroundColor: 'color-mix(in srgb, var(--accent), transparent 92%)',
-                                },
-                              },
-                              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                backgroundColor: 'var(--accent)',
-                              },
-                            }}
-                          />
-                        }
-                        label={
-                          <Typography variant="body2" sx={{ 
-                            color: 'var(--accent2)',
-                            fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' }
-                          }}>
-                            Auto Greyscale Filter
-                          </Typography>
-                        }
-                      />
-                      <FormControlLabel
-                        control={
-                          <Switch
                             checked={settings.UpscaleEnabled}
                             onChange={(e) => handleSettingChange('UpscaleEnabled', e.target.checked)}
                             sx={{
@@ -1740,33 +1982,6 @@ const Settings = () => {
                             fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' }
                           }}>
                             RGBA
-                          </Typography>
-                        }
-                      />
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={settings.hudEditorEnabled}
-                            onChange={(e) => handleSettingChange('hudEditorEnabled', e.target.checked)}
-                            sx={{
-                              '& .MuiSwitch-switchBase.Mui-checked': {
-                                color: 'var(--accent)',
-                                '&:hover': {
-                                  backgroundColor: 'color-mix(in srgb, var(--accent), transparent 92%)',
-                                },
-                              },
-                              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                backgroundColor: 'var(--accent)',
-                              },
-                            }}
-                          />
-                        }
-                        label={
-                          <Typography variant="body2" sx={{ 
-                            color: 'var(--accent2)',
-                            fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' }
-                          }}>
-                            HUD Editor
                           </Typography>
                         }
                       />
@@ -1901,7 +2116,7 @@ const Settings = () => {
                             color: 'var(--accent2)',
                             fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' }
                           }}>
-                            FrogChanger
+                            Asset Extractor
                           </Typography>
                         }
                       />
@@ -1934,14 +2149,23 @@ const Settings = () => {
             width: '100%'
           }}>
             <CardContent sx={{ p: { xs: 1, sm: 1.5, md: 2 } }}>
-              <Typography variant="h6" gutterBottom sx={{ 
-                color: 'var(--accent)', 
-                mb: 1.5, 
-                fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem' }
-              }}>
-                External Tools
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Typography variant="h6" sx={{ 
+                  color: 'var(--accent)', 
+                  fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem' }
+                }}>
+                  External Tools
+                </Typography>
+                <IconButton
+                  onClick={() => setExternalToolsExpanded(prev => !prev)}
+                  size="small"
+                  sx={{ color: 'var(--accent2)', '&:hover': { color: 'var(--accent)' } }}
+                >
+                  {externalToolsExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                </IconButton>
+              </Box>
               
+              <Collapse in={externalToolsExpanded} timeout="auto" unmountOnExit>
               <Box sx={{ space: 2 }}>
                 <TextField
                   fullWidth
@@ -1998,76 +2222,259 @@ const Settings = () => {
                   }}
                 />
 
-                {/* Bumpath Settings */}
+                {/* Hash Management Settings */}
                 <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid var(--mui-divider)' }}>
                   <Typography variant="h6" sx={{ 
                     color: 'var(--accent)', 
                     fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem' },
                     mb: 1.5
                   }}>
-                     Hashes Location
+                     Hash Files (Automatic Management)
                   </Typography>
                   
-                  <TextField
-                    fullWidth
-                    label="Hashes Directory"
-                    value={electronPrefs.obj.BumpathHashesPath || ''}
-                    onChange={(e) => handleSettingChange('BumpathHashesPath', e.target.value)}
-                    placeholder="Path to hashes directory"
-                    helperText="Directory containing hash files for BIN analysis"
-                    size="small"
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            onClick={async () => {
-                              try {
-                                const result = await electronPrefs.selectDirectory();
-                                if (result) {
-                                  handleSettingChange('BumpathHashesPath', result);
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    <TextField
+                      fullWidth
+                      label="Hash Directory (Integrated)"
+                      value={hashDirectory || ''}
+                      InputProps={{
+                        readOnly: true,
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              onClick={handleOpenHashFolder}
+                              edge="end"
+                              title="Open hash folder location"
+                              size="small"
+                              disabled={!hashDirectory}
+                              sx={{ 
+                                color: 'var(--accent2)',
+                                fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' },
+                                '&:disabled': {
+                                  opacity: 0.5
                                 }
-                              } catch (error) {
-                                console.error('Error selecting hashes directory:', error);
-                              }
-                            }}
-                            edge="end"
-                            title="Browse for hashes directory"
-                            size="small"
-                            sx={{ 
-                              color: 'var(--accent2)',
-                              fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
-                            }}
-                          >
-                            <FolderIcon />
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{ 
-                      mb: 1.5,
-                      '& .MuiOutlinedInput-root': {
-                        color: 'var(--accent)',
-                        fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
-                        '& fieldset': {
-                          borderColor: 'var(--accent2)',
+                              }}
+                            >
+                              <FolderIcon />
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      }}
+                      placeholder="Loading..."
+                      helperText="Hash files are automatically managed. Click Download to update hash files."
+                      size="small"
+                      sx={{ 
+                        mb: 1,
+                        '& .MuiOutlinedInput-root': {
+                          color: 'var(--accent)',
+                          fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
+                          backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                          '& fieldset': {
+                            borderColor: 'var(--accent2)',
+                          },
                         },
-                        '&:hover fieldset': {
-                          borderColor: 'var(--accent)',
+                        '& .MuiInputLabel-root': {
+                          color: 'var(--accent2)',
+                          fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
                         },
-                        '&.Mui-focused fieldset': {
-                          borderColor: 'var(--accent)',
+                        '& .MuiFormHelperText-root': {
+                          color: 'var(--accent-muted)',
+                          fontSize: { xs: '0.6rem', sm: '0.7rem', md: '0.75rem' },
                         },
-                      },
-                      '& .MuiInputLabel-root': {
+                      }}
+                    />
+                    
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Button
+                      variant="contained"
+                      onClick={handleDownloadHashes}
+                      disabled={downloadingHashes}
+                      startIcon={downloadingHashes ? <CircularProgress size={14} /> : <DownloadIcon />}
+                      size="small"
+                      sx={{
+                        background: 'var(--accent)',
+                        color: 'var(--bg)',
+                        fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' },
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: '4px',
+                        minHeight: '32px',
+                        '&:hover': {
+                          background: 'var(--accent2)',
+                        },
+                        '&:disabled': {
+                          background: 'var(--accent-muted)',
+                        },
+                      }}
+                    >
+                      {downloadingHashes ? 'Downloading...' : 'Download/Update Hashes'}
+                    </Button>
+                      
+                      {hashStatus && (
+                        <Typography variant="body2" sx={{ 
+                          color: hashStatus.allPresent ? 'var(--accent)' : 'var(--warning)',
+                          fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.875rem' },
+                        }}>
+                          {hashStatus.allPresent 
+                            ? `✓ All hash files present (${hashStatus.missing.length === 0 ? '6/6' : `${6 - hashStatus.missing.length}/6`})`
+                            : `Missing ${hashStatus.missing.length} file(s): ${hashStatus.missing.slice(0, 2).join(', ')}${hashStatus.missing.length > 2 ? '...' : ''}`
+                          }
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+
+                {/* Update Management Section */}
+                <Box ref={updateManagementRef} sx={{ mt: 2, pt: 2, borderTop: '1px solid var(--mui-divider)', borderRadius: 1, px: 1, py: 0.5 }}>
+                  <Typography variant="h6" sx={{ 
+                    color: 'var(--accent)', 
+                    fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem' },
+                    mb: 1.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                  }}>
+                    <UpdateIcon sx={{ fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' } }} />
+                    Update Management
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                      <Typography variant="body2" sx={{ 
                         color: 'var(--accent2)',
-                        fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
-                      },
-                      '& .MuiFormHelperText-root': {
-                        color: 'var(--accent-muted)',
-                        fontSize: { xs: '0.6rem', sm: '0.7rem', md: '0.75rem' },
-                      },
-                    }}
-                  />
+                        fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.875rem' },
+                      }}>
+                        Current Version: <strong style={{ color: 'var(--accent)' }}>{currentVersion || 'Unknown'}</strong>
+                      </Typography>
+                      
+                      {newVersion && newVersion !== currentVersion && (
+                        <Typography variant="body2" sx={{ 
+                          color: 'var(--accent)',
+                          fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.875rem' },
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5
+                        }}>
+                          <WarningIcon sx={{ fontSize: '0.9rem' }} />
+                          New Version Available: <strong>{newVersion}</strong>
+                        </Typography>
+                      )}
+                    </Box>
+
+                    {updateStatus === 'downloading' && (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <CircularProgress size={16} />
+                          <Typography variant="body2" sx={{ 
+                            color: 'var(--accent2)',
+                            fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.875rem' },
+                          }}>
+                            Downloading update: {Math.round(updateProgress.percent)}%
+                          </Typography>
+                        </Box>
+                        {updateProgress.total > 0 && (
+                          <Typography variant="caption" sx={{ 
+                            color: 'var(--text-muted)',
+                            fontSize: { xs: '0.65rem', sm: '0.7rem' },
+                          }}>
+                            {Math.round(updateProgress.transferred / 1024 / 1024)} MB / {Math.round(updateProgress.total / 1024 / 1024)} MB
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+
+                    {updateError && (
+                      <Alert severity="error" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.875rem' } }}>
+                        {updateError}
+                      </Alert>
+                    )}
+
+                    {updateStatus === 'not-available' && (
+                      <Alert severity="success" sx={{ fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.875rem' } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <CheckCircleIcon sx={{ fontSize: '1rem' }} />
+                          You are using the latest version!
+                        </Box>
+                      </Alert>
+                    )}
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                      {updateStatus !== 'downloading' && updateStatus !== 'downloaded' && (
+                        <Button
+                          variant="contained"
+                          onClick={handleCheckForUpdates}
+                          disabled={updateStatus === 'checking'}
+                          startIcon={updateStatus === 'checking' ? <CircularProgress size={14} /> : <UpdateIcon />}
+                          size="small"
+                          sx={{
+                            background: 'var(--accent)',
+                            color: 'var(--bg)',
+                            fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' },
+                            px: 1.5,
+                            py: 0.5,
+                            borderRadius: '4px',
+                            minHeight: '32px',
+                            '&:hover': {
+                              background: 'color-mix(in srgb, var(--accent) 90%, black)',
+                            },
+                            '&:disabled': {
+                              background: 'var(--accent-muted)',
+                              color: 'var(--text-muted)',
+                            }
+                          }}
+                        >
+                          {updateStatus === 'checking' ? 'Checking...' : 'Check for Updates'}
+                        </Button>
+                      )}
+
+                      {updateStatus === 'available' && (
+                        <Button
+                          variant="contained"
+                          onClick={handleDownloadUpdate}
+                          startIcon={<CloudDownloadIcon />}
+                          size="small"
+                          sx={{
+                            background: 'var(--accent2)',
+                            color: 'var(--bg)',
+                            fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' },
+                            px: 1.5,
+                            py: 0.5,
+                            borderRadius: '4px',
+                            minHeight: '32px',
+                            '&:hover': {
+                              background: 'color-mix(in srgb, var(--accent2) 90%, black)',
+                            }
+                          }}
+                        >
+                          Download Update
+                        </Button>
+                      )}
+
+                      {updateStatus === 'downloaded' && (
+                        <Button
+                          variant="contained"
+                          onClick={handleInstallUpdate}
+                          startIcon={<UpdateIcon />}
+                          size="small"
+                          sx={{
+                            background: 'var(--accent)',
+                            color: 'var(--bg)',
+                            fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' },
+                            px: 1.5,
+                            py: 0.5,
+                            borderRadius: '4px',
+                            minHeight: '32px',
+                            '&:hover': {
+                              background: 'color-mix(in srgb, var(--accent) 90%, black)',
+                            }
+                          }}
+                        >
+                          Install & Restart
+                        </Button>
+                      )}
+                    </Box>
+                  </Box>
                 </Box>
 
                 {/* Backend Management Section */}
@@ -2090,6 +2497,7 @@ const Settings = () => {
                       onClick={handleRestartBackend}
                       disabled={isRestartingBackend}
                       startIcon={<RestartIcon />}
+                      size="small"
                       sx={{
                         background: isRestartingBackend 
                           ? 'var(--accent-muted)' 
@@ -2097,9 +2505,11 @@ const Settings = () => {
                             ? 'var(--accent)' 
                             : 'var(--accent2)',
                         color: 'var(--bg)',
-                        fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
-                        px: 2,
-                        py: 1,
+                        fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' },
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: '4px',
+                        minHeight: '32px',
                         '&:hover': {
                           background: isRestartingBackend 
                             ? 'var(--accent-muted)' 
@@ -2159,18 +2569,10 @@ const Settings = () => {
                       </Typography>
                     </Box>
                   </Box>
-                  
-                  <Typography variant="body2" sx={{ 
-                    color: 'var(--accent-muted)',
-                    fontSize: { xs: '0.6rem', sm: '0.7rem', md: '0.75rem' },
-                    fontStyle: 'italic'
-                  }}>
-                    Restart the backend service if you're experiencing issues with SKL detection or mask editing.
-                  </Typography>
                 </Box>
 
                 {/* GitHub Settings Section */}
-                 <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid var(--mui-divider)' }}>
+                <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid var(--mui-divider)' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
               <Typography variant="h6" sx={{ 
                 color: 'var(--accent)', 
@@ -2371,13 +2773,11 @@ const Settings = () => {
                   </Collapse>
                 </Box>
               </Box>
+              </Collapse>
             </CardContent>
           </Card>
         </Grid>
-
-
-
-
+          
           </Grid>
 
           {/* Status Alert */}

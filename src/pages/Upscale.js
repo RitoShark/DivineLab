@@ -631,7 +631,7 @@ const Upscale = () => {
 		} catch (e) {
 			const msg = String(e?.message || e);
 			if (msg.includes("No handler registered")) {
-				setEnsureError('Upscayl service not loaded yet. Please fully restart DivineLab (close the Electron window and re-run) so the new integration is registered.\n\nDetails: ' + msg);
+				setEnsureError('Upscayl service not loaded yet. Please fully restart Quartz (close the Electron window and re-run) so the new integration is registered.\n\nDetails: ' + msg);
 			} else {
 				setEnsureError(msg);
 			}

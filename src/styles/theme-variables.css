@@ -163,7 +163,7 @@
     50% { box-shadow: 0 0 30px rgba(139,92,246,0.5); }
 }
 
-[data-theme="divineLab"] {
+[data-theme="quartz"] {
     --accent: #f8fafc;
     --accent2: #c0c5ce;
     --accent-muted: #cbd5e1;
@@ -186,19 +186,19 @@
                       radial-gradient(circle at 40% 40%, rgba(203,213,225,0.02) 0%, transparent 50%);
 }
 
-/* Divine Lab theme laboratory effects */
-[data-theme="divineLab"] body {
+/* Quartz theme laboratory effects */
+[data-theme="quartz"] body {
     background: var(--cosmic-lab-bg);
     animation: lab-drift 80s ease-in-out infinite;
 }
 
-[data-theme="divineLab"] .theme-glass {
+[data-theme="quartz"] .theme-glass {
     box-shadow: var(--lab-glow), var(--glass-shadow);
     background: var(--flask-gradient), var(--glass-bg);
     border: 1px solid var(--glass-border);
 }
 
-[data-theme="divineLab"] .theme-button-primary {
+[data-theme="quartz"] .theme-button-primary {
     box-shadow: var(--lab-glow);
     animation: lab-pulse 4s ease-in-out infinite;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
@@ -206,7 +206,7 @@
     font-weight: 600;
 }
 
-[data-theme="divineLab"] .theme-surface {
+[data-theme="quartz"] .theme-surface {
     border: 1px solid var(--accent-muted);
     box-shadow: inset 0 1px 3px rgba(248,250,252,0.1);
 }

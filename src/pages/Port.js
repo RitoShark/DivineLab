@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Port.css';
-import { Box, IconButton, Tooltip, CircularProgress } from '@mui/material';
+import { Box, IconButton, Tooltip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import { Apps as AppsIcon, Add as AddIcon, Folder as FolderIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import CropOriginalIcon from '@mui/icons-material/CropOriginal';
 import { ToPyWithPath } from '../utils/fileOperations.js';
@@ -24,6 +25,7 @@ import MatrixEditor from '../components/MatrixEditor';
 import { parseSystemMatrix, upsertSystemMatrix, replaceSystemBlockInFile } from '../utils/matrixUtils.js';
 
 const Port = () => {
+  const navigate = useNavigate();
   const [targetPath, setTargetPath] = useState('This will show target bin');
   const [donorPath, setDonorPath] = useState('This will show donor bin');
   const [targetFilter, setTargetFilter] = useState('');
@@ -106,6 +108,8 @@ const Port = () => {
   const [fileSaved, setFileSaved] = useState(true);
   const [selectedTargetSystem, setSelectedTargetSystem] = useState(null);
   const [deletedEmitters, setDeletedEmitters] = useState(new Map()); // Track deleted emitters by systemKey:emitterName
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const pendingNavigationPathRef = useRef(null);
 
   // Idle particles states
   const [showIdleParticleModal, setShowIdleParticleModal] = useState(false);
@@ -255,7 +259,38 @@ const Port = () => {
     try { window.__DL_unsavedBin = !fileSaved; } catch {}
   }, [fileSaved]);
 
-  // Warn on window/tab close if unsaved
+  // Intercept navigation when unsaved changes exist
+  useEffect(() => {
+    const handleNavigationBlock = (e) => {
+      console.log('🔒 Navigation blocked event received:', e.detail);
+      
+      if (!fileSaved && !window.__DL_forceClose) {
+        // Prevent default and stop propagation
+        if (e.preventDefault) e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+        
+        // Store the intended navigation path
+        const targetPath = e.detail?.path;
+        console.log('🔒 Target path:', targetPath, 'File saved:', fileSaved);
+        
+        if (targetPath) {
+          // Store navigation path in ref (not state) to avoid render issues
+          pendingNavigationPathRef.current = targetPath;
+          setShowUnsavedDialog(true);
+        }
+      }
+    };
+
+    // Listen for custom navigation-block event from ModernNavigation
+    // Use capture phase to catch event early
+    window.addEventListener('navigation-blocked', handleNavigationBlock, true);
+    
+    return () => {
+      window.removeEventListener('navigation-blocked', handleNavigationBlock, true);
+    };
+  }, [fileSaved, navigate]);
+
+  // Warn on window/tab close if unsaved (native dialog for window closing)
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       try {
@@ -275,15 +310,75 @@ const Port = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileSaved]);
 
+  // Handle unsaved dialog actions
+  const handleUnsavedSave = async () => {
+    const targetPath = pendingNavigationPathRef.current;
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+    
+    try {
+      await handleSave();
+      // After save, allow navigation
+      window.__DL_forceClose = true;
+      window.__DL_unsavedBin = false;
+      
+      if (targetPath) {
+        // Execute navigation after state updates
+        setTimeout(() => {
+          console.log('🚀 Executing navigation to:', targetPath);
+          navigate(targetPath);
+          setTimeout(() => {
+            window.__DL_forceClose = false;
+          }, 100);
+        }, 50);
+      }
+    } catch (error) {
+      console.error('Error saving before navigation:', error);
+    }
+  };
+
+  const handleUnsavedDiscard = () => {
+    const targetPath = pendingNavigationPathRef.current;
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+    
+    // Clear the unsaved flag to allow navigation
+    setFileSaved(true);
+    window.__DL_forceClose = true;
+    window.__DL_unsavedBin = false;
+    
+    if (targetPath) {
+      // Execute navigation after state updates
+      setTimeout(() => {
+        console.log('🚀 Executing navigation to:', targetPath);
+        navigate(targetPath);
+        setTimeout(() => {
+          window.__DL_forceClose = false;
+        }, 100);
+      }, 50);
+    }
+  };
+
+  const handleUnsavedCancel = () => {
+    setShowUnsavedDialog(false);
+    pendingNavigationPathRef.current = null;
+  };
+
   // Drag-and-drop visual feedback state
   const [isDragOverVfx, setIsDragOverVfx] = useState(false);
+  const [pressedSystemKey, setPressedSystemKey] = useState(null);
+  const [dragStartedKey, setDragStartedKey] = useState(null);
+  const dragEnterCounter = useRef(0);
   const targetListRef = useRef(null);
   const donorListRef = useRef(null);
   // Removed preloaded systems tracking - no longer needed
 
   // Ensure drag overlay resets if user cancels or drops elsewhere
   useEffect(() => {
-    const resetDrag = () => setIsDragOverVfx(false);
+    const resetDrag = () => {
+      setIsDragOverVfx(false);
+      dragEnterCounter.current = 0;
+    };
     window.addEventListener('dragend', resetDrag);
     window.addEventListener('drop', resetDrag);
     return () => {
@@ -1832,7 +1927,7 @@ const Port = () => {
     }
   };
 
-  // Handle editing a DivineLab-created child particle emitter
+  // Handle editing a Quartz-created child particle emitter
   const handleEditChildParticle = (systemKey, systemName, emitterName) => {
     try {
       // Extract the current data from the emitter
@@ -2646,14 +2741,32 @@ const Port = () => {
       );
     }
 
-    return systems.map(system => (
+    return systems.map(system => {
+      const isPressed = pressedSystemKey === system.key && !isTarget;
+      const isDragging = dragStartedKey === system.key && !isTarget;
+      
+      return (
       <div
         key={system.key}
         draggable={!isTarget}
         // Removed hover preloading to eliminate scroll lag - textures will load on-demand when preview button is clicked
         title={!isTarget ? 'Drag into Target to add full system' : undefined}
+        onMouseDown={(e) => {
+          if (isTarget || e.target.closest('button') || e.target.closest('.port-btn')) return;
+          // Immediate visual feedback on click
+          setPressedSystemKey(system.key);
+          setDragStartedKey(null);
+        }}
+        onMouseUp={(e) => {
+          if (isTarget) return;
+          // Only reset if drag didn't start (user clicked but didn't drag)
+          if (!isDragging) {
+            setPressedSystemKey(null);
+          }
+        }}
         onDragStart={async (e) => {
           if (isTarget) return;
+          setDragStartedKey(system.key);
           try {
             // Prepare full VFX system content payload for donor systems
             let fullContent = '';
@@ -2668,25 +2781,36 @@ const Port = () => {
               name: particleNameForUi,
               fullContent
             };
+            e.dataTransfer.effectAllowed = 'copy';
             e.dataTransfer.setData('application/x-vfxsys', JSON.stringify(payload));
-            // Subtle donor tile cue during drag
+            // Create a drag image for better visual feedback
             const el = e.currentTarget;
-            el.style.outline = '1px dashed var(--accent)';
-            el.style.outlineOffset = '2px';
+            const dragImage = el.cloneNode(true);
+            dragImage.style.transform = 'rotate(2deg)';
+            dragImage.style.opacity = '0.9';
+            document.body.appendChild(dragImage);
+            dragImage.style.position = 'absolute';
+            dragImage.style.top = '-1000px';
+            e.dataTransfer.setDragImage(dragImage, 0, 0);
+            setTimeout(() => document.body.removeChild(dragImage), 0);
           } catch (err) {
             console.error('Drag start failed:', err);
           }
         }}
         onDragEnd={(e) => {
           if (isTarget) return;
-          const el = e.currentTarget;
-          el.style.outline = 'none';
-          el.style.outlineOffset = '0px';
+          setPressedSystemKey(null);
+          setDragStartedKey(null);
         }}
         className={`particle-div ${isTarget && selectedTargetSystem === system.key ? 'selected-system' : ''}`}
         onClick={() => isTarget && setSelectedTargetSystem(selectedTargetSystem === system.key ? null : system.key)}
         style={{ 
           cursor: isTarget ? 'pointer' : 'default',
+          outline: isPressed ? '2px dashed var(--accent)' : (isDragging ? '2px dashed var(--accent)' : 'none'),
+          outlineOffset: isPressed || isDragging ? '2px' : '0px',
+          opacity: isPressed ? '0.8' : (isDragging ? '0.7' : '1'),
+          transform: isPressed ? 'scale(0.98)' : (isDragging ? 'scale(0.95)' : 'scale(1)'),
+          transition: 'all 0.1s ease-out',
           ...(isTarget && system.ported ? {
             background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent-green, #22c55e), transparent 65%), color-mix(in srgb, var(--accent-green, #22c55e), transparent 78%))',
             border: '1px solid color-mix(in srgb, var(--accent-green, #22c55e), transparent 45%)'
@@ -2863,16 +2987,16 @@ const Port = () => {
           )}
         </div>
         {system.emitters.map((emitter, index) => {
-          const isDivineLabChild = isDivineLabChildParticle(emitter.name);
+          const isQuartzChild = isDivineLabChildParticle(emitter.name);
           
           return (
           <div 
             key={index} 
             className="emitter-div"
             style={{
-              border: isDivineLabChild ? '2px solid #3b82f6' : undefined,
-              borderRadius: isDivineLabChild ? '6px' : undefined,
-              background: isDivineLabChild ? 'rgba(59, 130, 246, 0.05)' : undefined
+              border: isQuartzChild ? '2px solid #3b82f6' : undefined,
+              borderRadius: isQuartzChild ? '6px' : undefined,
+              background: isQuartzChild ? 'rgba(59, 130, 246, 0.05)' : undefined
             }}
           >
             {!isTarget && (
@@ -2934,8 +3058,8 @@ const Port = () => {
               />
             )}
             
-            {/* Edit button for DivineLab-created child particles */}
-            {isDivineLabChild && isTarget && (
+            {/* Edit button for Quartz-created child particles */}
+            {isQuartzChild && isTarget && (
               <button
                 className="edit-child-btn"
                 onClick={(e) => {
@@ -3100,11 +3224,12 @@ const Port = () => {
               </button>
             )}
           </div>
-        );
+          )
         })}
       </div>
-    ));
-  };
+      );
+      })
+    }
 
   // Helper function to convert color data to CSS color string
   const getColorString = (colorData) => {
@@ -3280,23 +3405,39 @@ const Port = () => {
               // Allow dropping donor systems into the target list
               if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('application/x-vfxsys')) {
                 e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'copy';
                 if (!isDragOverVfx) setIsDragOverVfx(true);
               }
             }}
             onDragEnter={(e) => {
+              // Prevent bubbling to avoid multiple triggers
+              e.preventDefault();
+              e.stopPropagation();
               if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('application/x-vfxsys')) {
-                setIsDragOverVfx(true);
+                dragEnterCounter.current += 1;
+                if (!isDragOverVfx) setIsDragOverVfx(true);
               }
             }}
-            onDragLeave={() => {
-              setIsDragOverVfx(false);
+            onDragLeave={(e) => {
+              // Prevent bubbling and only decrement if actually leaving the drop zone
+              e.preventDefault();
+              e.stopPropagation();
+              dragEnterCounter.current -= 1;
+              // Only hide the drag overlay if we've actually left the drop zone (counter is 0 or negative)
+              if (dragEnterCounter.current <= 0) {
+                setIsDragOverVfx(false);
+                dragEnterCounter.current = 0;
+              }
             }}
             onDrop={(e) => {
               try {
+                e.preventDefault();
+                e.stopPropagation();
                 const data = e.dataTransfer.getData('application/x-vfxsys');
                 if (!data) return;
-                e.preventDefault();
                 setIsDragOverVfx(false);
+                dragEnterCounter.current = 0;
                 if (!targetPyContent) {
                   setStatusMessage('No target file loaded - please open a target bin first');
                   return;
@@ -3356,7 +3497,10 @@ const Port = () => {
                 justifyContent: 'center',
                 pointerEvents: 'none',
                 zIndex: 2,
-                background: 'rgba(15,13,20,0.35)'
+                background: 'rgba(139, 92, 246, 0.15)',
+                border: '2px dashed var(--accent)',
+                borderRadius: '8px',
+                transition: 'all 0.15s ease-out'
               }}>
                 <div style={{
                   padding: '10px 16px',
@@ -5810,6 +5954,84 @@ const Port = () => {
         filePath={targetPath !== 'This will show target bin' ? targetPath.replace('.bin', '.py') : null}
         component="port"
       />
+
+      {/* Unsaved Changes Dialog */}
+      <Dialog
+        open={showUnsavedDialog}
+        onClose={handleUnsavedCancel}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+            backdropFilter: 'saturate(180%) blur(16px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(16px)',
+          },
+        }}
+      >
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          fontWeight: 600
+        }}>
+          ⚠️ Unsaved Changes
+        </DialogTitle>
+        
+        <DialogContent sx={{ pt: 2 }}>
+          <div style={{ 
+            color: '#e5e7eb', 
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            lineHeight: 1.5
+          }}>
+            You have unsaved changes. What would you like to do?
+          </div>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={handleUnsavedCancel}
+            sx={{ 
+              color: 'var(--accent2)',
+              '&:hover': {
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUnsavedDiscard}
+            sx={{
+              color: 'var(--accent2)',
+              '&:hover': {
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: '#ef4444',
+              }
+            }}
+          >
+            Discard Changes
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleUnsavedSave}
+            sx={{
+              background: 'var(--accent)',
+              color: 'var(--bg)',
+              borderRadius: '4px',
+              px: 2,
+              '&:hover': {
+                background: 'var(--accent2)',
+              },
+            }}
+          >
+            Save & Leave
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };

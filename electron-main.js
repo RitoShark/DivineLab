@@ -4,23 +4,134 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const isDev = require('electron-is-dev');
 const https = require('https');
+const { autoUpdater } = require('electron-updater');
 
 // Track if the app is in the process of quitting to avoid re-entrancy/loops
 let isQuitting = false;
+let textureCacheCleared = false;
+
+// Auto-updater configuration
+let updateCheckWindow = null; // Window reference for sending update events
+let cachedUpdateInfo = null; // Cache update info when available event fires
+autoUpdater.autoDownload = false; // Don't auto-download, let user choose
+autoUpdater.autoInstallOnAppQuit = true; // Install on app quit if update is downloaded
+
+// Enable logging for electron-updater (helps debug issues)
+autoUpdater.logger = {
+  info: (message) => logToFile(`[AUTO-UPDATER] ${message}`, 'INFO'),
+  warn: (message) => logToFile(`[AUTO-UPDATER] ${message}`, 'WARNING'),
+  error: (message) => logToFile(`[AUTO-UPDATER] ${message}`, 'ERROR'),
+  debug: (message) => logToFile(`[AUTO-UPDATER] ${message}`, 'INFO'),
+};
+
+// Force update checks in dev mode for testing
+if (process.env.ENABLE_AUTO_UPDATER === 'true') {
+  // Force dev update configuration - this tells electron-updater to allow checks in dev mode
+  autoUpdater.forceDevUpdateConfig = true;
+  // Also need to set updateCheckTimeout to allow it
+  autoUpdater.updateConfigPath = null;
+}
 
 // ============================================================================
 // FILE-BASED LOGGING SYSTEM FOR PRODUCTION DEBUGGING
 // ============================================================================
 const LOG_DIR = path.join(app.getPath('userData'), 'logs');
-const LOG_FILE = path.join(LOG_DIR, `divinelab-${new Date().toISOString().split('T')[0]}.log`);
+const LOG_FILE = path.join(LOG_DIR, `quartz-${new Date().toISOString().split('T')[0]}.log`);
 
-// Ensure log directory exists
-try {
-  if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
+// Clear old log files on app startup
+function clearOldLogsOnStartup() {
+  try {
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+      return; // Directory didn't exist, nothing to clear
+    }
+    
+    const files = fs.readdirSync(LOG_DIR);
+    let deletedCount = 0;
+    
+    for (const file of files) {
+      const filePath = path.join(LOG_DIR, file);
+      try {
+        // Only delete .log files (keep other files if any)
+        if (file.endsWith('.log')) {
+          fs.unlinkSync(filePath);
+          deletedCount++;
+        }
+      } catch (error) {
+        console.error(`Failed to delete old log file ${file}:`, error);
+      }
+    }
+    
+    if (deletedCount > 0) {
+      console.log(`Cleared ${deletedCount} old log file(s) from logs directory`);
+    }
+  } catch (e) {
+    console.error('Failed to clear old logs:', e);
   }
+}
+
+// Ensure log directory exists and clear old logs
+try {
+  clearOldLogsOnStartup();
 } catch (e) {
-  console.error('Failed to create log directory:', e);
+  console.error('Failed to initialize log directory:', e);
+}
+
+// Import hash manager - handle both dev and production paths
+let hashManager;
+function loadHashManager() {
+  if (hashManager) return hashManager;
+  
+  const pathsToTry = [
+    // Development: relative path from electron-main.js
+    './src/utils/hashManager',
+    // Production: path relative to __dirname (when in app.asar root)
+    path.join(__dirname, 'src', 'utils', 'hashManager'),
+    // Alternative: path with .js extension
+    path.join(__dirname, 'src', 'utils', 'hashManager.js'),
+  ];
+  
+  for (const modulePath of pathsToTry) {
+    try {
+      hashManager = require(modulePath);
+      logToFile(`hashManager loaded from: ${modulePath}`, 'INFO');
+      return hashManager;
+    } catch (e) {
+      // Continue to next path
+    }
+  }
+  
+  // If app is available, try app path
+  if (app && typeof app.isReady === 'function' && app.isReady()) {
+    try {
+      const appPath = app.getAppPath();
+      const hashManagerPath = path.join(appPath, 'src', 'utils', 'hashManager.js');
+      hashManager = require(hashManagerPath);
+      logToFile(`hashManager loaded from app path: ${hashManagerPath}`, 'INFO');
+      return hashManager;
+    } catch (e) {
+      // Continue to error handling
+    }
+  }
+  
+  // If all else fails, log error and return stub
+  const errorMsg = 'Failed to load hashManager from all attempted paths';
+  console.error(errorMsg);
+  logToFile(errorMsg, 'ERROR');
+  logToFile(`Tried paths: ${pathsToTry.join(', ')}`, 'ERROR');
+  logToFile(`__dirname: ${__dirname}`, 'ERROR');
+  if (app) {
+    try {
+      logToFile(`app.getAppPath(): ${app.getAppPath()}`, 'ERROR');
+    } catch (e) {}
+  }
+  
+  // Return a stub to prevent crashes
+  return {
+    checkHashes: () => ({ allPresent: false, missing: [], error: 'hashManager not loaded' }),
+    downloadHashes: async () => ({ success: false, errors: ['hashManager not loaded'], downloaded: [] }),
+    getHashDirectory: () => ''
+  };
 }
 
 // Log function that writes to both console and file
@@ -44,6 +155,27 @@ ipcMain.handle('get-log-file-path', () => {
   return LOG_FILE;
 });
 
+// Handle texture conversion logging from renderer
+ipcMain.handle('log-texture-conversion', async (event, { level, message, data }) => {
+  try {
+    const logMessage = `[TEXTURE-${level.toUpperCase()}] ${message}`;
+    if (data) {
+      logToFile(`${logMessage} - Data: ${JSON.stringify(data)}`, level.toUpperCase());
+    } else {
+      logToFile(logMessage, level.toUpperCase());
+    }
+    return { success: true };
+  } catch (error) {
+    logToFile(`Failed to log texture message: ${error.message}`, 'ERROR');
+    return { success: false, error: error.message };
+  }
+});
+
+// Export user data path via IPC
+ipcMain.handle('get-user-data-path', () => {
+  return app.getPath('userData');
+});
+
 // IPC handler to open log file location
 ipcMain.handle('open-log-folder', async () => {
   try {
@@ -55,7 +187,59 @@ ipcMain.handle('open-log-folder', async () => {
 });
 
 logToFile('='.repeat(80), 'INFO');
-logToFile('DivineLab Started', 'INFO');
+logToFile('Quartz Started', 'INFO');
+
+  // Load hashManager now that logToFile is available
+hashManager = loadHashManager();
+
+
+// Ensure ritobin_cli.exe is copied to FrogTools directory
+function ensureRitobinCli() {
+  try {
+    // Use same path logic as hashManager - AppData/Roaming/FrogTools
+    const appDataPath = process.env.APPDATA || 
+      (process.platform === 'darwin' 
+        ? path.join(process.env.HOME, 'Library', 'Application Support')
+        : process.platform === 'linux'
+          ? path.join(process.env.HOME, '.local', 'share')
+          : path.join(process.env.HOME, 'AppData', 'Roaming'));
+    
+    const frogToolsDir = path.join(appDataPath, 'FrogTools');
+    const ritobinDestPath = path.join(frogToolsDir, 'ritobin_cli.exe');
+    
+    // Skip if already exists
+    if (fs.existsSync(ritobinDestPath)) {
+      logToFile('ritobin_cli.exe already exists in FrogTools', 'INFO');
+      return;
+    }
+    
+    // Get path to bundled ritobin_cli.exe (in app resources)
+    let ritobinSrcPath;
+    if (app.isPackaged) {
+      // In production: it's in resources/ritobin_cli.exe
+      ritobinSrcPath = path.join(process.resourcesPath, 'ritobin_cli.exe');
+    } else {
+      // In development: use the tools directory
+      ritobinSrcPath = path.join(__dirname, 'tools', 'ritobin_cli.exe');
+    }
+    
+    // Ensure FrogTools directory exists
+    if (!fs.existsSync(frogToolsDir)) {
+      fs.mkdirSync(frogToolsDir, { recursive: true });
+    }
+    
+    // Copy ritobin_cli.exe if source exists
+    if (fs.existsSync(ritobinSrcPath)) {
+      fs.copyFileSync(ritobinSrcPath, ritobinDestPath);
+      logToFile(`Copied ritobin_cli.exe to FrogTools: ${ritobinDestPath}`, 'INFO');
+    } else {
+      logToFile(`ritobin_cli.exe not found at ${ritobinSrcPath}, skipping copy`, 'WARN');
+    }
+  } catch (error) {
+    logToFile(`Error ensuring ritobin_cli.exe: ${error.message}`, 'ERROR');
+  }
+}
+
 logToFile(`Version: ${app.getVersion()}`, 'INFO');
 logToFile(`Electron: ${process.versions.electron}`, 'INFO');
 logToFile(`Node: ${process.versions.node}`, 'INFO');
@@ -76,6 +260,9 @@ function createWindow() {
       enableRemoteModule: false,
     },
   });
+
+  // Set the window reference for auto-updater
+  updateCheckWindow = mainWindow;
 
   // Load the app
   const isDevelopment = isDev && !app.isPackaged;
@@ -294,21 +481,31 @@ function getLtmaoPythonAndCli() {
 
 // IPC handlers for file operations
 ipcMain.handle('dialog:openFile', async (event, options) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: options.filters || [{ name: 'All Files', extensions: ['*'] }]
-  });
-  return result;
+  try {
+    let window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      window = BrowserWindow.getFocusedWindow();
+    }
+    const result = await dialog.showOpenDialog(window, {
+      properties: ['openFile'],
+      filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
+    });
+    return result;
+  } catch (error) {
+    console.error('Error opening file dialog:', error);
+    return { canceled: true, error: error.message };
+  }
 });
 
-ipcMain.handle('dialog:openDirectory', async (event, options) => {
+ipcMain.handle('dialog:openDirectory', async (event) => {
   try {
-    console.log('Opening directory dialog with options:', options);
-    const result = await dialog.showOpenDialog({
-      title: options?.title || 'Select Directory',
+    let window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      window = BrowserWindow.getFocusedWindow();
+    }
+    const result = await dialog.showOpenDialog(window, {
       properties: ['openDirectory']
     });
-    console.log('Directory dialog result:', result);
     return result;
   } catch (error) {
     console.error('Error opening directory dialog:', error);
@@ -342,26 +539,44 @@ ipcMain.handle('openInstallDirectory', async (event) => {
 });
 
 ipcMain.handle('dialog:openFiles', async (event, options) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile', 'multiSelections'],
-    filters: options.filters || [{ name: 'All Files', extensions: ['*'] }]
-  });
-  return result;
+  try {
+    let window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      window = BrowserWindow.getFocusedWindow();
+    }
+    const result = await dialog.showOpenDialog(window, {
+      properties: ['openFile', 'multiSelections'],
+      filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
+    });
+    return result;
+  } catch (error) {
+    console.error('Error opening files dialog:', error);
+    return { canceled: true, error: error.message };
+  }
 });
 
 ipcMain.handle('dialog:openRitobinExe', async (event) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [{ name: 'Executable', extensions: ['exe'] }]
-  });
-  return result;
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Executable', extensions: ['exe'] }]
+    });
+    return result;
+  } catch (error) {
+    console.error('Error opening ritobin exe dialog:', error);
+    return { canceled: true, error: error.message };
+  }
 });
 
 // Legacy sync handler for FileSelect
 ipcMain.on('FileSelect', (event, [title, fileType]) => {
   const filters = fileType === 'Bin' ? [{ name: 'Bin Files', extensions: ['bin'] }] : [{ name: 'All Files', extensions: ['*'] }];
+  let window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) {
+    window = BrowserWindow.getFocusedWindow();
+  }
   
-  dialog.showOpenDialog({
+  dialog.showOpenDialog(window, {
     title: title || 'Select File',
     properties: ['openFile'],
     filters: filters
@@ -532,11 +747,248 @@ ipcMain.handle('tools:deletePath', async (event, payload) => {
   }
 });
 
+// Auto-updater event handlers
+function setupAutoUpdater() {
+  // Only enable auto-updater in production (not in dev mode)
+  // To test in dev mode, set environment variable: ENABLE_AUTO_UPDATER=true
+  const enableInDev = process.env.ENABLE_AUTO_UPDATER === 'true';
+  if ((isDev || !app.isPackaged) && !enableInDev) {
+    logToFile('Auto-updater disabled in development mode', 'INFO');
+    logToFile('To enable for testing, set ENABLE_AUTO_UPDATER=true', 'INFO');
+    return;
+  }
+  
+  if (enableInDev) {
+    logToFile('⚠️ AUTO-UPDATER ENABLED IN DEV MODE (FOR TESTING ONLY)', 'WARNING');
+  }
+
+  logToFile('Setting up auto-updater', 'INFO');
+
+  autoUpdater.on('checking-for-update', () => {
+    logToFile('Checking for update...', 'INFO');
+    if (updateCheckWindow) {
+      updateCheckWindow.webContents.send('update:checking');
+    }
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    logToFile(`Update available: ${info.version}`, 'INFO');
+    // Cache the update info for download
+    cachedUpdateInfo = info;
+    // Also ensure autoUpdater has it
+    autoUpdater.updateInfo = info;
+    if (updateCheckWindow) {
+      updateCheckWindow.webContents.send('update:available', {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes || ''
+      });
+    }
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    logToFile(`Update not available. Current version: ${info.version}`, 'INFO');
+    if (updateCheckWindow) {
+      updateCheckWindow.webContents.send('update:not-available', {
+        version: info.version
+      });
+    }
+  });
+
+  autoUpdater.on('error', (err) => {
+    logToFile(`Auto-updater error: ${err.message}`, 'ERROR');
+    logToFile(`Auto-updater error details: ${JSON.stringify(err)}`, 'ERROR');
+    if (updateCheckWindow) {
+      updateCheckWindow.webContents.send('update:error', {
+        message: err.message
+      });
+    }
+    // Fallback: Try manual GitHub API check if electron-updater fails
+    if (!enableInDev) {
+      logToFile('Attempting fallback GitHub API check...', 'INFO');
+      checkUpdatesViaGitHubAPI().catch(fallbackErr => {
+        logToFile(`Fallback check also failed: ${fallbackErr.message}`, 'ERROR');
+      });
+    }
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    const message = `Download speed: ${progressObj.bytesPerSecond} - Downloaded ${progressObj.percent}% (${progressObj.transferred}/${progressObj.total})`;
+    logToFile(message, 'INFO');
+    if (updateCheckWindow) {
+      updateCheckWindow.webContents.send('update:download-progress', {
+        percent: progressObj.percent,
+        transferred: progressObj.transferred,
+        total: progressObj.total,
+        bytesPerSecond: progressObj.bytesPerSecond
+      });
+    }
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    logToFile(`Update downloaded: ${info.version}. Will install on app quit.`, 'INFO');
+    if (updateCheckWindow) {
+      updateCheckWindow.webContents.send('update:downloaded', {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes || ''
+      });
+    }
+  });
+
+  // Check for updates after app is ready (with delay to not block startup)
+  setTimeout(() => {
+    try {
+      logToFile('Checking for updates...', 'INFO');
+      logToFile(`Current version: ${app.getVersion()}`, 'INFO');
+      logToFile(`isDev: ${isDev}, isPackaged: ${app.isPackaged}`, 'INFO');
+      
+      // In dev mode, we need to manually set the feed URL and use checkForUpdatesAndNotify
+      if (enableInDev) {
+        // Set feed URL manually for dev testing
+        autoUpdater.setFeedURL({
+          provider: 'github',
+          owner: 'RitoShark',
+          repo: 'Quartz'
+        });
+        // Force the config to allow dev checks
+        autoUpdater.forceDevUpdateConfig = true;
+        // Use checkForUpdatesAndNotify which is designed for dev/testing scenarios
+        logToFile('Calling checkForUpdatesAndNotify (dev mode)...', 'INFO');
+        autoUpdater.checkForUpdatesAndNotify().catch(err => {
+          logToFile(`Update check error: ${err.message}`, 'ERROR');
+          logToFile(`Stack trace: ${err.stack}`, 'ERROR');
+        });
+      } else {
+        // Production mode - ensure feed URL is set
+        logToFile('Production mode - checking for updates via electron-updater', 'INFO');
+        autoUpdater.checkForUpdates().catch(err => {
+          logToFile(`Update check failed: ${err.message}`, 'ERROR');
+          logToFile(`Trying fallback GitHub API check...`, 'INFO');
+          checkUpdatesViaGitHubAPI().catch(fallbackErr => {
+            logToFile(`Fallback check failed: ${fallbackErr.message}`, 'ERROR');
+          });
+        });
+      }
+    } catch (err) {
+      logToFile(`Failed to check for updates: ${err.message}`, 'ERROR');
+      logToFile(`Stack trace: ${err.stack}`, 'ERROR');
+    }
+  }, 3000); // Check 3 seconds after app start
+}
+
+// Fallback: Manual GitHub API check if electron-updater fails
+async function checkUpdatesViaGitHubAPI() {
+  return new Promise((resolve, reject) => {
+    try {
+      logToFile('Checking updates via GitHub API (fallback)...', 'INFO');
+      const currentVersion = app.getVersion();
+      
+      const options = {
+        hostname: 'api.github.com',
+        path: '/repos/RitoShark/Quartz/releases/latest',
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Quartz-App',
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            if (res.statusCode !== 200) {
+              throw new Error(`GitHub API returned ${res.statusCode}`);
+            }
+            
+            const release = JSON.parse(data);
+            const latestVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
+            
+            logToFile(`GitHub API - Current: ${currentVersion}, Latest: ${latestVersion}`, 'INFO');
+            
+            // Simple semver comparison (basic)
+            const compareVersions = (v1, v2) => {
+              const parts1 = v1.split('.').map(Number);
+              const parts2 = v2.split('.').map(Number);
+              for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+                const a = parts1[i] || 0;
+                const b = parts2[i] || 0;
+                if (a < b) return -1;
+                if (a > b) return 1;
+              }
+              return 0;
+            };
+            
+            if (compareVersions(currentVersion, latestVersion) < 0) {
+              logToFile(`Update available via GitHub API: ${latestVersion}`, 'INFO');
+              if (updateCheckWindow) {
+                updateCheckWindow.webContents.send('update:available', {
+                  version: latestVersion,
+                  releaseDate: release.published_at,
+                  releaseNotes: release.body || ''
+                });
+              }
+              resolve({ updateAvailable: true, version: latestVersion });
+            } else {
+              logToFile('No update available via GitHub API', 'INFO');
+              if (updateCheckWindow) {
+                updateCheckWindow.webContents.send('update:not-available', {
+                  version: latestVersion
+                });
+              }
+              resolve({ updateAvailable: false, version: latestVersion });
+            }
+          } catch (parseError) {
+            logToFile(`Failed to parse GitHub API response: ${parseError.message}`, 'ERROR');
+            reject(parseError);
+          }
+        });
+      });
+      
+      req.on('error', (error) => {
+        logToFile(`GitHub API request failed: ${error.message}`, 'ERROR');
+        reject(error);
+      });
+      
+      req.end();
+    } catch (error) {
+      logToFile(`GitHub API check failed: ${error.message}`, 'ERROR');
+      reject(error);
+    }
+  });
+}
+
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
   logToFile('APP: whenReady triggered - initializing application', 'INFO');
-  try { app.setAppUserModelId('com.github.ritoshark.divinelab'); } catch {}
+  try { app.setAppUserModelId('com.github.ritoshark.quartz'); } catch {}
   createWindow();
+  
+  // Setup auto-updater (only in production)
+  setupAutoUpdater();
+  
+  // Copy ritobin_cli.exe to FrogTools (if needed)
+  ensureRitobinCli();
+  
+  // Check for hash files (in background, non-blocking)
+  setTimeout(() => {
+    try {
+      const result = hashManager.checkHashes();
+      if (!result.allPresent && result.missing.length > 0) {
+        logToFile(`Hash files missing (${result.missing.length}): ${result.missing.join(', ')}. Auto-download will be triggered on first use.`, 'INFO');
+      } else {
+        logToFile('All hash files present', 'INFO');
+      }
+    } catch (err) {
+      logToFile(`Hash check error: ${err.message}`, 'WARNING');
+    }
+  }, 1000);
   
   // Start backend service after window is created
   logToFile('APP: Scheduling backend service startup', 'INFO');
@@ -573,8 +1025,52 @@ ipcMain.handle('ltmao:testPython', async () => {
   }
 });
 
+// Clear texture cache on app quit
+function clearTextureCacheOnQuit() {
+  // Only clear once
+  if (textureCacheCleared) {
+    return;
+  }
+  textureCacheCleared = true;
+  
+  try {
+    const os = require('os');
+    const appDataCacheDir = path.join(os.homedir(), 'AppData', 'Local', 'Quartz', 'TextureCache');
+    
+    if (fs.existsSync(appDataCacheDir)) {
+      const files = fs.readdirSync(appDataCacheDir);
+      let deletedCount = 0;
+
+      for (const file of files) {
+        if (file.endsWith('.png')) {
+          const filePath = path.join(appDataCacheDir, file);
+          try {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+          } catch (error) {
+            logToFile(`Failed to delete cache file ${file}: ${error.message}`, 'WARN');
+          }
+        }
+      }
+
+      if (deletedCount > 0) {
+        logToFile(`Cleared ${deletedCount} cached texture files from TextureCache`, 'INFO');
+      } else {
+        logToFile(`Texture cache directory was empty, nothing to clear`, 'INFO');
+      }
+    } else {
+      logToFile(`Texture cache directory does not exist, nothing to clear`, 'INFO');
+    }
+  } catch (error) {
+    logToFile(`Error clearing texture cache: ${error.message}`, 'ERROR');
+  }
+}
+
 // Quit when all windows are closed.
 app.on('window-all-closed', async () => {
+  // Clear texture cache before closing
+  clearTextureCacheOnQuit();
+  
   // Stop the backend service when all windows are closed
   await stopBackendService();
   // On macOS it is common for applications and their menu bar
@@ -586,6 +1082,9 @@ app.on('window-all-closed', async () => {
 
 // Handle app-level quit (e.g., Cmd+Q / File->Quit) with unsaved guard
 app.on('before-quit', async (e) => {
+  // Clear texture cache on app quit
+  clearTextureCacheOnQuit();
+  
   try {
     console.log('📌 before-quit event triggered');
     
@@ -601,6 +1100,8 @@ app.on('before-quit', async (e) => {
       console.log('No windows to check, proceeding with quit');
       isQuitting = true;
       isShuttingDown = true;
+      // Clear texture cache before quitting
+      clearTextureCacheOnQuit();
       await stopBackendService();
       return;
     }
@@ -616,6 +1117,8 @@ app.on('before-quit', async (e) => {
       isQuitting = true;
       isShuttingDown = true;
       try { await win.webContents.executeJavaScript('window.__DL_forceClose = true;'); } catch {}
+      // Clear texture cache before quitting
+      clearTextureCacheOnQuit();
       // Stop backend service before quitting
       await stopBackendService();
       return;
@@ -638,6 +1141,8 @@ app.on('before-quit', async (e) => {
       isQuitting = true;
       isShuttingDown = true;
       try { await win.webContents.executeJavaScript('window.__DL_forceClose = true;'); } catch {}
+      // Clear texture cache before quitting
+      clearTextureCacheOnQuit();
       // Stop backend service before quitting
       await stopBackendService();
       const w = win; // reference before async quit
@@ -652,6 +1157,8 @@ app.on('before-quit', async (e) => {
     // On error, allow quit to avoid trapping
     isQuitting = true;
     isShuttingDown = true;
+    // Clear texture cache before quitting
+    clearTextureCacheOnQuit();
     await stopBackendService();
   }
 });
@@ -670,7 +1177,7 @@ const REAL_ESRGAN_RELEASE_API = 'https://api.github.com/repos/upscayl/upscayl-nc
 const REAL_ESRGAN_RELEASES_API = 'https://api.github.com/repos/upscayl/upscayl-ncnn/releases';
 const NIHUI_RELEASE_API = 'https://api.github.com/repos/nihui/realesrgan-ncnn-vulkan/releases/latest';
 const NIHUI_RELEASES_API = 'https://api.github.com/repos/nihui/realesrgan-ncnn-vulkan/releases';
-const UPSCAYL_UA_OPTIONS = { headers: { 'User-Agent': 'DivineLab', 'Accept': 'application/octet-stream' } };
+const UPSCAYL_UA_OPTIONS = { headers: { 'User-Agent': 'Quartz', 'Accept': 'application/octet-stream' } };
 
 // Download configuration
 const UPSCALE_DOWNLOADS = {
@@ -799,7 +1306,7 @@ const UPSCALE_DOWNLOADS = {
 
 function httpGetJson(url) {
   return new Promise((resolve, reject) => {
-    const jsonHeaders = { headers: { 'User-Agent': 'DivineLab', 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } };
+    const jsonHeaders = { headers: { 'User-Agent': 'Quartz', 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } };
     https.get(url, jsonHeaders, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
@@ -903,7 +1410,7 @@ function copyDirRecursive(src, dest) {
 async function downloadWithPowershell(url, destPath) {
   return await new Promise((resolve) => {
     try { fs.mkdirSync(path.dirname(destPath), { recursive: true }); } catch {}
-    const cmd = `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri '${url}' -OutFile '${destPath}' -UseBasicParsing -Headers @{ 'User-Agent' = 'DivineLab' }`;
+    const cmd = `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri '${url}' -OutFile '${destPath}' -UseBasicParsing -Headers @{ 'User-Agent' = 'Quartz' }`;
     const ps = spawn('powershell.exe', ['-NoProfile', '-Command', cmd], { windowsHide: true, shell: false });
     ps.on('error', () => resolve({ ok: false }));
     ps.on('close', (code) => resolve({ ok: code === 0 }));
@@ -1706,7 +2213,7 @@ ipcMain.handle('filerandomizer:discoverFiles', async (event, { targetFolder, rep
           
           // Check for strong project indicators
           const hasStrongIndicators = items.some(item => 
-            ['.git', 'package.json', 'DivineLab-main'].includes(item)
+            ['.git', 'package.json', 'Quartz-main'].includes(item)
           );
           
           // Check for moderate project indicators
@@ -2664,6 +3171,10 @@ ipcMain.handle('wad:extract', async (event, data) => {
       return { error: 'Missing required parameters: wadPath, outputDir, skinId' };
     }
     
+    // Use integrated hash location if not provided
+    data.hashPath = getHashPath(data.hashPath);
+    console.log('📁 Using hash path:', data.hashPath);
+    
     // Ensure backend is running
     const backendStatus = await ensureBackendService();
     if (!backendStatus) {
@@ -2712,6 +3223,10 @@ ipcMain.handle('bumpath:repath', async (event, data) => {
       return { error: 'Missing required parameters: sourceDir, outputDir, selectedSkinIds' };
     }
     
+    // Use integrated hash location if not provided
+    data.hashPath = getHashPath(data.hashPath);
+    console.log('📁 Using hash path:', data.hashPath);
+    
     // Ensure backend is running
     const backendStatus = await ensureBackendService();
     if (!backendStatus) {
@@ -2744,3 +3259,247 @@ ipcMain.handle('bumpath:repath', async (event, data) => {
     return { error: error.message };
   }
 });
+
+// Hash management IPC handlers
+ipcMain.handle('hashes:check', async () => {
+  try {
+    const result = hashManager.checkHashes();
+    return result;
+  } catch (error) {
+    console.error('❌ Hash check error:', error);
+    return { allPresent: false, missing: [], hashDir: '', error: error.message };
+  }
+});
+
+ipcMain.handle('hashes:download', async (event, progressCallback) => {
+  try {
+    let lastProgress = '';
+    const result = await hashManager.downloadHashes((message, current, total) => {
+      if (progressCallback) {
+        progressCallback(message, current, total);
+      }
+      lastProgress = message;
+      logToFile(`Hash download: ${message}`, 'INFO');
+    });
+    logToFile(`Hash download completed: ${result.downloaded.length} files, ${result.errors.length} errors`, 'INFO');
+    return result;
+  } catch (error) {
+    console.error('❌ Hash download error:', error);
+    logToFile(`Hash download error: ${error.message}`, 'ERROR');
+    return { success: false, downloaded: [], errors: [error.message], hashDir: hashManager.getHashDirectory() };
+  }
+});
+
+ipcMain.handle('hashes:get-directory', async () => {
+  try {
+    return { hashDir: hashManager.getHashDirectory() };
+  } catch (error) {
+    console.error('❌ Get hash directory error:', error);
+    return { hashDir: '', error: error.message };
+  }
+});
+
+// Get default ritobin path (FrogTools location)
+ipcMain.handle('ritobin:get-default-path', async () => {
+  try {
+    // Use same path logic as hashManager - AppData/Roaming/FrogTools
+    const appDataPath = process.env.APPDATA || 
+      (process.platform === 'darwin' 
+        ? path.join(process.env.HOME, 'Library', 'Application Support')
+        : process.platform === 'linux'
+          ? path.join(process.env.HOME, '.local', 'share')
+          : path.join(process.env.HOME, 'AppData', 'Roaming'));
+    
+    const ritobinPath = path.join(appDataPath, 'FrogTools', 'ritobin_cli.exe');
+    const exists = fs.existsSync(ritobinPath);
+    
+    return { 
+      path: ritobinPath, 
+      exists,
+      isDefault: true 
+    };
+  } catch (error) {
+    console.error('❌ Get default ritobin path error:', error);
+    return { path: '', exists: false, error: error.message };
+  }
+});
+
+// Open folder location in file explorer
+ipcMain.handle('file:open-folder', async (event, folderPath) => {
+  try {
+    if (!folderPath || !fs.existsSync(folderPath)) {
+      return { success: false, error: 'Path does not exist' };
+    }
+    
+    // Use showItemInFolder for files, openPath for directories
+    const stats = fs.statSync(folderPath);
+    if (stats.isFile()) {
+      // Show file in folder (highlights the file)
+      shell.showItemInFolder(folderPath);
+    } else {
+      // Open directory
+      await shell.openPath(folderPath);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Open folder error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Auto-updater IPC handlers
+ipcMain.handle('update:check', async () => {
+  try {
+    if (isDev || !app.isPackaged) {
+      // In dev mode, use GitHub API fallback
+      if (process.env.ENABLE_AUTO_UPDATER === 'true') {
+        const result = await checkUpdatesViaGitHubAPI();
+        return { success: true, updateAvailable: result.updateAvailable };
+      }
+      return { success: false, error: 'Update checking is only available in production builds' };
+    }
+    // checkForUpdates returns a Promise, handle it properly
+    autoUpdater.checkForUpdates().catch(async (err) => {
+      logToFile(`electron-updater check failed, trying GitHub API: ${err.message}`, 'WARNING');
+      try {
+        await checkUpdatesViaGitHubAPI();
+      } catch (fallbackErr) {
+        logToFile(`Fallback also failed: ${fallbackErr.message}`, 'ERROR');
+      }
+    });
+    return { success: true };
+  } catch (error) {
+    logToFile(`Update check error: ${error.message}`, 'ERROR');
+    // Try fallback on error
+    try {
+      await checkUpdatesViaGitHubAPI();
+      return { success: true, usedFallback: true };
+    } catch (fallbackErr) {
+      return { success: false, error: error.message };
+    }
+  }
+});
+
+ipcMain.handle('update:download', async () => {
+  try {
+    if (isDev || !app.isPackaged) {
+      return { success: false, error: 'Update downloading is only available in production builds' };
+    }
+    
+    // Check if update info is available - use cached version if available
+    if (cachedUpdateInfo) {
+      autoUpdater.updateInfo = cachedUpdateInfo;
+      logToFile(`Using cached update info: ${cachedUpdateInfo.version}`, 'INFO');
+    }
+    
+    // Check if update info is available, if not, wait for it
+    // The update-available event should have already fired, but updateInfo might not be set immediately
+    if (!autoUpdater.updateInfo) {
+      let retries = 0;
+      const maxRetries = 10;
+      
+      while (!autoUpdater.updateInfo && retries < maxRetries) {
+        logToFile(`Waiting for update info... (${retries + 1}/${maxRetries})`, 'INFO');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries++;
+      }
+    }
+    
+    // If still no update info, try checking again
+    if (!autoUpdater.updateInfo) {
+      logToFile('Update info still not available, triggering check...', 'INFO');
+      try {
+        await autoUpdater.checkForUpdates();
+        // Wait for update-available event
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Check cached again
+        if (cachedUpdateInfo) {
+          autoUpdater.updateInfo = cachedUpdateInfo;
+        }
+      } catch (checkError) {
+        logToFile(`Update check failed: ${checkError.message}`, 'ERROR');
+      }
+    }
+    
+    // If still no update info, use fallback
+    if (!autoUpdater.updateInfo) {
+      logToFile('No update info from electron-updater, using fallback...', 'WARNING');
+      const fallbackResult = await checkUpdatesViaGitHubAPI();
+      if (fallbackResult.updateAvailable) {
+        const { shell } = require('electron');
+        await shell.openExternal(`https://github.com/RitoShark/Quartz/releases/tag/v${fallbackResult.version}`);
+        return { 
+          success: true, 
+          manualDownload: true, 
+          message: 'Opening GitHub release page for manual download (electron-updater not available)' 
+        };
+      }
+      return { success: false, error: 'No update information available' };
+    }
+    
+    logToFile(`Downloading update: ${autoUpdater.updateInfo.version}`, 'INFO');
+    // Try to download with electron-updater
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (error) {
+    logToFile(`Update download error: ${error.message}`, 'ERROR');
+    
+    // If download fails, offer manual download as fallback
+    if (error.message.includes('check update first') || error.message.includes('latest.yml') || !autoUpdater.updateInfo) {
+      try {
+        const fallbackResult = await checkUpdatesViaGitHubAPI();
+        if (fallbackResult.updateAvailable) {
+          const { shell } = require('electron');
+          await shell.openExternal(`https://github.com/RitoShark/Quartz/releases/tag/v${fallbackResult.version}`);
+          return { 
+            success: true, 
+            manualDownload: true, 
+            message: 'Opening GitHub release page for manual download' 
+          };
+        }
+      } catch (fallbackError) {
+        logToFile(`Fallback also failed: ${fallbackError.message}`, 'ERROR');
+      }
+    }
+    
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('update:install', async () => {
+  try {
+    if (isDev || !app.isPackaged) {
+      return { success: false, error: 'Update installation is only available in production builds' };
+    }
+    // Quit and install - this will trigger the installation
+    autoUpdater.quitAndInstall(false, true);
+    return { success: true };
+  } catch (error) {
+    logToFile(`Update install error: ${error.message}`, 'ERROR');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('update:get-version', async () => {
+  try {
+    const packageJson = require('./package.json');
+    return { 
+      success: true, 
+      version: packageJson.version,
+      isDev: isDev,
+      isPackaged: app.isPackaged
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Helper function to get hash path (uses integrated location if not provided)
+function getHashPath(userProvidedPath) {
+  if (userProvidedPath && userProvidedPath.trim() && fs.existsSync(userProvidedPath)) {
+    return userProvidedPath;
+  }
+  // Fall back to integrated location
+  return hashManager.getHashDirectory();
+}

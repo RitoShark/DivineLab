@@ -1,0 +1,946 @@
+{
+    "data/characters/renata/skins/skin0.bin": [
+        {
+            "hash": "Characters/Renata/Skins/Skin0",
+            "type": "SkinCharacterDataProperties",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/renataloadscreen_0.dds",
+                "assets/moon/sounds/wwise2016/sfx/characters/renata/skins/base/renata_base_sfx_audio.bnk",
+                "assets/moon/sounds/wwise2016/sfx/characters/renata/skins/base/renata_base_sfx_events.bnk",
+                "assets/sounds/wwise2016/vo/en_us/characters/renata/skins/base/renata_base_vo_audio.bnk",
+                "assets/sounds/wwise2016/vo/en_us/characters/renata/skins/base/renata_base_vo_events.bnk",
+                "assets/sounds/wwise2016/vo/en_us/characters/renata/skins/base/renata_base_vo_audio.wpk",
+                "assets/moon/characters/renata/skins/base/renata_base.skl",
+                "assets/moon/characters/renata/skins/base/renata_base.skn",
+                "assets/moon/characters/renata/skins/base/renata_base_body_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/viper_body.dds",
+                "assets/moon/characters/renata/skins/base/viper_gun.dds",
+                "assets/moon/characters/renata/skins/base/viper_eye.dds",
+                "assets/moon/characters/renata/skins/base/viper_hair.dds",
+                "assets/moon/characters/renata/skins/base/renata_base_weapon_tx_cm.dds",
+                "assets/moon/characters/renata/hud/renata_circle_0.tex",
+                "assets/moon/characters/renata/hud/renata_square_0.tex"
+            ],
+            "missing_files": [
+                "assets/sounds/wwise2016/vo/en_us/characters/renata/skins/base/renata_base_vo_audio.bnk",
+                "assets/sounds/wwise2016/vo/en_us/characters/renata/skins/base/renata_base_vo_events.bnk",
+                "assets/sounds/wwise2016/vo/en_us/characters/renata/skins/base/renata_base_vo_audio.wpk"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_Cas_R_Canister",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_flareomni.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_erosionpack_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_burst_hit.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_projectile.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_animeburstmesh01.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_chemical_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Cas",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_avatar_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_hit_lens_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_BA_P_Mis",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_smoke_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_glow-soft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_muzzleflash_funnel.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_energy_ray.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_vertical_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_bullet_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_p_cannister.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_Buf_01_Cannister_Child",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_cannister_cluster.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_flecks_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_cluster_glow.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_glow_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_canswirl.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_lightning.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_P_Tar",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_radial_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_tar_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_p_rainbow_flash.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_Heal",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/rakan/skins/base/particles/rakan_base_w_sparks.dds",
+                "assets/moon/characters/rakan/skins/base/particles/rakan_base_r_heal_spark.dds",
+                "assets/moon/characters/rakan/skins/base/particles/rakan_base_q_heal_ray.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_buff_whooshup.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_wind.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Mis",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_arm_03.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_inner_arm_tubes.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_ribbon_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_inner_arm_tubes_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_mis_03.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_body_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_ground_light.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradient_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_groundsmoke02.dds",
+                "assets/moon/characters/thresh/skins/skin03/particles/thresh_skin03_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_smoke_trail_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/swirl2.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_mis_03_flair.scb"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_shield_01",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_bubble_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/dissolve_cloudy_03.dds",
+                "assets/moon/characters/renata/skins/base/particles/frost_cloud_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_lightningmesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_lightningerosion03.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_lightning03.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shield_bubble.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shield_front_1.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_bottom_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shield_edges.dds",
+                "assets/moon/characters/renata/skins/base/particles/sphere2.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_watershield2.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_clouds_erosion_2.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_inwardswirls_1.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_smoke_mask_2.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shield_facing.scb",
+                "assets/moon/characters/renata/skins/base/particles/dissolve_cloudy_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_smoke_mask_1.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_sphere_01.sco",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_vertical_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_screen_flames_soft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_bubble_mesh_erode.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_CameraBoundVFX_Initial_Near",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_screenswooshmeshinitial.scb",
+                "assets/moon/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_bottom_02.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_R_Cas_Cannister_Child",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_projectile.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_flecks_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_leadingedge_ring.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_glow02.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_stack_3_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_land_splash2.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_canswirl.scb",
+                "assets/moon/characters/senna/skins/base/particles/senna_base_autoattack_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_Buf_02_Cannister_Child",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_projectile.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_flecks_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_glow-soft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_projectile_glow.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_glow_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_canswirl.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_Mis_Child_01",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_flecks_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_animeburstmesh01.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_chemical_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_Mis_Child_02",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_flecks_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_animeburstmesh01.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_chemical_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_Buff_Hands",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/twitch/skins/base/particles/common_magicball.scb",
+                "assets/moon/characters/renata/skins/base/particles/3026_items_dark_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Z_GunBuddy_Death",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/defaultcoloroverlifetime3.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_cas_flashcap_mesh_2x2.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_lighting_03.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_lightening.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_sparks.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_mote.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_smoke_01.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_R_Mis_03",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_stack_3_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/generic_noisemulti01.dds",
+                "assets/moon/characters/drmundo/skins/base/particles/drmundo_base_cape_nebula.dds",
+                "assets/moon/characters/drmundo/skins/base/particles/drmundo_base_p_shimmer_trail.dds",
+                "assets/moon/characters/drmundo/skins/base/particles/drmundo_base_r_cas_ground_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmer_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_wave_edge.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_chromatic_abberation_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/generic_2x2_smoke_sharp.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_floor_edge.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_grid_edges.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_floor_big.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmermult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_wave.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_missilelead.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_Mis",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradient_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_groundsmoke02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_missile_head_2.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_z_alphaslice_mesh.dds",
+                "assets/moon/characters/renata/skins/base/particles/cb_base_e_ribbon_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_projectile.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_half_sphere.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_mis_aoe_wind.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_R_Tar",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_canswirl.scb",
+                "assets/moon/characters/senna/skins/base/particles/senna_base_autoattack_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_Cas_Child",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/common_ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_skin25_w_gradient01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_wobbleline.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_linemultswipe.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke_shape_03_erosionmap.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke_shape_03.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_erosionshapes01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_lightning.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_CameraBoundVFX_Near",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/warwick/skins/base/particles/warwick_base_w_screenswooshmesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_screen_flames_soft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_chromatic_abberation_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_P_Vulnerable_Enemy",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_swirl04.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_swirl02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_cape_nebula.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmer_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmermult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_alpha_backdrop.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_chemical_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_p_smoketrail.dds",
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_p_puddle_goop.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_Cas",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_buf_01",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/darkstarmode_hookhitsstarthresh_skin05_z_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_mark_distort_rgba.dds",
+                "assets/moon/characters/renata/skins/base/particles/distort-pinch.dds",
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_flame_ring.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_flakes.dds",
+                "assets/moon/characters/tryndamere/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_buff_whooshup.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_wind.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke_shape_03_erosionmap.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke_shape_03.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_smoke_scroll.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_Buf_02",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_glow_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_chromatic_abberation_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_stack_3_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_reset_ground.dds",
+                "assets/moon/shared/particles/aramhealthpack_lightbeams_1x4.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_flame_ring.dds",
+                "assets/moon/shared/particles/flareburst.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_cape_nebula.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmer_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmermult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_buff_whooshup.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_wind.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_screen_flames_soft.dds",
+                "assets/moon/characters/renata/skins/base/particles/3026_items_noisering02.scb",
+                "assets/moon/characters/renata/skins/base/particles/3026_items_dark_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/3026_items_head_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_aoe_smoke_mesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_e_puddle_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_groundsmoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_froth.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_w_bubble_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_bubble.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_flakes.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_speed_blur.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_Cas_L_Canister",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_flareomni.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_erosionpack_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_burst_hit.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_projectile.scb",
+                "assets/moon/characters/renata/skins/base/renata_base_umbrella_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_animeburstmesh01.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_chemical_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_comet.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Tar_Buf",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/morgana/skins/base/particles/morgana_base_e_shield_skirt_mesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_smoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmermult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_glow.dds",
+                "assets/moon/shared/particles/base_white_rgb.pie_c_13_20.dds",
+                "assets/moon/characters/renata/skins/base/particles/cage.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients_blur.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_smoke_scroll.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_radial_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_8way_indicator_quad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_root_entaglement.scb",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_constraint.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_4way_smoke.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_wave_texture.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds"
+            ],
+            "missing_files": [
+                "assets/moon/shared/particles/base_white_rgb.pie_c_13_20.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_R_Cast_Muzzle",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/senna/skins/base/particles/senna_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_cast_swoop.scb",
+                "assets/moon/characters/senna/skins/base/particles/senna_base_autoattack_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_whisp.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_cast_swirl.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_erosionshapes01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_lightning02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_flareomni.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_mult03.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_cast_swoop_02.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_cast_swoop_03.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_glow02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_radial_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_groundglowalpha.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_cas_smoke_ring.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shield_dissolve.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/jayce/skins/base/particles/jayce_base_softgradientvertical.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_cast_cannister_swoop_mesh.scb"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_I_Thrusters",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_flecks_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_BA_Tar",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_tar_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_flash_sharp.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_chromatic_abberation_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_flecks_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_hit_lens_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/alphaslice_bubbles_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/energynebula_tar.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Tether_Retract",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_rope2.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_bubble_mesh_erode.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Z_Joke",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_honeystrands_2x2_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_honeystrands_2x2.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_joke_bighoneysplash.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_joke_bighoneysplash_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_joke_bighoneysplash.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_pool_honeypuddle.skn",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_pool_honeypuddle.skl",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_pool_honeypuddle.anm",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_color_hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/darkstarmode_hookhitsstarthresh_skin05_z_einstein_01_mult.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_z_color-hold_fresnel.dds",
+                "assets/moon/characters/renata/skins/base/particles/defaultcoloroverlifetime2.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_alphaslice_bubbles_02.dds",
+                "assets/moon/characters/renata/skins/base/renata_base_body_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_voidooze_bubbles.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_tar",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/generic_2x2_smoke_sharp.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke_shape.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_burst_hit.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_BA_P_Beam",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_bubble.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_smoke_scroll.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmermult.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/3026_items_head_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_flash_sharp.dds",
+                "assets/moon/characters/renata/skins/base/particles/aura_self.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_z_alphaslice_mesh.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_beam_01.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Throw",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_misttrailsoft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/3026_items_dark_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_froth.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_tar_shockwave.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_vertical_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_chromatic_abberation_whoosh.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Tar_02",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_tar_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_radial_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_mis_aoe_wind.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_flareomni.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_embers.dds",
+                "assets/moon/characters/renata/skins/base/particles/ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_smoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_flame_ring.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_AoE_End",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_z_alphaslice_mesh.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_bubblemesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_bubble_mesh_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_bubble_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_cape_nebula.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmer_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shimmermult.dds",
+                "assets/moon/characters/renata/skins/base/particles/kogmawvoidooze_slimemesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_puddles.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_leadingedge_ring.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_aoe_smoke_mesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_e_puddle_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_groundsmoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_puddlemesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_puddle_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_flame_ring.dds",
+                "assets/moon/characters/renata/skins/base/particles/defaultcoloroverlifetime.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_ball32_02.dds",
+                "assets/moon/characters/xerath/skins/base/particles/xerath_base_z_blastdarkstreak.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shockwave.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds"
+            ],
+            "missing_files": [
+                "assets/moon/characters/renata/skins/base/particles/defaultcoloroverlifetime.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_P_Proc",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_embers.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_shockwave01b.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_tether",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_vertical_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/skin01/particles/renata_skin01_q_trail_mask.dds",
+                "assets/moon/characters/leblanc/skins/skin20/particles/defaultcoloroverlifetime.dds",
+                "assets/moon/characters/renata/skins/base/particles/cb_base_ba_beam_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_flash_sharp.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_flakes.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_screen_flames_soft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_bullet_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_arm_tether.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_inner_arm_tubes_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradient_erosion.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_inner_arm_tubes.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_cape_nebula.dds"
+            ],
+            "missing_files": [
+                "assets/moon/characters/leblanc/skins/skin20/particles/defaultcoloroverlifetime.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Tar",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_hit_lens_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_tar_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_flareomni.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_alpha_backdrop.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_smoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_flame_ring.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_erosionshapes01.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_burst_hit.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_aoe",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_flame_ring.dds",
+                "assets/moon/characters/xerath/skins/base/particles/xerath_base_z_blastdarkstreak.dds",
+                "assets/moon/characters/renata/skins/base/particles/defaultcoloroverlifetime.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_ball32_02.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_shockwave.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_puddlemesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_e_puddle_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_puddle_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_bubble_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_leadingedge_ring.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_aoe_smoke_mesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_groundsmoke.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds"
+            ],
+            "missing_files": [
+                "assets/moon/characters/renata/skins/base/particles/defaultcoloroverlifetime.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_E_Cas_Center",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_rmissile_trail_mesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_cas_mis_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_lmissile_trail_mesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_l_cas_anim_02.skn",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_l_cas_anim_02.skl",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_l_cas_anim_02.anm",
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_r_cas_anim.skn",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_r_cas_anim.skl",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_r_cas_anim.anm"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_R_Flak_Child",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_swirl04.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_leadingedge_ring.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_long.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smoke_shape_03_erosionmap.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_mesh.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_colorgrad.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_mult03.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_chromatic_abberation_noise.dds",
+                "assets/moon/characters/renata/skins/base/particles/generic_2x2_smoke_sharp.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_tar_flare.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_Q_Winddown",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_q_avatar_mask.dds",
+                "assets/moon/characters/renata/skins/base/particles/color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_oilysmoke_erode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_e_ribbon_01.dds",
+                "assets/moon/characters/renata/skins/base/particles/lux_skin07_q_trail.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_W_CameraBoundVFX_Soft",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/warwick/skins/base/particles/warwick_base_w_screenswooshmesh.scb",
+                "assets/moon/characters/renata/skins/base/particles/dissolve_cloudy_03.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_BA_mis",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_bullet.scb",
+                "assets/moon/characters/renata/skins/base/particles/common_color-hold.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_vertical_gradient.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_muzzleflashcore.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_embers.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_smoke_trail.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_bullet_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_glow-soft.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_muzzleflash_funnel.scb",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_energy_ray.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_hit_lens_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_smokeerode.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_r_smoke_strong.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Particles/Renata_Base_BA_P_Cas",
+            "type": "VfxSystemDefinitionData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_ba_hit_lens_flare.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_w_hand_glow.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_gradients.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_ba_embers.dds",
+                "assets/moon/characters/renata/skins/base/particles/common_ball32_02.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Skins/Skin0/Materials/Panner_Fresnel_Mask_Bloom_inst",
+            "type": "StaticMaterialDef",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/renata_base_weapon_tx_cm.dds",
+                "assets/moon/characters/renata/skins/base/particles/renata_base_material_gradient.dds",
+                "assets/moon/characters/renata/skins/base/renata_base_material_liquid_mask.dds"
+            ],
+            "missing_files": [
+                "assets/moon/characters/renata/skins/base/particles/renata_base_material_gradient.dds"
+            ]
+        },
+        {
+            "hash": "Characters/Renata/Animations/Skin0",
+            "type": "animationGraphData",
+            "mentioned_files": [
+                "assets/moon/characters/renata/skins/base/animations/run.anm",
+                "assets/moon/characters/renata/skins/base/animations/idle1.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack1_passive.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_walk_fwd.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_walk_back.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_walk_right.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_walk_left.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell3.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell4.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_activate.anm",
+                "assets/moon/characters/renata/skins/base/animations/run1_boots.anm",
+                "assets/moon/characters/renata/skins/base/animations/homeguard.anm",
+                "assets/moon/characters/renata/skins/base/animations/weapon_run1.anm",
+                "assets/moon/characters/renata/skins/base/animations/death.anm",
+                "assets/moon/characters/renata/skins/base/animations/idle_in.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack1.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell2_run_left.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell2_run_right.anm",
+                "assets/moon/characters/renata/skins/base/animations/weapon_idle_to_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/weapon_run_putaway.anm",
+                "assets/moon/characters/renata/skins/base/animations/weapon_idle1.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_idle_to_base_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_to_run.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell2_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell2_run.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack_passive_robot_0.anm",
+                "assets/moon/characters/renata/skins/base/animations/taunt.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack_passive_robot_180.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack_passive_robot_left.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack_passive_robot_right.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack_passive_robot_neg180.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_left_into_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_right_into_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_back_into_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_forward_into_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack1_into_wrun.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack1_passive_end.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack2_passive_end.anm",
+                "assets/moon/characters/renata/skins/base/animations/attack2_passive.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell4_walk.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell4_into_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell4_walk_into_walk.anm",
+                "assets/moon/characters/renata/skins/base/animations/run1_fast_weapon.anm",
+                "assets/moon/characters/renata/skins/base/animations/renata_base_laugh1.anm",
+                "assets/moon/characters/renata/skins/base/animations/joke1.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell3_to_idle.anm",
+                "assets/moon/characters/renata/skins/base/animations/knockup.anm",
+                "assets/moon/characters/renata/skins/base/animations/dance_intro.anm",
+                "assets/moon/characters/renata/skins/base/animations/dance_cycle.anm",
+                "assets/moon/characters/renata/skins/base/animations/channel_loop.anm",
+                "assets/moon/characters/renata/skins/base/animations/channel_windup.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_forward_into_run.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_back_into_run.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_right_into_run.anm",
+                "assets/moon/characters/renata/skins/base/animations/recall1.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_left_into_run.anm",
+                "assets/moon/characters/renata/skins/base/animations/recall_winddown.anm",
+                "assets/moon/characters/renata/skins/base/animations/weapon_idle_in.anm",
+                "assets/moon/characters/renata/skins/base/animations/idle2.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_left.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_left_short.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_back.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_back_short.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_forward.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_forward_short.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_right.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell1_fling_right_short.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell3_to_run_0.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell3_to_run_right.anm",
+                "assets/moon/characters/renata/skins/base/animations/spell3_to_run_left.anm",
+                "assets/moon/characters/renata/skins/base/animations/weapon_run_fast_putaway.anm"
+            ]
+        }
+    ],
+    "junk_files": []
+}

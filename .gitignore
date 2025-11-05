@@ -84,6 +84,7 @@ preferences.json
 
 # Tools and binaries
 tools/executables/
+tools/ritobin_cli.exe
 
 # Python cache and compiled files
 __pycache__/
@@ -104,5 +105,17 @@ LtMAO-hai/
 # Ignore palette folder
 palette/
 
+# Third-party tools and external projects
+League Mod Repather/
+
+# Optional development/build scripts (user-specific convenience files)
+setup.bat
+start_bumpath_backend.bat
+create-minimal-ltmao.bat
+
+# PyInstaller spec files with hardcoded paths (keep standalone_final.spec if it's path-agnostic)
+bumpath_backend.spec
+
 # Keep Python files in main folder (not ignored)
 # All .py files in root directory are kept
+# requirements.txt is kept (needed for dependencies)

@@ -24,7 +24,7 @@ import {
   Code as BinEditorIcon,
   Build as ToolsIcon,
   Settings as SettingsIcon,
-  Dashboard as HUDIcon,
+  // Dashboard as HUDIcon, // HUD Editor removed - archived
   DataObject as PythonIcon,
   Storage as StorageIcon,
   Casino as CasinoIcon,
@@ -38,7 +38,7 @@ const ModernNavigation = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [gifSrc, setGifSrc] = useState('');
 
-  // Function to get the navbar gif source, checking user data first, then falling back to default
+  // Function to get the navbar gif source, checking AppData/FrogTools/assets first
   const getNavbarGifSrc = () => {
     if (!window.require) {
       // Fallback to public URL if not in Electron
@@ -49,23 +49,36 @@ const ModernNavigation = () => {
       const path = window.require('path');
       const fs = window.require('fs');
       
-      // Check gif-icon directory first (user's custom gif)
-      // Use process.execPath to get the actual app executable path, then get its directory
+      // Check app installation directory assets folder first (user can replace this file)
       const appPath = path.dirname(process.execPath);
-      const gifIconDir = path.join(appPath, 'gif-icon');
-      const userGifPath = path.join(gifIconDir, 'your-logo.gif');
+      const userGifPath = path.join(appPath, 'assets', 'navbar.gif');
       
       if (fs.existsSync(userGifPath)) {
-        // Read the file and convert to data URL to avoid security restrictions
         try {
           const fileBuffer = fs.readFileSync(userGifPath);
-          const mimeType = userGifPath.toLowerCase().endsWith('.gif') ? 'image/gif' : 'image/png';
+          const ext = path.extname(userGifPath).toLowerCase();
+          const mimeType = ext === '.gif' ? 'image/gif' : 
+                          ext === '.png' ? 'image/png' :
+                          ext === '.webp' ? 'image/webp' : 'image/gif';
           const base64 = fileBuffer.toString('base64');
           return `data:${mimeType};base64,${base64}`;
         } catch (error) {
-          console.error('Error reading custom gif:', error);
-          // Fallback to file URL if data URL fails
+          console.error('Error reading user gif:', error);
           return `file://${userGifPath.replace(/\\/g, '/')}`;
+        }
+      }
+      
+      // Check resources/assets (bundled default)
+      if (process.resourcesPath) {
+        const resourcesGifPath = path.join(process.resourcesPath, 'assets', 'navbar.gif');
+        if (fs.existsSync(resourcesGifPath)) {
+          try {
+            const fileBuffer = fs.readFileSync(resourcesGifPath);
+            const base64 = fileBuffer.toString('base64');
+            return `data:image/gif;base64,${base64}`;
+          } catch (error) {
+            console.error('Error reading resources gif:', error);
+          }
         }
       }
       
@@ -81,12 +94,11 @@ const ModernNavigation = () => {
         if (fs.existsSync(defaultPath)) {
           try {
             const fileBuffer = fs.readFileSync(defaultPath);
-            const mimeType = defaultPath.toLowerCase().endsWith('.gif') ? 'image/gif' : 'image/png';
+            const mimeType = 'image/gif';
             const base64 = fileBuffer.toString('base64');
             return `data:${mimeType};base64,${base64}`;
           } catch (error) {
             console.error('Error reading default gif:', error);
-            // Fallback to file URL if data URL fails
             return `file://${defaultPath.replace(/\\/g, '/')}`;
           }
         }
@@ -114,27 +126,17 @@ const ModernNavigation = () => {
     };
 
     loadGifSrc();
-
-    // Listen for gif changes (when user selects a new gif)
-    const handleGifChange = () => {
-      console.log('🔄 Gif change detected, reloading navbar gif...');
-      loadGifSrc();
-    };
-
-    // Listen for custom events or storage changes
-    window.addEventListener('navbarGifChanged', handleGifChange);
     
-    // Also check periodically for file changes
+    // Check periodically for file changes (user might replace files manually in AppData/FrogTools/assets)
     const interval = setInterval(() => {
       const newSrc = getNavbarGifSrc();
       if (newSrc !== gifSrc) {
         setGifSrc(newSrc);
         console.log('🔄 Navbar gif updated:', newSrc);
       }
-    }, 1000);
+    }, 2000); // Check every 2 seconds
 
     return () => {
-      window.removeEventListener('navbarGifChanged', handleGifChange);
       clearInterval(interval);
     };
   }, [gifSrc]);
@@ -165,15 +167,15 @@ const ModernNavigation = () => {
       const allItems = [
         { text: 'Paint', icon: <PaletteIcon />, path: '/paint', key: 'paint' },
         { text: 'Port', icon: <PortIcon />, path: '/port', key: 'port' },
-        { text: 'AniPort', icon: <AniPortIcon />, path: '/aniport', key: 'aniport' },
         { text: 'VFX Hub', icon: <GitHubIcon />, path: '/vfx-hub', key: 'vfxHub' },
         { text: 'Bin Editor', icon: <BinEditorIcon />, path: '/bineditor', key: 'binEditor' },
+        { text: 'Asset Extractor', icon: <FrogChangerIcon />, path: '/frogchanger', key: 'frogchanger' },
         { text: 'Bumpath', icon: <BumpathIcon />, path: '/bumpath', key: 'bumpath' },
-        { text: 'FrogChanger', icon: <FrogChangerIcon />, path: '/frogchanger', key: 'frogchanger' },
+        { text: 'AniPort', icon: <AniPortIcon />, path: '/aniport', key: 'aniport' },
         { text: 'FrogImg', icon: <FrogImgIcon />, path: '/frogimg', key: 'frogImg' },
         { text: 'Upscale', icon: <UpscaleIcon />, path: '/upscale', key: 'upscale' },
         { text: 'RGBA', icon: <RGBAIcon />, path: '/rgba', key: 'rgba' },
-        { text: 'HUD Editor', icon: <HUDIcon />, path: '/hud-editor', key: 'hudEditor' },
+        // HUD Editor removed - moved to archived/removed-features/hud-editor/
         { text: 'File Handler', icon: <FolderIcon />, path: '/file-randomizer', key: 'fileRandomizer' },
 
         { text: 'Tools', icon: <ToolsIcon />, path: '/tools', key: 'tools' },
@@ -190,9 +192,7 @@ const ModernNavigation = () => {
           case 'upscale':
             settingKey = 'UpscaleEnabled';
             break;
-          case 'hudEditor':
-            settingKey = 'HUDEditorEnabled';
-            break;
+          // case 'hudEditor': - Removed, HUD Editor archived
                 case 'rgba':
         settingKey = 'RGBAEnabled';
             break;
@@ -340,7 +340,7 @@ const ModernNavigation = () => {
                 },
               }}
             >
-              DivineLab
+              Quartz
             </Typography>
           ) : (
             <img 
@@ -387,17 +387,33 @@ const ModernNavigation = () => {
              >
                 <ListItemButton
                  selected={isActive(item.path)}
-                 onClick={() => {
-                   try {
-                     if (window.__DL_unsavedBin) {
-                       const ok = window.confirm('You have unsaved BIN changes. Save before leaving?\nPress OK to leave anyway.');
-                       if (!ok) return;
-                       // Allow this navigation once
-                       window.__DL_unsavedBin = false;
-                     }
-                   } catch {}
-                   navigate(item.path);
-                 }}
+                onClick={(e) => {
+                  try {
+                    // Check for unsaved changes before navigation
+                    const hasUnsaved = Boolean(window.__DL_unsavedBin);
+                    console.log('🔍 Navigation click - hasUnsaved:', hasUnsaved, 'forceClose:', window.__DL_forceClose);
+                    if (hasUnsaved && !window.__DL_forceClose) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('🚫 Blocking navigation, dispatching event for:', item.path);
+                      // Dispatch event to let pages handle the dialog
+                      // Use setTimeout to ensure event is processed
+                      setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('navigation-blocked', { 
+                          detail: { path: item.path },
+                          bubbles: true,
+                          cancelable: true
+                        }));
+                      }, 0);
+                      return; // Early return to prevent navigation
+                    }
+                  } catch (err) {
+                    console.error('Error checking unsaved changes:', err);
+                    return; // Return on error to prevent navigation
+                  }
+                  console.log('✅ Allowing navigation to:', item.path);
+                  navigate(item.path);
+                }}
                  sx={{
                    borderRadius: 2,
                    position: 'relative',
@@ -498,14 +514,31 @@ const ModernNavigation = () => {
            >
              <ListItemButton
                selected={isActive(settingsItem.path)}
-               onClick={() => {
+               onClick={(e) => {
                  try {
-                   if (window.__DL_unsavedBin) {
-                     const ok = window.confirm('You have unsaved BIN changes. Save before leaving?\nPress OK to leave anyway.');
-                     if (!ok) return;
-                     window.__DL_unsavedBin = false;
+                   // Check for unsaved changes before navigation
+                   const hasUnsaved = Boolean(window.__DL_unsavedBin);
+                   console.log('🔍 Settings navigation click - hasUnsaved:', hasUnsaved, 'forceClose:', window.__DL_forceClose);
+                   if (hasUnsaved && !window.__DL_forceClose) {
+                     e.preventDefault();
+                     e.stopPropagation();
+                     console.log('🚫 Blocking navigation, dispatching event for:', settingsItem.path);
+                     // Dispatch event to let pages handle the dialog
+                     // Use setTimeout to ensure event is processed
+                     setTimeout(() => {
+                       window.dispatchEvent(new CustomEvent('navigation-blocked', { 
+                         detail: { path: settingsItem.path },
+                         bubbles: true,
+                         cancelable: true
+                       }));
+                     }, 0);
+                     return; // Early return to prevent navigation
                    }
-                 } catch {}
+                 } catch (err) {
+                   console.error('Error checking unsaved changes:', err);
+                   return; // Return on error to prevent navigation
+                 }
+                 console.log('✅ Allowing navigation to:', settingsItem.path);
                  navigate(settingsItem.path);
                }}
                sx={{
