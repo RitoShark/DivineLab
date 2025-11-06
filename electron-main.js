@@ -1066,6 +1066,92 @@ function clearTextureCacheOnQuit() {
   }
 }
 
+// Clean up PyInstaller _MEI* temporary folders
+function cleanupMeiFolders() {
+  try {
+    const os = require('os');
+    const tempDir = os.tmpdir();
+    
+    if (!fs.existsSync(tempDir)) {
+      return;
+    }
+    
+    // Find all _MEI* folders
+    const entries = fs.readdirSync(tempDir, { withFileTypes: true });
+    const meiFolders = entries
+      .filter(entry => entry.isDirectory() && entry.name.startsWith('_MEI'))
+      .map(entry => path.join(tempDir, entry.name));
+    
+    if (meiFolders.length === 0) {
+      return;
+    }
+    
+    console.log(`🧹 Found ${meiFolders.length} _MEI* folder(s) to clean up...`);
+    logToFile(`Found ${meiFolders.length} _MEI* folder(s) to clean up`, 'INFO');
+    
+    let totalSize = 0;
+    let deletedCount = 0;
+    
+    for (const meiFolder of meiFolders) {
+      try {
+        // Calculate folder size
+        let folderSize = 0;
+        const calculateSize = (dir) => {
+          try {
+            const items = fs.readdirSync(dir, { withFileTypes: true });
+            for (const item of items) {
+              const itemPath = path.join(dir, item.name);
+              try {
+                if (item.isDirectory()) {
+                  calculateSize(itemPath);
+                } else {
+                  const stats = fs.statSync(itemPath);
+                  folderSize += stats.size;
+                }
+              } catch (e) {
+                // Skip files/folders we can't access
+              }
+            }
+          } catch (e) {
+            // Skip directories we can't read
+          }
+        };
+        
+        calculateSize(meiFolder);
+        
+        // Try to delete the folder
+        try {
+          fs.rmSync(meiFolder, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+          totalSize += folderSize;
+          deletedCount++;
+          const sizeMB = (folderSize / (1024 * 1024)).toFixed(2);
+          console.log(`✅ Deleted: ${path.basename(meiFolder)} (${sizeMB} MB)`);
+          logToFile(`Deleted _MEI folder: ${path.basename(meiFolder)} (${sizeMB} MB)`, 'INFO');
+        } catch (deleteError) {
+          // Folder might be in use, skip it
+          console.log(`⚠️ Could not delete ${path.basename(meiFolder)}: ${deleteError.message}`);
+          logToFile(`Could not delete _MEI folder ${path.basename(meiFolder)}: ${deleteError.message}`, 'WARN');
+        }
+      } catch (error) {
+        console.log(`⚠️ Error processing ${path.basename(meiFolder)}: ${error.message}`);
+        logToFile(`Error processing _MEI folder ${path.basename(meiFolder)}: ${error.message}`, 'WARN');
+      }
+    }
+    
+    if (deletedCount > 0) {
+      const totalMB = (totalSize / (1024 * 1024)).toFixed(2);
+      console.log(`🧹 Cleanup complete: Deleted ${deletedCount} folder(s), freed ${totalMB} MB`);
+      logToFile(`_MEI cleanup complete: Deleted ${deletedCount} folder(s), freed ${totalMB} MB`, 'INFO');
+    } else {
+      console.log(`ℹ️ No _MEI* folders were deleted (may be in use)`);
+      logToFile(`No _MEI* folders were deleted (may be in use)`, 'INFO');
+    }
+  } catch (error) {
+    console.error(`❌ Error during _MEI* cleanup: ${error.message}`);
+    logToFile(`Error during _MEI* cleanup: ${error.message}`, 'ERROR');
+  }
+}
+
 // Quit when all windows are closed.
 app.on('window-all-closed', async () => {
   // Clear texture cache before closing
@@ -1073,6 +1159,10 @@ app.on('window-all-closed', async () => {
   
   // Stop the backend service when all windows are closed
   await stopBackendService();
+  
+  // Clean up _MEI* folders on app close
+  cleanupMeiFolders();
+  
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
   if (process.platform !== 'darwin') {
@@ -1103,6 +1193,8 @@ app.on('before-quit', async (e) => {
       // Clear texture cache before quitting
       clearTextureCacheOnQuit();
       await stopBackendService();
+      // Clean up _MEI* folders on app close
+      cleanupMeiFolders();
       return;
     }
 
@@ -1121,6 +1213,8 @@ app.on('before-quit', async (e) => {
       clearTextureCacheOnQuit();
       // Stop backend service before quitting
       await stopBackendService();
+      // Clean up _MEI* folders on app close
+      cleanupMeiFolders();
       return;
     }
 
@@ -1145,6 +1239,8 @@ app.on('before-quit', async (e) => {
       clearTextureCacheOnQuit();
       // Stop backend service before quitting
       await stopBackendService();
+      // Clean up _MEI* folders on app close
+      cleanupMeiFolders();
       const w = win; // reference before async quit
       try { w?.destroy?.(); } catch {}
       app.quit();
@@ -1160,6 +1256,8 @@ app.on('before-quit', async (e) => {
     // Clear texture cache before quitting
     clearTextureCacheOnQuit();
     await stopBackendService();
+    // Clean up _MEI* folders on app close
+    cleanupMeiFolders();
   }
 });
 

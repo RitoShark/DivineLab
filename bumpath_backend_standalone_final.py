@@ -2825,13 +2825,78 @@ def cancel_operations():
             'details': str(e)
         }), 500
 
+def cleanup_mei_folders():
+    """Clean up PyInstaller _MEI* temporary folders from temp directory"""
+    try:
+        import tempfile
+        import glob
+        
+        # Get temp directory
+        temp_dir = tempfile.gettempdir()
+        
+        # Find all _MEI* folders
+        mei_pattern = os.path.join(temp_dir, '_MEI*')
+        mei_folders = glob.glob(mei_pattern)
+        
+        if not mei_folders:
+            return
+        
+        print(f"Found {len(mei_folders)} _MEI* folder(s) to clean up...")
+        
+        total_size = 0
+        deleted_count = 0
+        
+        for mei_folder in mei_folders:
+            try:
+                # Check if folder is in use (if it's the current _MEIPASS, skip it)
+                if hasattr(sys, '_MEIPASS') and os.path.abspath(mei_folder) == os.path.abspath(sys._MEIPASS):
+                    print(f"Skipping current _MEIPASS folder: {mei_folder}")
+                    continue
+                
+                # Calculate size before deletion
+                folder_size = 0
+                for dirpath, dirnames, filenames in os.walk(mei_folder):
+                    for filename in filenames:
+                        try:
+                            filepath = os.path.join(dirpath, filename)
+                            folder_size += os.path.getsize(filepath)
+                        except (OSError, PermissionError):
+                            pass
+                
+                # Try to delete the folder
+                try:
+                    shutil.rmtree(mei_folder, ignore_errors=True)
+                    total_size += folder_size
+                    deleted_count += 1
+                    size_mb = folder_size / (1024 * 1024)
+                    print(f"Deleted: {os.path.basename(mei_folder)} ({size_mb:.2f} MB)")
+                except Exception as e:
+                    print(f"Failed to delete {mei_folder}: {e}")
+                    
+            except Exception as e:
+                print(f"Error processing {mei_folder}: {e}")
+        
+        if deleted_count > 0:
+            total_mb = total_size / (1024 * 1024)
+            print(f"Cleanup complete: Deleted {deleted_count} folder(s), freed {total_mb:.2f} MB")
+        else:
+            print("No _MEI* folders were deleted (may be in use or already cleaned)")
+            
+    except Exception as e:
+        print(f"Error during _MEI* cleanup: {e}")
+
 if __name__ == '__main__':
     import signal
     import sys
+    import atexit
     
     def signal_handler(sig, frame):
         print("STOP: Received termination signal, shutting down gracefully...")
+        cleanup_mei_folders()
         sys.exit(0)
+    
+    # Register cleanup function to run on exit
+    atexit.register(cleanup_mei_folders)
     
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
