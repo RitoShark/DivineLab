@@ -1,0 +1,49 @@
+CUSTOM OPEN SOURCE LICENSE
+
+Copyright (c) 2025 QUARTZ
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+TERMS AND CONDITIONS:
+
+1. ATTRIBUTION REQUIRED
+   The above copyright notice and this permission notice must be included in
+   all copies or substantial portions of the Software. You must give credit
+   to the original author (QUARTZ) in any project that uses this code.
+
+2. OPEN SOURCE REQUIREMENT (COPLEFT)
+   Any derivative works, modifications, or projects that incorporate this
+   Software MUST be released under an open source license. You may NOT use
+   this code in proprietary or closed-source software. All derivative works
+   must be:
+   - Open source and publicly accessible
+   - Forkable and republishable by others
+   - Licensed under a compatible open source license
+
+3. GRANT BACK TO ORIGINAL AUTHOR
+   By creating derivative works or modifications of this Software, you grant
+   the original copyright holder (QUARTZ) the right to use, copy, modify,
+   merge, publish, distribute, sublicense, and/or sell any code, features, or
+   improvements from your derivative works in their own software, without
+   restriction or obligation to credit you.
+
+4. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   THE SOFTWARE.
+
+SUMMARY:
+- You can do whatever you want with this code
+- You must credit the original author
+- Your software must be open source
+- Your software must be forkable and republishable
+- The original author can use code from your edits in their own software
+
