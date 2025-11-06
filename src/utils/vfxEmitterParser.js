@@ -14,12 +14,12 @@ const parseVfxEmitters = (content) => {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // Look for VfxSystemDefinitionData
-    if (line.includes('= VfxSystemDefinitionData {')) {
+    // Look for VfxSystemDefinitionData (case-insensitive)
+    if (/=\s*VfxSystemDefinitionData\s*\{/i.test(line)) {
       vfxSystemCount++;
       
-      // Support quoted keys and hashed keys like 0x6bb943e2
-      const keyMatch = line.match(/^(?:"([^\"]+)"|(0x[0-9a-fA-F]+))\s*=\s*VfxSystemDefinitionData\s*\{/);
+      // Support quoted keys and hashed keys like 0x6bb943e2 (case-insensitive)
+      const keyMatch = line.match(/^(?:"([^\"]+)"|(0x[0-9a-fA-F]+))\s*=\s*VfxSystemDefinitionData\s*\{/i);
       if (keyMatch) {
         const systemKeyRaw = keyMatch[1] || keyMatch[2];
         const cleanSystemKey = systemKeyRaw.replace(/^"|"$/g, '');
@@ -31,9 +31,9 @@ const parseVfxEmitters = (content) => {
         // Extract only this system's content
         const systemContent = lines.slice(i, endLine + 1).join('\n');
         
-        // Try to read particleName for a friendlier display name
+        // Try to read particleName for a friendlier display name (case-insensitive)
         let particleName = null;
-        const particleNameMatch = systemContent.match(/particleName:\s*string\s*=\s*"([^"]+)"/);
+        const particleNameMatch = systemContent.match(/particleName:\s*string\s*=\s*"([^"]+)"/i);
         if (particleNameMatch) {
           particleName = particleNameMatch[1];
         }
@@ -90,9 +90,9 @@ const parseEmitterNamesInVfxSystem = (lines, systemStartLine) => {
     if (inSystem) {
       bracketDepth += openBrackets - closeBrackets;
 
-      // Found an emitter - look for VfxEmitterDefinitionData and extract name only
+      // Found an emitter - look for VfxEmitterDefinitionData and extract name only (case-insensitive)
       // Handle both simpleEmitterDefinitionData and complexEmitterDefinitionData patterns
-      if (line.includes('VfxEmitterDefinitionData {')) {
+      if (/VfxEmitterDefinitionData\s*\{/i.test(line)) {
         const emitterName = parseEmitterNameOnly(lines, i);
         if (emitterName) {
           emitterNames.push(emitterName);
@@ -127,10 +127,10 @@ const parseEmitterNameOnly = (lines, emitterStartLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    // Look for emitterName property with quoted names
-    if (line.includes('emitterName:')) {
-      // Pattern: "emitterName: string = "name"" (always quoted)
-      const match = line.match(/emitterName:\s*string\s*=\s*"([^"]+)"/);
+    // Look for emitterName property with quoted names (case-insensitive)
+    if (/emitterName:/i.test(line)) {
+      // Pattern: "emitterName: string = "name"" or "EmitterName: string = "name"" (always quoted)
+      const match = line.match(/emitterName:\s*string\s*=\s*"([^"]+)"/i);
       if (match) {
         const name = match[1];
         return name;
@@ -183,8 +183,8 @@ const loadEmitterData = (system, emitterName) => {
     if (inSystem) {
       bracketDepth += openBrackets - closeBrackets;
 
-      // Found an emitter - check if it's the one we want
-      if (line.includes('VfxEmitterDefinitionData {')) {
+      // Found an emitter - check if it's the one we want (case-insensitive)
+      if (/VfxEmitterDefinitionData\s*\{/i.test(line)) {
         
         // Find the end of this specific emitter block
         let emitterBracketDepth = 1;
@@ -313,8 +313,8 @@ const parseEmittersInVfxSystem = (lines, systemStartLine) => {
     if (inSystem) {
       bracketDepth += openBrackets - closeBrackets;
 
-      // Found an emitter - look for VfxEmitterDefinitionData
-      if (line.includes('VfxEmitterDefinitionData {')) {
+      // Found an emitter - look for VfxEmitterDefinitionData (case-insensitive)
+      if (/VfxEmitterDefinitionData\s*\{/i.test(line)) {
         const { emitter, endLine } = parseVfxEmitter(lines, i);
         if (emitter) {
           emitters.push(emitter);
@@ -365,11 +365,11 @@ const parseVfxEmitter = (lines, emitterStartLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    // Only extract the emitter name for identification (always quoted)
-    if (trimmedLine.includes('emitterName:')) {
+    // Only extract the emitter name for identification (always quoted, case-insensitive)
+    if (/emitterName:/i.test(trimmedLine)) {
       // Found emitterName line
-      // Pattern: "emitterName: string = "name"" (always quoted)
-      const match = trimmedLine.match(/emitterName:\s*string\s*=\s*"([^"]+)"/);
+      // Pattern: "emitterName: string = "name"" or "EmitterName: string = "name"" (always quoted)
+      const match = trimmedLine.match(/emitterName:\s*string\s*=\s*"([^"]+)"/i);
       if (match) {
         emitter.name = match[1];
         // name set
@@ -418,12 +418,15 @@ const parseValueFloat = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (line.includes('constantValue: f32 =')) {
-      const value = parseFloat(line.split('= ')[1]);
-      if (!isNaN(value)) {
-        valueFloat.constantValue = value;
+    if (/constantValue:\s*f32\s*=/i.test(line)) {
+      const valueMatch = line.match(/constantValue:\s*f32\s*=\s*([0-9.eE+-]+)/i);
+      if (valueMatch) {
+        const value = parseFloat(valueMatch[1]);
+        if (!isNaN(value)) {
+          valueFloat.constantValue = value;
+        }
       }
-    } else if (line.includes('dynamics: pointer =')) {
+    } else if (/dynamics:\s*pointer\s*=/i.test(line)) {
       valueFloat.dynamics = parseDynamics(lines, i);
     }
 
@@ -459,8 +462,8 @@ const parseValueColor = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (line.includes('constantValue: vec4 =')) {
-      const vecStr = line.split('= ')[1];
+    if (/constantValue:\s*vec4\s*=/i.test(line)) {
+      const vecStr = line.split('=')[1];
       const cleanStr = vecStr.replace(/[{}]/g, '').trim();
       if (cleanStr) {
         const values = cleanStr.split(',').map(v => parseFloat(v.trim()));
@@ -468,7 +471,7 @@ const parseValueColor = (lines, startLine) => {
           valueColor.constantValue = values;
         }
       }
-    } else if (line.includes('dynamics: pointer = VfxAnimatedColorVariableData {')) {
+    } else if (/dynamics:\s*pointer\s*=\s*VfxAnimatedColorVariableData\s*\{/i.test(line)) {
       valueColor.dynamics = parseAnimatedColorVariableData(lines, i);
     }
 
@@ -504,8 +507,8 @@ const parseValueVector3 = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (line.includes('constantValue: vec3 =')) {
-      const vecStr = line.split('= ')[1];
+    if (/constantValue:\s*vec3\s*=/i.test(line)) {
+      const vecStr = line.split('=')[1];
       const cleanStr = vecStr.replace(/[{}]/g, '').trim();
       if (cleanStr) {
         const values = cleanStr.split(',').map(v => parseFloat(v.trim()));
@@ -513,7 +516,7 @@ const parseValueVector3 = (lines, startLine) => {
           valueVector3.constantValue = values;
         }
       }
-    } else if (line.includes('dynamics: pointer = VfxAnimatedVector3fVariableData {')) {
+    } else if (/dynamics:\s*pointer\s*=\s*VfxAnimatedVector3fVariableData\s*\{/i.test(line)) {
       valueVector3.dynamics = parseAnimatedVector3VariableData(lines, i);
     }
 
@@ -686,18 +689,18 @@ const parseAnimatedColorVariableData = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (line.includes('times: list[f32] = {')) {
+    if (/times:\s*list\[f32\]\s*=\s*\{/i.test(line)) {
       inTimes = true;
     } else if (inTimes && line.includes('}') && !line.includes('{')) {
       inTimes = false;
-    } else if (inTimes && !line.includes('times:')) {
+    } else if (inTimes && !/times:/i.test(line)) {
       const timeValue = parseFloat(line);
       if (!isNaN(timeValue)) {
         animatedData.times.push(timeValue);
       }
     }
 
-    if (line.includes('values: list[vec4] = {')) {
+    if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(line)) {
       inValues = true;
     } else if (inValues && line.includes('}') && !line.includes('{')) {
       inValues = false;
@@ -746,18 +749,18 @@ const parseAnimatedVector3VariableData = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (line.includes('times: list[f32] = {')) {
+    if (/times:\s*list\[f32\]\s*=\s*\{/i.test(line)) {
       inTimes = true;
     } else if (inTimes && line.includes('}') && !line.includes('{')) {
       inTimes = false;
-    } else if (inTimes && !line.includes('times:')) {
+    } else if (inTimes && !/times:/i.test(line)) {
       const timeValue = parseFloat(line);
       if (!isNaN(timeValue)) {
         animatedData.times.push(timeValue);
       }
     }
 
-    if (line.includes('values: list[vec3] = {')) {
+    if (/values:\s*list\[vec3\]\s*=\s*\{/i.test(line)) {
       inValues = true;
     } else if (inValues && line.includes('}') && !line.includes('{')) {
       inValues = false;
@@ -1119,8 +1122,8 @@ const generateModifiedPythonFromSystems = (originalContent, systems) => {
                   const line = sysLines[m];
                   const trimmed = (line || '').trim();
                   // Capture name
-                  if (!foundName && trimmed.includes('emitterName:')) {
-                    const match = trimmed.match(/emitterName:\s*string\s*=\s*"([^"]+)"/);
+                  if (!foundName && /emitterName:/i.test(trimmed)) {
+                    const match = trimmed.match(/emitterName:\s*string\s*=\s*"([^"]+)"/i);
                     if (match) foundName = match[1];
                   }
                   const opens = (line.match(/\{/g) || []).length;

@@ -9,16 +9,16 @@ const parsePyFile = (content) => {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // Look for VfxSystemDefinitionData - handle both hash keys and string paths
-    if (line.includes('= VfxSystemDefinitionData {')) {
+    // Look for VfxSystemDefinitionData - handle both hash keys and string paths (case-insensitive)
+    if (/=\s*VfxSystemDefinitionData\s*\{/i.test(line)) {
       vfxSystemCount++;
       
-      const keyMatch = line.match(/^(.+?)\s*=\s*VfxSystemDefinitionData\s*\{/);
+      const keyMatch = line.match(/^(.+?)\s*=\s*VfxSystemDefinitionData\s*\{/i);
       if (keyMatch) {
         const systemKey = keyMatch[1].trim();
         const cleanSystemKey = systemKey.replace(/^"|"$/g, ''); // Remove quotes from key
         
-        // Extract particleName from this system block
+        // Extract particleName from this system block (case-insensitive)
         let particleName = null;
         let bracketDepth = 1;
         for (let j = i + 1; j < lines.length; j++) {
@@ -27,7 +27,7 @@ const parsePyFile = (content) => {
           const closeBrackets = (l.match(/\}/g) || []).length;
           bracketDepth += openBrackets - closeBrackets;
           
-          const particleMatch = l.match(/particleName:\s*string\s*=\s*"([^"]+)"/);
+          const particleMatch = l.match(/particleName:\s*string\s*=\s*"([^"]+)"/i);
           if (particleMatch) {
             particleName = particleMatch[1];
             break;
@@ -93,8 +93,8 @@ const parseEmittersInSystem = (lines, systemStartLine) => {
     if (inSystem) {
       bracketDepth += openBrackets - closeBrackets;
 
-      // Found an emitter - look for both complex and simple emitter definitions
-      if (line.includes('VfxEmitterDefinitionData {')) {
+      // Found an emitter - look for both complex and simple emitter definitions (case-insensitive)
+      if (/VfxEmitterDefinitionData\s*\{/i.test(line)) {
         const emitter = parseEmitter(lines, i);
         if (emitter) {
           emitters.push(emitter);
@@ -136,14 +136,21 @@ const parseEmitter = (lines, emitterStartLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    // Parse emitter properties
-    if (line.includes('emitterName: string =')) {
-      emitter.name = line.split('= ')[1].replace(/"/g, '').trim();
-    } else if (line.toLowerCase().includes('birthcolor: embed = valuecolor {')) {
+    // Parse emitter properties (all case-insensitive)
+    // Handle both "emitterName" and "EmitterName"
+    if (/emitterName:\s*string\s*=/i.test(line)) {
+      const match = line.match(/emitterName:\s*string\s*=\s*"([^"]+)"/i);
+      if (match) {
+        emitter.name = match[1];
+      } else {
+        // Fallback to old method if regex doesn't match
+        emitter.name = line.split('= ')[1].replace(/"/g, '').trim();
+      }
+    } else if (/birthColor:\s*embed\s*=\s*ValueColor\s*\{/i.test(line)) {
       emitter.birthColor = parseColorProperty(lines, i);
-    } else if (line.toLowerCase().includes('color: embed = valuecolor {') && !line.toLowerCase().includes('birthcolor') && !line.toLowerCase().includes('fresnelcolor')) {
+    } else if (/^color:\s*embed\s*=\s*ValueColor\s*\{/i.test(line) && !/birthColor/i.test(line) && !/fresnelColor/i.test(line)) {
       emitter.color = parseColorProperty(lines, i);
-    } else if (line.includes('fresnelColor: vec4 =') || line.includes('fresnelColor: vec4=')) {
+    } else if (/fresnelColor:\s*vec4\s*=/i.test(line)) {
       // Simple fresnelColor constant value
       const vecStr = line.split('=')[1];
       if (vecStr) {
@@ -153,25 +160,28 @@ const parseEmitter = (lines, emitterStartLine) => {
           emitter.fresnelColor = { constantValue: values, startLine: i, endLine: i };
         }
       }
-    } else if (line.includes('fresnelColor: embed = ValueColor {')) {
+    } else if (/fresnelColor:\s*embed\s*=\s*ValueColor\s*\{/i.test(line)) {
       emitter.fresnelColor = parseColorProperty(lines, i);
-    } else if (line.includes('blendMode: u8 =')) {
-      emitter.blendMode = parseInt(line.split('= ')[1]) || 0;
-    } else if (line.includes('texture: string =')) {
+    } else if (/blendMode:\s*u8\s*=/i.test(line)) {
+      const blendMatch = line.match(/blendMode:\s*u8\s*=\s*(\d+)/i);
+      if (blendMatch) {
+        emitter.blendMode = parseInt(blendMatch[1]) || 0;
+      }
+    } else if (/^texture:\s*string\s*=/i.test(line)) {
       // Extract texture path
-      const textureMatch = line.match(/texture: string = "([^"]+)"/);
+      const textureMatch = line.match(/texture:\s*string\s*=\s*"([^"]+)"/i);
       if (textureMatch) {
         emitter.texturePath = textureMatch[1];
       }
-    } else if (line.includes('texturePath: string =')) {
+    } else if (/texturePath:\s*string\s*=/i.test(line)) {
       // Alternative texture path property
-      const textureMatch = line.match(/texturePath: string = "([^"]+)"/);
+      const textureMatch = line.match(/texturePath:\s*string\s*=\s*"([^"]+)"/i);
       if (textureMatch) {
         emitter.texturePath = textureMatch[1];
       }
-    } else if (line.includes('textureName: string =')) {
+    } else if (/textureName:\s*string\s*=/i.test(line)) {
       // Alternative texture name property
-      const textureMatch = line.match(/textureName: string = "([^"]+)"/);
+      const textureMatch = line.match(/textureName:\s*string\s*=\s*"([^"]+)"/i);
       if (textureMatch) {
         emitter.texturePath = textureMatch[1];
       }
@@ -192,9 +202,9 @@ const parseEmitter = (lines, emitterStartLine) => {
   return emitter;
 };
 
-// Function to find texture paths in emitter content
+// Function to find texture paths in emitter content (case-insensitive)
 const findTexturePathInContent = (content) => {
-  // Look for common texture file patterns
+  // Look for common texture file patterns (case-insensitive)
   const texturePatterns = [
     /"([^"]*\.(?:tex|dds|png|jpg|jpeg|tga|bmp))"/gi,
     /"([^"]*\/[^"]*\.(?:tex|dds|png|jpg|jpeg|tga|bmp))"/gi,
@@ -238,9 +248,9 @@ const parseColorProperty = (lines, colorStartLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    // Parse constant value
-    if (line.includes('constantValue: vec4 =')) {
-      const vecStr = line.split('= ')[1];
+    // Parse constant value (case-insensitive)
+    if (/constantValue:\s*vec4\s*=/i.test(line)) {
+      const vecStr = line.split('=')[1];
       const cleanStr = vecStr.replace(/[{}]/g, '').trim();
       if (cleanStr) {
         const values = cleanStr.split(',').map(v => parseFloat(v.trim()));
@@ -250,19 +260,19 @@ const parseColorProperty = (lines, colorStartLine) => {
       }
     }
 
-    // Parse dynamics
-    if (line.includes('dynamics: pointer = VfxAnimatedColorVariableData {')) {
+    // Parse dynamics (case-insensitive)
+    if (/dynamics:\s*pointer\s*=\s*VfxAnimatedColorVariableData\s*\{/i.test(line)) {
       inDynamics = true;
       colorProp.dynamics = dynamicsData;
     }
 
     if (inDynamics) {
-      // Parse times array
-      if (line.includes('times: list[f32] = {')) {
+      // Parse times array (case-insensitive)
+      if (/times:\s*list\[f32\]\s*=\s*\{/i.test(line)) {
         inTimes = true;
       } else if (inTimes && line.includes('}')) {
         inTimes = false;
-      } else if (inTimes && !line.includes('times:')) {
+      } else if (inTimes && !/times:/i.test(line)) {
         // Parse individual time values
         const timeValue = parseFloat(line.trim());
         if (!isNaN(timeValue)) {
@@ -270,8 +280,8 @@ const parseColorProperty = (lines, colorStartLine) => {
         }
       }
 
-      // Parse values array
-      if (line.includes('values: list[vec4] = {')) {
+      // Parse values array (case-insensitive)
+      if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(line)) {
         inValues = true;
       } else if (inValues && line.includes('}') && !line.includes('{')) {
         inValues = false;
@@ -354,9 +364,9 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
     const isBlackOrWhite = (r === 0 && g === 0 && b === 0) || (r === 1 && g === 1 && b === 1);
 
     if (!(ignoreBlackWhite && isBlackOrWhite)) {
-      // Find the constantValue line and replace it
+      // Find the constantValue line and replace it (case-insensitive)
       for (let i = colorProp.startLine; i <= colorProp.endLine; i++) {
-        if (lines[i].includes('constantValue: vec4 =')) {
+        if (/constantValue:\s*vec4\s*=/i.test(lines[i])) {
           const indent = lines[i].match(/^(\s*)/)[1];
           let writeColor = newColor;
           
@@ -376,7 +386,11 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
             }
           }
           
-          lines[i] = `${indent}constantValue: vec4 = { ${writeColor[0]}, ${writeColor[1]}, ${writeColor[2]}, ${writeColor[3]} }`;
+          // Preserve original case of constantValue
+          const originalLine = lines[i];
+          const caseMatch = originalLine.match(/(constantValue)/i);
+          const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+          lines[i] = `${indent}${casePreserved}: vec4 = { ${writeColor[0]}, ${writeColor[1]}, ${writeColor[2]}, ${writeColor[3]} }`;
           break;
         }
       }
@@ -397,9 +411,9 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
     const isBlackOrWhite = (r === 0 && g === 0 && b === 0) || (r === 1 && g === 1 && b === 1);
 
     if (!(ignoreBlackWhite && isBlackOrWhite)) {
-      // Find the fresnelColor line and replace it
+      // Find the fresnelColor line and replace it (case-insensitive)
       for (let i = colorProp.startLine; i <= colorProp.endLine; i++) {
-        if (lines[i].includes('fresnelColor: vec4 =')) {
+        if (/fresnelColor:\s*vec4\s*=/i.test(lines[i])) {
           const indent = lines[i].match(/^(\s*)/)[1];
           let writeColor = newColor;
           
@@ -409,7 +423,11 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
             writeColor = newColor;
           }
           
-          lines[i] = `${indent}fresnelColor: vec4 = { ${writeColor[0]}, ${writeColor[1]}, ${writeColor[2]}, ${writeColor[3]} }`;
+          // Preserve original case of fresnelColor
+          const originalLine = lines[i];
+          const caseMatch = originalLine.match(/(fresnelColor)/i);
+          const casePreserved = caseMatch ? caseMatch[1] : 'fresnelColor';
+          lines[i] = `${indent}${casePreserved}: vec4 = { ${writeColor[0]}, ${writeColor[1]}, ${writeColor[2]}, ${writeColor[3]} }`;
           break;
         }
       }
@@ -651,7 +669,7 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
     let valueIndex = 0;
     
     for (let lineIndex = colorProp.startLine; lineIndex <= colorProp.endLine; lineIndex++) {
-      if (lines[lineIndex].includes('values: list[vec4] = {')) {
+      if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(lines[lineIndex])) {
         inValues = true;
         continue;
       }
