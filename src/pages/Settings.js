@@ -22,6 +22,13 @@ import {
   Container,
   Slider,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
+  Checkbox,
+  FormControlLabel as MuiFormControlLabel,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -70,7 +77,8 @@ const Settings = () => {
     githubExpanded: false,
     settingsExpanded: false,
     pageVisibilityExpanded: false,
-    navExpandDisabled: false,
+    navExpandEnabled: false,
+    autoLoadEnabled: true, // Auto-load last bin files on page visit
     // Page visibility settings
     paintEnabled: true,
     portEnabled: true,
@@ -98,6 +106,8 @@ const Settings = () => {
   const [hashDirectory, setHashDirectory] = useState('');
   const [hashStatus, setHashStatus] = useState(null);
   const [downloadingHashes, setDownloadingHashes] = useState(false);
+  const [showHashDirectoryWarning, setShowHashDirectoryWarning] = useState(false);
+  const [hashWarningDontShowAgain, setHashWarningDontShowAgain] = useState(false);
   
   // Update management state
   const [updateStatus, setUpdateStatus] = useState('idle'); // idle, checking, available, downloading, downloaded, not-available, error
@@ -201,9 +211,20 @@ const Settings = () => {
       try {
         if (window.require) {
           const { ipcRenderer } = window.require('electron');
-          // Get hash directory
-          const hashDirResult = await ipcRenderer.invoke('hashes:get-directory');
-          setHashDirectory(hashDirResult.hashDir || '');
+          // Get hash directory (check for custom first, then use integrated)
+          const customHashDir = electronPrefs.obj.CustomHashDirectory;
+          if (customHashDir) {
+            setHashDirectory(customHashDir);
+          } else {
+            const hashDirResult = await ipcRenderer.invoke('hashes:get-directory');
+            setHashDirectory(hashDirResult.hashDir || '');
+          }
+          
+          // Check if warning was dismissed
+          const warningDismissed = electronPrefs.obj.HashDirectoryWarningDismissed;
+          if (warningDismissed) {
+            setHashWarningDontShowAgain(true);
+          }
           
           // Check hash status
           const statusResult = await ipcRenderer.invoke('hashes:check');
@@ -276,7 +297,8 @@ const Settings = () => {
         githubExpanded: electronPrefs.obj.GitHubExpanded || false,
         settingsExpanded: electronPrefs.obj.SettingsExpanded || false,
         pageVisibilityExpanded: electronPrefs.obj.PageVisibilityExpanded || false,
-          navExpandDisabled: electronPrefs.obj.NavExpandDisabled === true,
+          navExpandEnabled: electronPrefs.obj.NavExpandEnabled === true || (electronPrefs.obj.NavExpandDisabled !== undefined && electronPrefs.obj.NavExpandDisabled === false),
+          autoLoadEnabled: electronPrefs.obj.AutoLoadEnabled !== false, // Default to true
         // Page visibility settings
         paintEnabled: electronPrefs.obj.paintEnabled !== false, // Default to true
         portEnabled: electronPrefs.obj.portEnabled !== false,
@@ -569,8 +591,11 @@ const Settings = () => {
         case 'themeVariant':
           await electronPrefs.set('ThemeVariant', value);
           break;
-        case 'navExpandDisabled':
-          await electronPrefs.set('NavExpandDisabled', value);
+        case 'navExpandEnabled':
+          await electronPrefs.set('NavExpandEnabled', value);
+          break;
+        case 'autoLoadEnabled':
+          await electronPrefs.set('AutoLoadEnabled', value);
           break;
         case 'ritobinPath':
           await electronPrefs.set('RitoBinPath', value);
@@ -648,7 +673,7 @@ const Settings = () => {
       }
 
       // Dispatch settings changed event for navigation updates
-      if (['themeVariant', 'paintEnabled', 'portEnabled', 'vfxHubEnabled', 'rgbaEnabled', 'frogImgEnabled', 'binEditorEnabled', 'toolsEnabled', 'fileRandomizerEnabled', 'bumpathEnabled', 'aniportEnabled', 'frogchangerEnabled', 'navExpandDisabled', 'UpscaleEnabled'].includes(key)) {
+      if (['themeVariant', 'paintEnabled', 'portEnabled', 'vfxHubEnabled', 'rgbaEnabled', 'frogImgEnabled', 'binEditorEnabled', 'toolsEnabled', 'fileRandomizerEnabled', 'bumpathEnabled', 'aniportEnabled', 'frogchangerEnabled', 'navExpandEnabled', 'UpscaleEnabled'].includes(key)) {
         window.dispatchEvent(new CustomEvent('settingsChanged'));
       }
     } catch (error) {
@@ -834,6 +859,61 @@ const Settings = () => {
           message: "Unable to open hash folder."
         });
       }
+    }
+  };
+
+  const handleSelectHashDirectory = async () => {
+    // Check if warning was dismissed
+    await electronPrefs.initPromise;
+    const warningDismissed = electronPrefs.obj.HashDirectoryWarningDismissed;
+    if (warningDismissed) {
+      // Skip warning and go directly to directory selection
+      await performHashDirectorySelection();
+    } else {
+      // Show warning dialog first
+      setShowHashDirectoryWarning(true);
+    }
+  };
+
+  const performHashDirectorySelection = async () => {
+    try {
+      // Open directory selection dialog
+      if (window.require) {
+        const result = await electronPrefs.selectDirectory();
+        if (result) {
+          // Save custom hash directory
+          await electronPrefs.set('CustomHashDirectory', result);
+          setHashDirectory(result);
+          if (CreateMessage) {
+            CreateMessage({
+              type: "success",
+              title: "Success",
+              message: "Hash directory updated. Please restart the app for changes to take effect."
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error selecting hash directory:', error);
+      if (CreateMessage) {
+        CreateMessage({
+          type: "error",
+          title: "Error",
+          message: "Unable to select hash directory."
+        });
+      }
+    }
+  };
+
+  const handleConfirmHashDirectoryChange = async () => {
+    try {
+      if (hashWarningDontShowAgain) {
+        await electronPrefs.set('HashDirectoryWarningDismissed', true);
+      }
+      setShowHashDirectoryWarning(false);
+      await performHashDirectorySelection();
+    } catch (error) {
+      console.error('Error in hash directory change confirmation:', error);
     }
   };
 
@@ -1768,33 +1848,102 @@ const Settings = () => {
                   
                   <Collapse in={settings.pageVisibilityExpanded} timeout="auto" unmountOnExit>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={settings.navExpandDisabled}
-                            onChange={(e) => handleSettingChange('navExpandDisabled', e.target.checked)}
-                            sx={{
-                              '& .MuiSwitch-switchBase.Mui-checked': {
-                                color: 'var(--accent)',
-                                '&:hover': {
-                                  backgroundColor: 'color-mix(in srgb, var(--accent), transparent 92%)',
+                      {/* Navbar Settings Section */}
+                      <Box sx={{ mb: 1 }}>
+                        <Typography variant="caption" sx={{ 
+                          color: 'var(--accent2)',
+                          fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
+                          opacity: 0.7,
+                          mb: 0.5,
+                          display: 'block'
+                        }}>
+                          Navbar Settings
+                        </Typography>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={settings.navExpandEnabled}
+                              onChange={(e) => handleSettingChange('navExpandEnabled', e.target.checked)}
+                              sx={{
+                                '& .MuiSwitch-switchBase.Mui-checked': {
+                                  color: 'var(--accent)',
+                                  '&:hover': {
+                                    backgroundColor: 'color-mix(in srgb, var(--accent), transparent 92%)',
+                                  },
                                 },
-                              },
-                              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                backgroundColor: 'var(--accent)',
-                              },
-                            }}
-                          />
-                        }
-                        label={
-                          <Typography variant="body2" sx={{ 
-                            color: 'var(--accent2)',
-                            fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' }
-                          }}>
-                            Disable Navbar Expansion
-                          </Typography>
-                        }
-                      />
+                                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                  backgroundColor: 'var(--accent)',
+                                },
+                              }}
+                            />
+                          }
+                          label={
+                            <Typography variant="body2" sx={{ 
+                              color: 'var(--accent2)',
+                              fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' }
+                            }}>
+                              Enable Navbar Expansion
+                            </Typography>
+                          }
+                        />
+                      </Box>
+
+                      {/* Divider between sections */}
+                      <Divider sx={{ my: 1, borderColor: 'rgba(255, 255, 255, 0.1)' }} />
+
+                      {/* Auto-Load Settings Section */}
+                      <Box sx={{ mb: 1 }}>
+                        <Typography variant="caption" sx={{ 
+                          color: 'var(--accent2)',
+                          fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
+                          opacity: 0.7,
+                          mb: 0.5,
+                          display: 'block'
+                        }}>
+                          Auto-Load Settings
+                        </Typography>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={settings.autoLoadEnabled}
+                              onChange={(e) => handleSettingChange('autoLoadEnabled', e.target.checked)}
+                              sx={{
+                                '& .MuiSwitch-switchBase.Mui-checked': {
+                                  color: 'var(--accent)',
+                                  '&:hover': {
+                                    backgroundColor: 'color-mix(in srgb, var(--accent), transparent 92%)',
+                                  },
+                                },
+                                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                  backgroundColor: 'var(--accent)',
+                                },
+                              }}
+                            />
+                          }
+                          label={
+                            <Typography variant="body2" sx={{ 
+                              color: 'var(--accent2)',
+                              fontSize: { xs: '0.7rem', sm: '0.75rem', md: '0.8rem' }
+                            }}>
+                              Auto-Load Last Bin Files
+                            </Typography>
+                          }
+                        />
+                      </Box>
+
+                      {/* Divider before page visibility toggles */}
+                      <Divider sx={{ my: 1, borderColor: 'rgba(255, 255, 255, 0.1)' }} />
+
+                      {/* Page Visibility Toggles */}
+                      <Typography variant="caption" sx={{ 
+                        color: 'var(--accent2)',
+                        fontSize: { xs: '0.65rem', sm: '0.7rem', md: '0.75rem' },
+                        opacity: 0.7,
+                        mb: 0.5,
+                        display: 'block'
+                      }}>
+                        Page Visibility
+                      </Typography>
                       <FormControlLabel
                         control={
                           <Switch
@@ -2242,16 +2391,16 @@ const Settings = () => {
                         endAdornment: (
                           <InputAdornment position="end">
                             <IconButton
-                              onClick={handleOpenHashFolder}
+                              onClick={handleSelectHashDirectory}
                               edge="end"
-                              title="Open hash folder location"
+                              title="Change hash directory (advanced)"
                               size="small"
-                              disabled={!hashDirectory}
                               sx={{ 
                                 color: 'var(--accent2)',
                                 fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' },
-                                '&:disabled': {
-                                  opacity: 0.5
+                                '&:hover': {
+                                  color: 'var(--accent)',
+                                  backgroundColor: 'rgba(var(--accent-rgb), 0.1)'
                                 }
                               }}
                             >
@@ -2826,6 +2975,193 @@ const Settings = () => {
           Ritobin path not configured. Please browse and select ritobin_cli.exe.
         </Alert>
           )}
+
+          {/* Hash Directory Warning Dialog */}
+          <Dialog
+            open={showHashDirectoryWarning}
+            onClose={() => setShowHashDirectoryWarning(false)}
+            maxWidth="sm"
+            fullWidth
+            PaperProps={{
+              sx: {
+                background: 'var(--glass-bg)',
+                border: '1px solid var(--glass-border)',
+                backdropFilter: 'saturate(180%) blur(20px)',
+                WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+                boxShadow: 'var(--glass-shadow)',
+                borderRadius: 3,
+                overflow: 'hidden',
+              }
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '4px',
+                background: 'linear-gradient(90deg, #f59e0b, #ef4444, #f59e0b)',
+                backgroundSize: '200% 100%',
+                animation: 'shimmer 3s ease-in-out infinite',
+                '@keyframes shimmer': {
+                  '0%': { backgroundPosition: '200% 0' },
+                  '100%': { backgroundPosition: '-200% 0' },
+                },
+              }}
+            />
+            <DialogTitle sx={{ 
+              color: 'var(--accent)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1.5,
+              pb: 1.5,
+              pt: 2.5,
+              px: 3,
+              borderBottom: '1px solid var(--glass-border)',
+            }}>
+              <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <WarningIcon sx={{ color: '#f59e0b', fontSize: '1.5rem' }} />
+              </Box>
+              <Typography variant="h6" sx={{ 
+                fontWeight: 600, 
+                color: 'var(--accent)',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '1rem',
+              }}>
+                Advanced Setting Warning
+              </Typography>
+            </DialogTitle>
+            <DialogContent sx={{ px: 3, py: 2.5 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Typography variant="body2" sx={{ 
+                  color: 'var(--accent2)', 
+                  lineHeight: 1.6,
+                  fontSize: '0.875rem',
+                }}>
+                  You are about to change the hash directory location. Only proceed if you understand the implications.
+                </Typography>
+                
+                <Box sx={{ 
+                  backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  borderRadius: 1.5,
+                  p: 2,
+                }}>
+                  <Typography variant="body2" sx={{ 
+                    color: 'var(--accent2)', 
+                    fontWeight: 500,
+                    mb: 1.5,
+                    fontSize: '0.8rem',
+                  }}>
+                    Changing this path may:
+                  </Typography>
+                  <Box component="ul" sx={{ 
+                    m: 0, 
+                    pl: 2.5, 
+                    color: 'var(--accent2)',
+                    fontSize: '0.8rem',
+                    lineHeight: 1.8,
+                    '& li': {
+                      mb: 0.5,
+                    },
+                  }}>
+                    <li>Break automatic hash file downloads and updates</li>
+                    <li>Cause features that depend on hash files to stop working</li>
+                    <li>Require manual hash file management</li>
+                  </Box>
+                </Box>
+                
+                <Typography variant="body2" sx={{ 
+                  color: 'var(--accent-muted)', 
+                  fontSize: '0.75rem',
+                  fontStyle: 'italic',
+                }}>
+                  The default integrated location is recommended for most users.
+                </Typography>
+              </Box>
+              
+              <Box sx={{ mt: 2.5, pt: 2, borderTop: '1px solid var(--glass-border)' }}>
+                <MuiFormControlLabel
+                  control={
+                    <Checkbox
+                      checked={hashWarningDontShowAgain}
+                      onChange={(e) => setHashWarningDontShowAgain(e.target.checked)}
+                      size="small"
+                      sx={{
+                        color: 'var(--accent2)',
+                        '&.Mui-checked': {
+                          color: 'var(--accent)',
+                        },
+                      }}
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" sx={{ 
+                      color: 'var(--accent2)',
+                      fontSize: '0.8rem',
+                    }}>
+                      Don't show this warning again
+                    </Typography>
+                  }
+                />
+              </Box>
+            </DialogContent>
+            <DialogActions sx={{ 
+              p: 2.5, 
+              pt: 2,
+              borderTop: '1px solid var(--glass-border)',
+              gap: 1.5,
+            }}>
+              <Button
+                onClick={() => setShowHashDirectoryWarning(false)}
+                variant="outlined"
+                sx={{
+                  color: 'var(--accent2)',
+                  borderColor: 'var(--glass-border)',
+                  textTransform: 'none',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '0.8rem',
+                  px: 2,
+                  '&:hover': {
+                    borderColor: 'var(--accent)',
+                    backgroundColor: 'rgba(var(--accent-rgb), 0.05)',
+                  },
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmHashDirectoryChange}
+                variant="contained"
+                sx={{
+                  backgroundColor: '#f59e0b',
+                  color: '#ffffff',
+                  textTransform: 'none',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  px: 2.5,
+                  '&:hover': {
+                    backgroundColor: '#d97706',
+                  },
+                }}
+              >
+                Continue
+              </Button>
+            </DialogActions>
+          </Dialog>
         </Box>
       </Container>
     </Box>

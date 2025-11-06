@@ -267,6 +267,7 @@ class StandaloneBumpathBackend:
         self.scanned_tree = {}  # map contain entry, entry contain list of unify path mentioned, unify path mentioned contain exist state and rel path
         self.entry_prefix = {}  # map prefix by entry hash
         self.entry_name = {}    # map entry raw name by entry hash
+        self.entry_type_name = {}  # map entry type name by entry hash
         self.linked_bins = {}   # map linked bins by source bin
         self.hashtables = None
 
@@ -277,6 +278,7 @@ class StandaloneBumpathBackend:
         self.scanned_tree = {}
         self.entry_prefix = {}
         self.entry_name = {}
+        self.entry_type_name = {}
         self.linked_bins = {}
 
     def set_hashes_path(self, hashes_path):
@@ -435,6 +437,50 @@ class StandaloneBumpathBackend:
                             self.entry_name[entry_hash] = bin.BINHasher.hex_to_raw(self.hashtables, entry_hash)
                         except:
                             self.entry_name[entry_hash] = f"Entry_{entry_hash}"
+                    
+                    # Get entry type name for display (like VFXSystemDefinitionData)
+                    if entry_hash not in self.entry_type_name:
+                        try:
+                            # entry.type is a number (type ID), convert to hex and look up in bintypes hashtable
+                            if hasattr(entry, 'type') and entry.type is not None:
+                                type_hex = f'{entry.type:08x}'
+                                type_name = None
+                                
+                                # Try to load and lookup from bintypes hashtable file
+                                if self.hashtables and os.path.exists(self.hashtables):
+                                    bintypes_file = os.path.join(self.hashtables, 'hashes.bintypes.txt')
+                                    if os.path.exists(bintypes_file):
+                                        try:
+                                            with open(bintypes_file, 'r', encoding='utf-8') as f:
+                                                for line in f:
+                                                    line = line.strip()
+                                                    if not line or line.startswith('#'):
+                                                        continue
+                                                    # Format: hash=name or hash name
+                                                    parts = line.split('=', 1) if '=' in line else line.split(None, 1)
+                                                    if len(parts) >= 2 and parts[0].lower() == type_hex.lower():
+                                                        type_name = parts[1].strip()
+                                                        break
+                                        except Exception as e:
+                                            print(f"Error reading bintypes file: {e}")
+                                
+                                # If still not found, try using BINHasher if hashtables is a dict
+                                if not type_name:
+                                    try:
+                                        # Check if hashtables is already a dict (loaded)
+                                        if isinstance(self.hashtables, dict):
+                                            type_name = bin.BINHasher.hex_to_raw(self.hashtables, type_hex)
+                                            if type_name == type_hex:
+                                                type_name = None
+                                    except:
+                                        pass
+                                
+                                self.entry_type_name[entry_hash] = type_name if type_name else None
+                            else:
+                                self.entry_type_name[entry_hash] = None
+                        except Exception as e:
+                            print(f"Error getting entry type name for {entry_hash}: {e}")
+                            self.entry_type_name[entry_hash] = None
                             
             except Exception as e:
                 print(f"Error scanning BIN {bin_path}: {e}")
@@ -601,12 +647,46 @@ class StandaloneBumpathBackend:
                         if not unify_path(link) in linked_unify_files:
                             new_links.append(link)
                     source_bin.links = new_links
-                    # append linked bin entries to source bin entries
+                    
+                    # Track existing entry hashes to avoid duplicates
+                    existing_entry_hashes = set()
+                    for entry in source_bin.entries:
+                        if hasattr(entry, 'hash') and entry.hash is not None:
+                            # Convert hash to hex string if it's not already
+                            if isinstance(entry.hash, (int, str)):
+                                entry_hash = f'{entry.hash:08x}' if isinstance(entry.hash, int) else entry.hash
+                                existing_entry_hashes.add(entry_hash)
+                    
+                    # append linked bin entries to source bin entries (avoiding duplicates)
                     # and delete linked bin file
                     for linked_unify_file in linked_unify_files:
+                        if linked_unify_file not in bum_files:
+                            continue
                         bum_file = bum_files[linked_unify_file]
-                        source_bin.entries += bin.BIN().read(bum_file).entries
-                        os.remove(bum_file)
+                        if not os.path.exists(bum_file):
+                            continue
+                        try:
+                            linked_bin = bin.BIN().read(bum_file)
+                            # Only add entries that don't already exist (by hash)
+                            new_entries = []
+                            for entry in linked_bin.entries:
+                                if hasattr(entry, 'hash') and entry.hash is not None:
+                                    # Convert hash to hex string if it's not already
+                                    entry_hash = f'{entry.hash:08x}' if isinstance(entry.hash, int) else entry.hash
+                                    if entry_hash not in existing_entry_hashes:
+                                        new_entries.append(entry)
+                            source_bin.entries += new_entries
+                            # Update set of existing hashes for next iteration
+                            for entry in new_entries:
+                                if hasattr(entry, 'hash') and entry.hash is not None:
+                                    entry_hash = f'{entry.hash:08x}' if isinstance(entry.hash, int) else entry.hash
+                                    existing_entry_hashes.add(entry_hash)
+                            os.remove(bum_file)
+                        except Exception as e:
+                            print(f"[DEBUG] Error combining linked BIN {linked_unify_file}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            continue
                     # write source bin
                     source_bin.write(bum_files[unify_file])
                     print(f'bumpath: Finish: Combine all linked BINs to {bum_files[unify_file]}.')
@@ -737,6 +817,7 @@ def scan():
             
             scanned_data["entries"][entry_hash] = {
                 "name": bumpath.entry_name.get(entry_hash, f"Entry_{entry_hash}"),
+                "type_name": bumpath.entry_type_name.get(entry_hash),  # Entry type like VFXSystemDefinitionData
                 "prefix": bumpath.entry_prefix.get(entry_hash, "bum"),
                 "referenced_files": referenced_files
             }

@@ -22,6 +22,8 @@ class ElectronPrefs {
           RitoBinPath: allPrefs.RitoBinPath || '',
           Targets: allPrefs.Targets || [false, false, false, false, true],
           Regenerate: allPrefs.Regenerate || false,
+          // Navbar expansion disabled by default (collapsed navbar for new users)
+          NavExpandEnabled: allPrefs.NavExpandEnabled !== undefined ? allPrefs.NavExpandEnabled : (allPrefs.NavExpandDisabled !== undefined ? !allPrefs.NavExpandDisabled : false),
           // Page visibility defaults - HUD Editor disabled for new users
           HUDEditorEnabled: allPrefs.HUDEditorEnabled !== undefined ? allPrefs.HUDEditorEnabled : false,
           // Page visibility defaults - Frog Image, Upscale, RGBA, and Tools disabled for new users
@@ -43,6 +45,8 @@ class ElectronPrefs {
           RitoBinPath: '',
           Targets: [false, false, false, false, true],
           Regenerate: false,
+          // Navbar expansion disabled by default (collapsed navbar for new users)
+          NavExpandEnabled: false,
           // Page visibility defaults - HUD Editor disabled for new users
           HUDEditorEnabled: false,
           // Page visibility defaults - Frog Image, Upscale, RGBA, and Tools disabled for new users
@@ -64,15 +68,17 @@ class ElectronPrefs {
         RitoBinPath: '',
         Targets: [false, false, false, false, true],
         Regenerate: false,
+        // Navbar expansion enabled by default (disable setting is off)
+        NavExpandDisabled: false,
         // Page visibility defaults - HUD Editor disabled for new users
         HUDEditorEnabled: false,
         // Page visibility defaults - Frog Image, Upscale, RGBA, and Tools disabled for new users
         FrogImgEnabled: false,
         UpscaleEnabled: false,
         RGBAEnabled: false,
-                  ToolsEnabled: false,
-          FileRandomizerEnabled: false
-        };
+        ToolsEnabled: false,
+        FileRandomizerEnabled: false
+      };
         this.initialized = true;
     }
   }

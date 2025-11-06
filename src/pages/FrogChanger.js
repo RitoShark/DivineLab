@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './FrogChanger.css';
 import electronPrefs from '../utils/electronPrefs.js';
 import CollectionsBookmarkIcon from '@mui/icons-material/CollectionsBookmark';
+import { IconButton, Tooltip, Box } from '@mui/material';
+import CelestiaGuide from '../components/CelestiaGuide';
 
 // API Configuration
 const DDRAGON_BASE_URL = 'https://ddragon.leagueoflegends.com';
@@ -317,6 +319,14 @@ const FrogChanger = () => {
   const [applyToAll, setApplyToAll] = useState(false);
   const [showLeaguePathTooltip, setShowLeaguePathTooltip] = useState(false);
   const [showExtractionPathTooltip, setShowExtractionPathTooltip] = useState(false);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningDontShowAgain, setWarningDontShowAgain] = useState(false);
+  const [hashStatus, setHashStatus] = useState(null);
+  const [showCelestiaGuide, setShowCelestiaGuide] = useState(false);
+  const [isSetupValid, setIsSetupValid] = useState(true);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const leaguePathRef = useRef(null);
+  const extractionPathRef = useRef(null);
 
   // Get user Desktop path (handles OneDrive)
   const getUserDesktopPath = () => {
@@ -531,6 +541,34 @@ const FrogChanger = () => {
     loadSettings();
   }, []);
 
+  // Check setup validity when paths or hash status change
+  useEffect(() => {
+    const checkSetup = async () => {
+      // Only validate after settings are loaded
+      if (!settingsLoaded) {
+        return;
+      }
+      
+      const validation = await validateSetup();
+      setIsSetupValid(validation.isValid);
+      
+      // Show warning only if paths are missing (not hash issues) and user hasn't dismissed it
+      // Hash issues should only show when user tries to use buttons, not on page load
+      const hasPathIssues = (!leaguePath || leaguePath.trim() === '') || 
+                            (!extractionPath || extractionPath.trim() === '');
+      
+      if (hasPathIssues && settingsLoaded) {
+        await electronPrefs.initPromise;
+        const dismissed = electronPrefs.obj.FrogChangerWarningDismissed === true;
+        if (!dismissed && !showWarningModal) {
+          setShowWarningModal(true);
+        }
+      }
+    };
+    
+    checkSetup();
+  }, [leaguePath, extractionPath, settingsLoaded, hashStatus]);
+
   // Load prefix for current skin when modal opens or skin index changes
   useEffect(() => {
     if (showPrefixModal && pendingRepathData && pendingRepathData.allSkins[currentSkinIndex]) {
@@ -589,8 +627,23 @@ const FrogChanger = () => {
         extractionPath: electronPrefs.obj.FrogChangerExtractionPath,
         extractVoiceover: electronPrefs.obj.FrogChangerExtractVoiceover
       });
+      
+      // Check hash status after loading settings
+      if (window.require) {
+        try {
+          const { ipcRenderer } = window.require('electron');
+          const status = await ipcRenderer.invoke('hashes:check');
+          setHashStatus(status);
+        } catch (error) {
+          console.error('Error checking hashes:', error);
+        }
+      }
+      
+      // Mark settings as loaded
+      setSettingsLoaded(true);
     } catch (error) {
       console.error('Error loading settings:', error);
+      setSettingsLoaded(true); // Still mark as loaded even on error
     }
   };
 
@@ -943,7 +996,57 @@ const FrogChanger = () => {
     return colors[index % colors.length];
   };
 
+  // Check if league path and hashes are valid
+  const validateSetup = async () => {
+    const issues = [];
+    
+    // Check league path - only if it's actually empty (not just undefined during loading)
+    if (!leaguePath || (typeof leaguePath === 'string' && leaguePath.trim() === '')) {
+      issues.push('leaguePath');
+    }
+    
+    // Check extraction path - only if it's actually empty (not just undefined during loading)
+    if (!extractionPath || (typeof extractionPath === 'string' && extractionPath.trim() === '')) {
+      issues.push('extractionPath');
+    }
+    
+    // Check hash files - only if we can check them
+    if (window.require) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        const status = await ipcRenderer.invoke('hashes:check');
+        setHashStatus(status);
+        if (!status.allPresent || (status.missing && status.missing.length > 0)) {
+          issues.push('hashes');
+        }
+      } catch (error) {
+        console.error('Error checking hashes:', error);
+        // Don't add to issues if hash check fails - it might be a temporary issue
+        // Only add if we're sure hashes are missing
+      }
+    }
+    
+    return {
+      isValid: issues.length === 0,
+      issues
+    };
+  };
+
   const handleExtractWad = async () => {
+    // Validate setup first
+    const validation = await validateSetup();
+    if (!validation.isValid) {
+      // Check if user has dismissed this warning
+      await electronPrefs.initPromise;
+      const dismissed = electronPrefs.obj.FrogChangerWarningDismissed === true;
+      if (!dismissed) {
+        setShowWarningModal(true);
+      } else {
+        alert('Please configure League Path, Output Path, and ensure hash files are downloaded in Settings before extracting.');
+      }
+      return;
+    }
+    
     if (selectedSkins.length > 0) {
       setIsExtracting(true);
       const token = Date.now().toString();
@@ -1010,6 +1113,20 @@ const FrogChanger = () => {
   };
 
   const handleRepath = async () => {
+    // Validate setup first
+    const validation = await validateSetup();
+    if (!validation.isValid) {
+      // Check if user has dismissed this warning
+      await electronPrefs.initPromise;
+      const dismissed = electronPrefs.obj.FrogChangerWarningDismissed === true;
+      if (!dismissed) {
+        setShowWarningModal(true);
+      } else {
+        alert('Please configure League Path, Output Path, and ensure hash files are downloaded in Settings before repathing.');
+      }
+      return;
+    }
+    
     if (selectedSkins.length > 0) {
       // Prepare repath data with flattened skin list
       const skinsByChampion = {};
@@ -2096,7 +2213,7 @@ const FrogChanger = () => {
             <div className="flex gap-2">
               <button
                 onClick={handleExtractWad}
-                disabled={isExtracting || isRepathing}
+                disabled={isExtracting || isRepathing || !isSetupValid || selectedSkins.length === 0}
                 className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
               >
                 {isExtracting && (
@@ -2106,7 +2223,7 @@ const FrogChanger = () => {
               </button>
               <button
                 onClick={handleRepath}
-                disabled={isExtracting || isRepathing}
+                disabled={isExtracting || isRepathing || !isSetupValid || selectedSkins.length === 0}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
               >
                 {isRepathing && (
@@ -2160,7 +2277,7 @@ const FrogChanger = () => {
             </div>
 
             <div className="space-y-3">
-              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50" data-league-path ref={leaguePathRef}>
                 <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
                   📁 League Champions Path
                   <div className="relative">
@@ -2232,7 +2349,7 @@ const FrogChanger = () => {
                 </div>
               </div>
 
-              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50" data-extraction-path ref={extractionPathRef}>
                 <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
                   📁 WAD Output Path
                   <div className="relative">
@@ -2279,7 +2396,7 @@ const FrogChanger = () => {
                 </div>
               </div>
 
-              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50" data-hash-path>
                 <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
                   🔑 Hash Tables Path (Automatic)
                   <div className="relative group">
@@ -2299,7 +2416,7 @@ const FrogChanger = () => {
                 </p>
               </div>
 
-              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50" data-voiceover-extraction>
                 <h3 className="text-sm font-semibold text-green-400 mb-2 flex items-center gap-1">
                   🔊 Voiceover Extraction
                   <div className="relative group">
@@ -2339,13 +2456,47 @@ const FrogChanger = () => {
 
             <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-gray-700/50">
               <button
-                onClick={() => setShowSettings(false)}
+                onClick={() => {
+                  setShowSettings(false);
+                  setShowCelestiaGuide(false);
+                }}
                 className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-all duration-200"
               >
                 Close
               </button>
             </div>
           </div>
+          
+          {/* Floating Celestia trigger button */}
+          {!showCelestiaGuide && (
+            <Tooltip title="Celestia guide" placement="left" arrow>
+              <IconButton
+                onClick={() => setShowCelestiaGuide(true)}
+                aria-label="Open Celestia guide"
+                sx={{
+                  position: 'fixed',
+                  bottom: 24,
+                  right: 24,
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  zIndex: 4500,
+                  background: 'linear-gradient(135deg, var(--accent2), color-mix(in srgb, var(--accent2), transparent 35%))',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(255,255,255,0.6)',
+                  boxShadow: '0 8px 22px rgba(0,0,0,0.35), 0 0 8px color-mix(in srgb, var(--accent2), transparent 45%)',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 10px 26px rgba(0,0,0,0.45), 0 0 12px color-mix(in srgb, var(--accent2), transparent 30%)',
+                    background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent2), transparent 10%), var(--accent2))'
+                  },
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Box component="span" sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>!</Box>
+              </IconButton>
+            </Tooltip>
+          )}
         </div>
       )}
 
@@ -2509,6 +2660,136 @@ const FrogChanger = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Warning Modal */}
+      {showWarningModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/90 backdrop-blur-sm animate-in fade-in duration-300"
+            onClick={() => {
+              if (warningDontShowAgain) {
+                electronPrefs.obj.FrogChangerWarningDismissed = true;
+                electronPrefs.save();
+              }
+              setShowWarningModal(false);
+            }}
+          />
+          <div className="relative bg-gradient-to-br from-red-900/90 via-red-800/90 to-orange-900/90 border-2 border-red-500 rounded-2xl p-6 max-w-md w-full mx-4 animate-in zoom-in-95 duration-300 shadow-2xl">
+            {/* Danger Animation */}
+            <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
+              <div className="absolute inset-0 bg-gradient-to-r from-red-500/20 via-orange-500/20 to-red-500/20 animate-pulse" />
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-red-500 animate-shimmer" />
+            </div>
+            
+            <div className="relative z-10">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center animate-bounce">
+                  <span className="text-2xl">⚠️</span>
+                </div>
+                <h2 className="text-2xl font-bold text-white">Setup Required</h2>
+              </div>
+              
+              <div className="mb-4 space-y-2">
+                <p className="text-white/90 text-sm">
+                  Before you can extract or repath skins, you need to configure:
+                </p>
+                <ul className="list-disc list-inside text-white/80 text-sm space-y-1 ml-2">
+                  {(!leaguePath || leaguePath.trim() === '') && (
+                    <li>League of Legends Champions folder path</li>
+                  )}
+                  {(!extractionPath || extractionPath.trim() === '') && (
+                    <li>WAD extraction output path</li>
+                  )}
+                  {hashStatus && (!hashStatus.allPresent || hashStatus.missing.length > 0) && (
+                    <li>Hash files (missing {hashStatus.missing.length} file(s))</li>
+                  )}
+                </ul>
+              </div>
+              
+              <div className="flex items-center gap-2 mb-4">
+                <input
+                  type="checkbox"
+                  id="dontShowAgain"
+                  checked={warningDontShowAgain}
+                  onChange={(e) => setWarningDontShowAgain(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-400 text-red-500 focus:ring-red-500"
+                />
+                <label htmlFor="dontShowAgain" className="text-white/80 text-sm cursor-pointer">
+                  Don't show this warning again
+                </label>
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    if (warningDontShowAgain) {
+                      electronPrefs.obj.FrogChangerWarningDismissed = true;
+                      electronPrefs.save();
+                    }
+                    setShowWarningModal(false);
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-all duration-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (warningDontShowAgain) {
+                      electronPrefs.obj.FrogChangerWarningDismissed = true;
+                      await electronPrefs.save();
+                    }
+                    setShowWarningModal(false);
+                    // Open settings modal and show Celestia guide
+                    setShowSettings(true);
+                    setTimeout(() => {
+                      setShowCelestiaGuide(true);
+                    }, 300);
+                  }}
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all duration-200 font-semibold"
+                >
+                  Open Settings
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Celestia Guide */}
+      {showCelestiaGuide && showSettings && (
+        <CelestiaGuide
+          id="frogchanger-settings"
+          steps={[
+            {
+              title: "League Champions Path",
+              text: "This is where your League of Legends game files are located. Select the Champions folder inside your League directory (e.g., C:\\Riot Games\\League of Legends\\Game\\DATA\\FINAL\\Champions). This path is required to extract WAD files from the game.",
+              targetSelector: "[data-league-path]",
+              padding: 15,
+            },
+            {
+              title: "WAD Output Path",
+              text: "This is where extracted WAD files will be saved. Choose a folder on your computer where you want the extracted skin files to be stored. You can use your Desktop or create a dedicated folder for extracted skins.",
+              targetSelector: "[data-extraction-path]",
+              padding: 15,
+            },
+            {
+              title: "Hash Tables Path",
+              text: "Hash files are lookup tables that translate file names to their internal game IDs. They're essential for extracting and repathing skins correctly. The location is automatically managed by the app and should NOT be changed. Hash files are automatically downloaded from CommunityDragon and kept in a secure integrated location. Changing this path could break skin extraction and repathing functionality.",
+              targetSelector: "[data-hash-path]",
+              padding: 15,
+            },
+            {
+              title: "Voiceover Extraction",
+              text: "This setting controls whether voiceover WAD files are extracted along with the skin files. IMPORTANT: Only repath voiceover files if you have actually modified them in your mod. If you repath voiceover files without changing them, users will hear a different language than expected. Voiceover files contain champion voice lines in different languages, so repathing unchanged voiceovers will cause language mismatches.",
+              targetSelector: "[data-voiceover-extraction]",
+              padding: 15,
+            },
+          ]}
+          onClose={() => {
+            setShowCelestiaGuide(false);
+          }}
+        />
       )}
     </div>
   );

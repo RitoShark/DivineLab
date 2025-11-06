@@ -34,22 +34,24 @@ export const parseBindWeightProperty = (lines, startIndex) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    // Parse constantValue
-    if (trimmedLine.includes('constantValue: f32 =')) {
-      const valueStr = trimmedLine.split('= ')[1];
-      property.constantValue = parseFloat(valueStr);
-      property.originalIndex = i; // Set to the constantValue line
+    // Parse constantValue (case-insensitive)
+    if (/constantValue:\s*f32\s*=/i.test(trimmedLine)) {
+      const valueMatch = trimmedLine.match(/constantValue:\s*f32\s*=\s*([0-9.eE+-]+)/i);
+      if (valueMatch) {
+        property.constantValue = parseFloat(valueMatch[1]);
+        property.originalIndex = i; // Set to the constantValue line
+      }
     }
 
-    // Check for dynamics section
-    if (trimmedLine.includes('dynamics: pointer = VfxAnimatedFloatVariableData {')) {
+    // Check for dynamics section (case-insensitive)
+    if (/dynamics:\s*pointer\s*=\s*VfxAnimatedFloatVariableData\s*\{/i.test(trimmedLine)) {
       inDynamics = true;
       continue;
     }
 
     if (inDynamics) {
-      // Parse times
-      if (trimmedLine.includes('times: list[f32] = {')) {
+      // Parse times (case-insensitive)
+      if (/times:\s*list\[f32\]\s*=\s*\{/i.test(trimmedLine)) {
         inTimes = true;
         continue;
       }
@@ -62,8 +64,8 @@ export const parseBindWeightProperty = (lines, startIndex) => {
         }
       }
 
-      // Parse values
-      if (trimmedLine.includes('values: list[f32] = {')) {
+      // Parse values (case-insensitive)
+      if (/values:\s*list\[f32\]\s*=\s*\{/i.test(trimmedLine)) {
         inValues = true;
         continue;
       }
@@ -200,9 +202,11 @@ export const updateBindWeightInLines = (lines, emitter) => {
   // Find and update the constantValue line
   for (let i = bindWeight.originalIndex; i < newLines.length && i < bindWeight.originalIndex + 50; i++) {
     const line = newLines[i];
-    if (line.includes('constantValue: f32 =')) {
-      // Replace only the numeric part after 'constantValue: f32 =', preserving spacing
-      newLines[i] = line.replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/, `$1${bindWeight.constantValue}`);
+    if (/constantValue:\s*f32\s*=/i.test(line)) {
+      // Replace only the numeric part after 'constantValue: f32 =', preserving spacing and case
+      const caseMatch = line.match(/(constantValue)/i);
+      const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+      newLines[i] = line.replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/i, `${casePreserved}: f32 = ${bindWeight.constantValue}`);
     }
     
     // Update dynamic values if they exist
@@ -210,7 +214,7 @@ export const updateBindWeightInLines = (lines, emitter) => {
       let inDynamicsValues = false;
       let valueIndex = 0;
       
-      if (line.includes('values: list[f32] = {')) {
+      if (/values:\s*list\[f32\]\s*=\s*\{/i.test(line)) {
         inDynamicsValues = true;
         continue;
       }

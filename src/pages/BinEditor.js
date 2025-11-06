@@ -1729,7 +1729,7 @@ const BinEditor = () => {
             for (let i = winStart; i <= winEnd; i++) {
               const line = lines[i];
               if (!line) continue;
-              if (line.includes('emitterName: string =')) {
+              if (/emitterName:\s*string\s*=/i.test(line)) {
                 // Prefer exact name match
                 if (line.includes(targetNameFragment)) {
                   const dist = Math.abs(i - startIndex);
@@ -1746,7 +1746,7 @@ const BinEditor = () => {
               for (let i = winStart; i <= winEnd; i++) {
                 const line = lines[i];
                 if (!line) continue;
-                if (line.includes('emitterName: string =')) {
+                if (/emitterName:\s*string\s*=/i.test(line)) {
                   const dist = Math.abs(i - startIndex);
                   if (dist < bestDist) {
                     bestDist = dist;
@@ -1811,11 +1811,11 @@ const BinEditor = () => {
                 
                 // Find the emitterName line and insert translationOverride after it
                 for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
-                  if (lines[i] && lines[i].includes('emitterName: string =')) {
+                  if (lines[i] && /emitterName:\s*string\s*=/i.test(lines[i])) {
                     // Check if translationOverride already exists in the next few lines
                     let alreadyExists = false;
                     for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
-                      if (lines[j] && lines[j].includes('translationOverride: vec3 =')) {
+                      if (lines[j] && /translationOverride:\s*vec3\s*=/i.test(lines[j])) {
                         alreadyExists = true;
                         console.log(`⚠️ ISOLATED MODE (${isolatedProperty}): translationOverride already exists at line ${j}`);
                         break;
@@ -1838,7 +1838,7 @@ const BinEditor = () => {
               } else {
                 // Update existing translationOverride
                 const line = lines[translationOverride.originalIndex];
-                if (line && line.includes('translationOverride: vec3 =')) {
+                if (line && /translationOverride:\s*vec3\s*=/i.test(line)) {
                   const value = translationOverride.constantValue;
                   const newLine = line.replace(/= \{[^}]*\}/, `= { ${value.x}, ${value.y}, ${value.z} }`);
                   lines[translationOverride.originalIndex] = newLine;
@@ -1852,8 +1852,11 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
-                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                   console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated birthScale constantValue for emitter:`, emitter.name);
                   break;
                 }
@@ -1865,8 +1868,11 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
-                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                   console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated scale constantValue for emitter:`, emitter.name);
                   break;
                 }
@@ -1880,9 +1886,12 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
                   const oldLine = lines[i];
-                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                   console.log(`✅ ISOLATED MODE: Updated birthScale constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
                   break;
                 }
@@ -1896,9 +1905,12 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+                if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
                   const oldLine = lines[i];
-                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                   console.log(`✅ ISOLATED MODE: Updated scale constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
                   break;
                 }
@@ -1912,9 +1924,12 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = bindWeight.originalIndex; i < lines.length && i < bindWeight.originalIndex + 20; i++) {
-                if (lines[i] && lines[i].includes('constantValue: f32 =')) {
+                if (lines[i] && /constantValue:\s*f32\s*=/i.test(lines[i])) {
                   const oldLine = lines[i];
-                  lines[i] = lines[i].replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/, `$1${bindWeight.constantValue}`);
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/i, `${casePreserved}: f32 = ${bindWeight.constantValue}`);
                   console.log(`✅ ISOLATED MODE: Updated bindWeight constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
                   break;
                 }
@@ -1949,7 +1964,7 @@ const BinEditor = () => {
               for (let i = winStart; i <= winEnd; i++) {
                 const line = lines[i];
                 if (!line) continue;
-                if (line.includes('emitterName: string =')) {
+                if (/emitterName:\s*string\s*=/i.test(line)) {
                   if (line.includes(targetNameFragment)) {
                     const dist = Math.abs(i - startIndex);
                     if (dist < bestDist) {
@@ -1995,11 +2010,11 @@ const BinEditor = () => {
               
               // Find the emitterName line and insert translationOverride after it
               for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('emitterName: string =')) {
+                if (lines[i] && /emitterName:\s*string\s*=/i.test(lines[i])) {
                   // Check if translationOverride already exists in the next few lines
                   let alreadyExists = false;
                   for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
-                    if (lines[j] && lines[j].includes('translationOverride: vec3 =')) {
+                    if (lines[j] && /translationOverride:\s*vec3\s*=/i.test(lines[j])) {
                       alreadyExists = true;
                       console.log(`⚠️ translationOverride already exists at line ${j}`);
                       break;
@@ -2022,7 +2037,7 @@ const BinEditor = () => {
             } else {
               // Update existing translationOverride
               const line = lines[translationOverride.originalIndex];
-              if (line && line.includes('translationOverride: vec3 =')) {
+              if (line && /translationOverride:\s*vec3\s*=/i.test(line)) {
                 const value = translationOverride.constantValue;
                 const newLine = line.replace(/= \{[^}]*\}/, `= { ${value.x}, ${value.y}, ${value.z} }`);
                 lines[translationOverride.originalIndex] = newLine;
@@ -2038,7 +2053,7 @@ const BinEditor = () => {
             
             // Update constantValue
                for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
-              if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+              if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
                 lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                 console.log(`✅ Updated birthScale constantValue for emitter:`, emitter.name);
                 break;
@@ -2053,7 +2068,7 @@ const BinEditor = () => {
             
             // Update constantValue
                for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
-              if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
+              if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
                 lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                 console.log(`✅ Updated scale constantValue for emitter:`, emitter.name);
                 break;
@@ -2148,7 +2163,7 @@ const BinEditor = () => {
             for (let i = winStart; i <= winEnd; i++) {
               const line = lines[i];
               if (!line) continue;
-              if (line.includes('emitterName: string =')) {
+              if (/emitterName:\s*string\s*=/i.test(line)) {
                 // Prefer exact name match
                 if (line.includes(targetNameFragment)) {
                   const dist = Math.abs(i - startIndex);
@@ -2165,7 +2180,7 @@ const BinEditor = () => {
               for (let i = winStart; i <= winEnd; i++) {
                 const line = lines[i];
                 if (!line) continue;
-                if (line.includes('emitterName: string =')) {
+                if (/emitterName:\s*string\s*=/i.test(line)) {
                   const dist = Math.abs(i - startIndex);
                   if (dist < bestDist) {
                     bestDist = dist;
@@ -2230,11 +2245,11 @@ const BinEditor = () => {
                 
                 // Find the emitterName line and insert translationOverride after it
                 for (let i = emitter.originalIndex; i < lines.length && i < emitter.originalIndex + 50; i++) {
-                  if (lines[i] && lines[i].includes('emitterName: string =')) {
+                  if (lines[i] && /emitterName:\s*string\s*=/i.test(lines[i])) {
                     // Check if translationOverride already exists in the next few lines
                     let alreadyExists = false;
                     for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
-                      if (lines[j] && lines[j].includes('translationOverride: vec3 =')) {
+                      if (lines[j] && /translationOverride:\s*vec3\s*=/i.test(lines[j])) {
                         alreadyExists = true;
                         // Update the existing line instead of inserting a new one
                         lines[j] = `    translationOverride: vec3 = { ${translationOverride.constantValue.x}, ${translationOverride.constantValue.y}, ${translationOverride.constantValue.z} }`;
@@ -2262,7 +2277,7 @@ const BinEditor = () => {
               } else {
                 // Update existing translationOverride
                 const line = lines[translationOverride.originalIndex];
-                if (line && line.includes('translationOverride: vec3 =')) {
+                if (line && /translationOverride:\s*vec3\s*=/i.test(line)) {
                   const value = translationOverride.constantValue;
                   const newLine = line.replace(/= \{[^}]*\}/, `= { ${value.x}, ${value.y}, ${value.z} }`);
                   lines[translationOverride.originalIndex] = newLine;
@@ -2276,8 +2291,11 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
-                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                   console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated birthScale constantValue for emitter:`, emitter.name);
                   break;
                 }
@@ -2312,8 +2330,11 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
-                if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
-                  lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                   console.log(`✅ ISOLATED MODE (${isolatedProperty}): Updated scale constantValue for emitter:`, emitter.name);
                   break;
                 }
@@ -2371,7 +2392,7 @@ const BinEditor = () => {
               for (let i = winStart; i <= winEnd; i++) {
                 const line = lines[i];
                 if (!line) continue;
-                if (line.includes('emitterName: string =')) {
+                if (/emitterName:\s*string\s*=/i.test(line)) {
                   if (line.includes(targetNameFragment)) {
                     const dist = Math.abs(i - startIndex);
                     if (dist < bestDist) {
@@ -2411,9 +2432,12 @@ const BinEditor = () => {
               
               // Update constantValue
               for (let i = bindWeight.originalIndex; i < lines.length && i < bindWeight.originalIndex + 20; i++) {
-                if (lines[i] && lines[i].includes('constantValue: f32 =')) {
+                if (lines[i] && /constantValue:\s*f32\s*=/i.test(lines[i])) {
                   const oldLine = lines[i];
-                  lines[i] = lines[i].replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/, `$1${bindWeight.constantValue}`);
+                  // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/i, `${casePreserved}: f32 = ${bindWeight.constantValue}`);
                   console.log(`✅ ISOLATED MODE: Updated bindWeight constantValue for emitter:`, emitter.name, 'from', oldLine, 'to', lines[i]);
                   break;
                 }
@@ -2448,8 +2472,11 @@ const BinEditor = () => {
              if (emitter.birthScale0.constantValue) {
                const scale = emitter.birthScale0.constantValue;
                for (let i = emitter.birthScale0.originalIndex; i < lines.length && i < emitter.birthScale0.originalIndex + 50; i++) {
-                 if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
-                   lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                 if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
+                   // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                    break;
                  }
                }
@@ -2483,8 +2510,11 @@ const BinEditor = () => {
              if (emitter.scale0.constantValue) {
                const scale = emitter.scale0.constantValue;
                for (let i = emitter.scale0.originalIndex; i < lines.length && i < emitter.scale0.originalIndex + 50; i++) {
-                 if (lines[i] && lines[i].includes('constantValue: vec3 =')) {
-                   lines[i] = lines[i].replace(/constantValue: vec3 = \{[^}]*\}/, `constantValue: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
+                 if (lines[i] && /constantValue:\s*vec3\s*=/i.test(lines[i])) {
+                   // Preserve original case of constantValue
+                  const caseMatch = lines[i].match(/(constantValue)/i);
+                  const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+                  lines[i] = lines[i].replace(/constantValue:\s*vec3\s*=\s*\{[^}]*\}/i, `${casePreserved}: vec3 = { ${scale.x}, ${scale.y}, ${scale.z} }`);
                    break;
                  }
                }
@@ -2532,7 +2562,7 @@ const BinEditor = () => {
               console.log('🔧 originalIndex points to line:', {
                 lineIndex: bindWeight.originalIndex,
                 line: lines[bindWeight.originalIndex],
-                containsConstantValue: lines[bindWeight.originalIndex] && lines[bindWeight.originalIndex].includes('constantValue: f32 =')
+                containsConstantValue: lines[bindWeight.originalIndex] && /constantValue:\s*f32\s*=/i.test(lines[bindWeight.originalIndex])
               });
             }
             
@@ -2544,12 +2574,12 @@ const BinEditor = () => {
               console.log('🔧 Checking line for bindWeight constantValue:', {
                 lineIndex: i,
                 line: line,
-                containsConstantValue: line.includes('constantValue: f32 ='),
+                containsConstantValue: /constantValue:\s*f32\s*=/i.test(line),
                 originalIndex: bindWeight.originalIndex
               });
               
               // Update constant value (preserve spacing; robust against 0 values)
-              if (line.includes('constantValue: f32 =')) {
+              if (/constantValue:\s*f32\s*=/i.test(line)) {
                 const oldLine = line;
                 // Replace only the numeric part after 'constantValue: f32 ='
                 lines[i] = line.replace(/(constantValue:\s*f32\s*=\s*)(-?\d+(?:\.\d+)?)/, `$1${bindWeight.constantValue}`);
@@ -3291,9 +3321,9 @@ const BinEditor = () => {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
 
-      // Track VfxSystemDefinitionData
-      if (line.includes('= VfxSystemDefinitionData {')) {
-        const fullSystemName = line.split(' = ')[0].replace(/"/g, '');
+      // Track VfxSystemDefinitionData (case-insensitive)
+      if (/=\s*VfxSystemDefinitionData\s*\{/i.test(line)) {
+        const fullSystemName = line.split(/\s*=\s*/)[0].replace(/"/g, '');
         const cleanName = cleanSystemName(fullSystemName);
         currentSystem = {
           name: cleanName,
@@ -3311,8 +3341,8 @@ const BinEditor = () => {
         const openBrackets = (line.match(/{/g) || []).length;
         const closeBrackets = (line.match(/}/g) || []).length;
 
-        // Track VfxEmitterDefinitionData
-        if (line.includes('VfxEmitterDefinitionData {')) {
+        // Track VfxEmitterDefinitionData (case-insensitive)
+        if (/VfxEmitterDefinitionData\s*\{/i.test(line)) {
           if (currentEmitter && currentSystem) {
             currentSystem.emitters.push(currentEmitter);
           }
@@ -3335,17 +3365,22 @@ const BinEditor = () => {
         if (inEmitter) {
           emitterBracketDepth += openBrackets - closeBrackets;
 
-          // Parse emitter properties
-          if (line.includes('emitterName: string =')) {
-            const name = line.split('= ')[1].replace(/"/g, '');
-            currentEmitter.name = name;
-          } else if (line.includes('birthScale0: embed = ValueVector3 {')) {
+          // Parse emitter properties (case-insensitive)
+          if (/emitterName:\s*string\s*=/i.test(line)) {
+            const match = line.match(/emitterName:\s*string\s*=\s*"([^"]+)"/i);
+            if (match) {
+              currentEmitter.name = match[1];
+            } else {
+              const name = line.split('=')[1].replace(/"/g, '').trim();
+              currentEmitter.name = name;
+            }
+          } else if (/birthScale0:\s*embed\s*=\s*ValueVector3\s*\{/i.test(line)) {
             currentEmitter.birthScale0 = parseVector3Property(lines, i);
-          } else if (line.includes('scale0: embed = ValueVector3 {')) {
+          } else if (/scale0:\s*embed\s*=\s*ValueVector3\s*\{/i.test(line)) {
             currentEmitter.scale0 = parseVector3Property(lines, i);
-          } else if (line.includes('bindWeight: embed = ValueFloat {')) {
+          } else if (/bindWeight:\s*embed\s*=\s*ValueFloat\s*\{/i.test(line)) {
             currentEmitter.bindWeight = bindWeightUtils.parseBindWeightProperty(lines, i);
-          } else if (line.includes('translationOverride: vec3 =')) {
+          } else if (/translationOverride:\s*vec3\s*=/i.test(line)) {
             console.log('🔍 Found translationOverride in line:', line);
             currentEmitter.translationOverride = translationOverrideUtils.parseTranslationOverrideProperty(lines, i);
             console.log('🔍 Parsed translationOverride:', currentEmitter.translationOverride);
@@ -3399,9 +3434,9 @@ const BinEditor = () => {
       const closeBrackets = (line.match(/}/g) || []).length;
       bracketDepth += openBrackets - closeBrackets;
 
-      // Parse constantValue
-      if (line.includes('constantValue: vec3 =')) {
-        const vectorStr = line.split('= ')[1];
+      // Parse constantValue (case-insensitive)
+      if (/constantValue:\s*vec3\s*=/i.test(line)) {
+        const vectorStr = line.split('=')[1];
         const cleanStr = vectorStr.replace(/[{}]/g, '').trim();
         if (cleanStr) {
           const values = cleanStr.split(',').map(v => parseFloat(v.trim()));
@@ -3411,8 +3446,8 @@ const BinEditor = () => {
         }
       }
 
-      // Check for dynamics values
-      if (line.includes('values: list[vec3] =')) {
+      // Check for dynamics values (case-insensitive)
+      if (/values:\s*list\[vec3\]\s*=\s*\{/i.test(line)) {
         inDynamicsValues = true;
         continue;
       }

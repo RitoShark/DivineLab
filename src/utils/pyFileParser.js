@@ -146,9 +146,11 @@ const parseEmitter = (lines, emitterStartLine) => {
         // Fallback to old method if regex doesn't match
         emitter.name = line.split('= ')[1].replace(/"/g, '').trim();
       }
-    } else if (/birthColor:\s*embed\s*=\s*ValueColor\s*\{/i.test(line)) {
+    } else if (/^birthcolor:\s*embed\s*=\s*valuecolor\s*\{/i.test(line)) {
+      // Match birthColor in any case combination (birthcolor, birthColor, BirthColor, etc.)
       emitter.birthColor = parseColorProperty(lines, i);
-    } else if (/^color:\s*embed\s*=\s*ValueColor\s*\{/i.test(line) && !/birthColor/i.test(line) && !/fresnelColor/i.test(line)) {
+    } else if (/^color:\s*embed\s*=\s*valuecolor\s*\{/i.test(line) && !/birthcolor/i.test(line) && !/fresnelcolor/i.test(line)) {
+      // Match color in any case combination, but exclude birthColor and fresnelColor
       emitter.color = parseColorProperty(lines, i);
     } else if (/fresnelColor:\s*vec4\s*=/i.test(line)) {
       // Simple fresnelColor constant value
@@ -160,10 +162,10 @@ const parseEmitter = (lines, emitterStartLine) => {
           emitter.fresnelColor = { constantValue: values, startLine: i, endLine: i };
         }
       }
-    } else if (/fresnelColor:\s*embed\s*=\s*ValueColor\s*\{/i.test(line)) {
+    } else if (/fresnelcolor:\s*embed\s*=\s*valuecolor\s*\{/i.test(line)) {
       emitter.fresnelColor = parseColorProperty(lines, i);
-    } else if (/blendMode:\s*u8\s*=/i.test(line)) {
-      const blendMatch = line.match(/blendMode:\s*u8\s*=\s*(\d+)/i);
+    } else if (/blendmode:\s*u8\s*=/i.test(line)) {
+      const blendMatch = line.match(/blendmode:\s*u8\s*=\s*(\d+)/i);
       if (blendMatch) {
         emitter.blendMode = parseInt(blendMatch[1]) || 0;
       }
@@ -248,8 +250,8 @@ const parseColorProperty = (lines, colorStartLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    // Parse constant value (case-insensitive)
-    if (/constantValue:\s*vec4\s*=/i.test(line)) {
+    // Parse constant value (case-insensitive) - handle ConstantValue, constantValue, etc.
+    if (/constantvalue:\s*vec4\s*=/i.test(line)) {
       const vecStr = line.split('=')[1];
       const cleanStr = vecStr.replace(/[{}]/g, '').trim();
       if (cleanStr) {
@@ -260,14 +262,14 @@ const parseColorProperty = (lines, colorStartLine) => {
       }
     }
 
-    // Parse dynamics (case-insensitive)
-    if (/dynamics:\s*pointer\s*=\s*VfxAnimatedColorVariableData\s*\{/i.test(line)) {
+    // Parse dynamics (case-insensitive) - handle VfxAnimatedColorVariableData in any case
+    if (/dynamics:\s*pointer\s*=\s*vfxanimatedcolorvariabledata\s*\{/i.test(line)) {
       inDynamics = true;
       colorProp.dynamics = dynamicsData;
     }
 
     if (inDynamics) {
-      // Parse times array (case-insensitive)
+      // Parse times array (case-insensitive) - handle "times:" in any case
       if (/times:\s*list\[f32\]\s*=\s*\{/i.test(line)) {
         inTimes = true;
       } else if (inTimes && line.includes('}')) {
@@ -280,7 +282,7 @@ const parseColorProperty = (lines, colorStartLine) => {
         }
       }
 
-      // Parse values array (case-insensitive)
+      // Parse values array (case-insensitive) - handle "values:" in any case
       if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(line)) {
         inValues = true;
       } else if (inValues && line.includes('}') && !line.includes('{')) {
@@ -341,7 +343,10 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
   } else {
     colorProp = emitter.color;
   }
-  if (!colorProp) return lines;
+  if (!colorProp) {
+    try { console.warn(`[recolor] WARNING: No colorProp found for ${colorType} in emitter ${emitter.name}`); } catch {}
+    return lines;
+  }
 
   // If Random Gradient is OFF, align birthColor to the first palette color
   const shouldAlignBirthToPaletteStart = (
@@ -350,23 +355,37 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
     Array.isArray(currentPalette) && currentPalette.length > 0 &&
     currentPalette[0] && Array.isArray(currentPalette[0].vec4)
   );
-  try { console.log(`[recolor] type=${colorType} mode=${currentMode} RG=${useRandomGradient} paletteLen=${Array.isArray(currentPalette)?currentPalette.length:0} alignBirth=${shouldAlignBirthToPaletteStart}`); } catch {}
+  try { 
+    console.log(`[recolor] type=${colorType} mode=${currentMode} RG=${useRandomGradient} paletteLen=${Array.isArray(currentPalette)?currentPalette.length:0} alignBirth=${shouldAlignBirthToPaletteStart}`);
+    console.log(`[recolor] colorProp: startLine=${colorProp.startLine}, endLine=${colorProp.endLine}, hasConstant=${!!colorProp.constantValue}, hasDynamics=${!!colorProp.dynamics}`);
+  } catch {}
 
   // Handle constant value colors
   if (colorProp.constantValue) {
-    // If a skip predicate is provided and this color should be skipped, do nothing
     try {
+      console.log(`[recolor] Processing constantValue for ${colorType}, value=`, colorProp.constantValue);
+      // If a skip predicate is provided and this color should be skipped, do nothing
       if (typeof skipColorPredicate === 'function' && skipColorPredicate(colorProp.constantValue)) {
+        console.log(`[recolor] Skipping ${colorType} due to color filter predicate`);
         // Skip modifying this constant color
       } else {
-    // Check if this constant color should be ignored (black/white check)
-    const [r, g, b] = colorProp.constantValue;
-    const isBlackOrWhite = (r === 0 && g === 0 && b === 0) || (r === 1 && g === 1 && b === 1);
+        // Check if this constant color should be ignored (black/white check)
+        const [r, g, b] = colorProp.constantValue;
+        const isBlackOrWhite = (r === 0 && g === 0 && b === 0) || (r === 1 && g === 1 && b === 1);
+        console.log(`[recolor] ${colorType} isBlackOrWhite=${isBlackOrWhite}, ignoreBlackWhite=${ignoreBlackWhite}`);
 
-    if (!(ignoreBlackWhite && isBlackOrWhite)) {
+        if (!(ignoreBlackWhite && isBlackOrWhite)) {
       // Find the constantValue line and replace it (case-insensitive)
-      for (let i = colorProp.startLine; i <= colorProp.endLine; i++) {
-        if (/constantValue:\s*vec4\s*=/i.test(lines[i])) {
+      // Search from startLine to endLine, but also extend search if needed (in case endLine is wrong)
+      let found = false;
+      const searchEnd = Math.min(colorProp.endLine + 10, lines.length); // Extend search a bit in case endLine is wrong
+      try { console.log(`[recolor] Searching for constantValue in ${colorType} from line ${colorProp.startLine} to ${searchEnd}`); } catch {}
+      for (let i = colorProp.startLine; i < searchEnd; i++) {
+        if (!lines[i]) continue;
+        // Try multiple patterns to match constantValue/ConstantValue
+        const lineMatches = /[Cc]onstantValue:\s*vec4\s*=/i.test(lines[i]);
+        if (lineMatches) {
+          try { console.log(`[recolor] Found constantValue line at index ${i}:`, lines[i].trim()); } catch {}
           const indent = lines[i].match(/^(\s*)/)[1];
           let writeColor = newColor;
           
@@ -379,7 +398,7 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
             // If Random Gradient is OFF, make constant main color also follow palette[0]
             const shouldAlignConstantToPaletteStart = (!useRandomGradient && Array.isArray(currentPalette) && currentPalette.length > 0 && currentPalette[0] && Array.isArray(currentPalette[0].vec4));
             if (shouldAlignBirthToPaletteStart || (colorType === 'color' && shouldAlignConstantToPaletteStart)) {
-              try { console.log('[recolor] constant write aligning to palette[0] for', colorType); } catch {}
+              try { console.log('[recolor] constant write aligning to palette[0] for', colorType, 'palette[0]=', currentPalette[0].vec4); } catch {}
               const alpha = Array.isArray(colorProp.constantValue) && colorProp.constantValue.length >= 4 ? colorProp.constantValue[3] : (newColor && newColor[3] !== undefined ? newColor[3] : 1);
               const first = currentPalette[0].vec4;
               writeColor = [first[0], first[1], first[2], alpha];
@@ -388,15 +407,28 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
           
           // Preserve original case of constantValue
           const originalLine = lines[i];
-          const caseMatch = originalLine.match(/(constantValue)/i);
+          const caseMatch = originalLine.match(/([Cc]onstantValue)/i);
           const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+          const oldValue = lines[i];
           lines[i] = `${indent}${casePreserved}: vec4 = { ${writeColor[0]}, ${writeColor[1]}, ${writeColor[2]}, ${writeColor[3]} }`;
+          try { console.log(`[recolor] Updated ${colorType} constantValue at line ${i}:`, oldValue.trim(), '->', lines[i].trim()); } catch {}
+          found = true;
           break;
         }
       }
-    }
+          if (!found) {
+            try { 
+              console.warn(`[recolor] WARNING: Could not find constantValue line for ${colorType} between lines ${colorProp.startLine}-${searchEnd}`);
+              // Show what lines we're searching through
+              const sampleLines = lines.slice(colorProp.startLine, Math.min(colorProp.startLine + 5, searchEnd));
+              console.warn(`[recolor] Sample lines being searched:`, sampleLines.map((l, idx) => `${colorProp.startLine + idx}: ${l.trim()}`));
+            } catch {}
+          }
+        }
       }
-    } catch {}
+    } catch (e) {
+      console.error(`[recolor] Error updating ${colorType}:`, e);
+    }
   }
 
   // Handle direct fresnelColor: vec4 = format (for OC type)
@@ -669,7 +701,7 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
     let valueIndex = 0;
     
     for (let lineIndex = colorProp.startLine; lineIndex <= colorProp.endLine; lineIndex++) {
-      if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(lines[lineIndex])) {
+      if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(lines[lineIndex]) || /Values:\s*list\[vec4\]\s*=\s*\{/i.test(lines[lineIndex])) {
         inValues = true;
         continue;
       }

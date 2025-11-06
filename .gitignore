@@ -105,6 +105,12 @@ LtMAO-hai/
 # Ignore palette folder
 palette/
 
+# Ignore vfxhub assets
+assets/vfxhub/
+
+# Ignore repath tool test files
+repath tool test/
+
 # Third-party tools and external projects
 League Mod Repather/
 

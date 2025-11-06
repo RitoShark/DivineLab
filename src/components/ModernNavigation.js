@@ -143,7 +143,7 @@ const ModernNavigation = () => {
   const location = useLocation();
 
   const [navigationItems, setNavigationItems] = useState([]);
-  const [navExpandDisabled, setNavExpandDisabled] = useState(false);
+  const [navExpandEnabled, setNavExpandEnabled] = useState(false);
   const [themeVariant, setThemeVariant] = useState('amethyst');
   const [settingsItem] = useState({ text: 'Settings', icon: <SettingsIcon />, path: '/settings' });
 
@@ -153,9 +153,9 @@ const ModernNavigation = () => {
       await electronPrefs.initPromise;
       
       // Read expansion preference
-      const isDisabled = electronPrefs.obj.NavExpandDisabled === true;
-      setNavExpandDisabled(isDisabled);
-      if (isDisabled) {
+      const isEnabled = electronPrefs.obj.NavExpandEnabled === true || (electronPrefs.obj.NavExpandDisabled !== undefined && electronPrefs.obj.NavExpandDisabled === false);
+      setNavExpandEnabled(isEnabled);
+      if (!isEnabled) {
         setIsExpanded(false);
       }
 
@@ -254,7 +254,7 @@ const ModernNavigation = () => {
         top: 0,
         left: 0,
         height: '100vh',
-        width: navExpandDisabled ? collapsedWidth : (isExpanded ? expandedWidth : collapsedWidth),
+        width: navExpandEnabled && isExpanded ? expandedWidth : collapsedWidth,
         transition: 'width 0.2s ease-out',
         background: themeVariant === 'bluePurple'
           ? (isExpanded
@@ -271,7 +271,7 @@ const ModernNavigation = () => {
         overflow: 'hidden',
       }}
              onMouseEnter={() => {
-         if (!isMobile && !navExpandDisabled) {
+         if (!isMobile && navExpandEnabled) {
            if (hoverTimeout) {
              clearTimeout(hoverTimeout);
              setHoverTimeout(null);
@@ -280,7 +280,7 @@ const ModernNavigation = () => {
          }
        }}
        onMouseLeave={() => {
-         if (!isMobile && !navExpandDisabled) {
+         if (!isMobile && navExpandEnabled) {
            const timeout = setTimeout(() => {
              setIsExpanded(false);
              setTooltipKey(prev => prev + 1); // Force tooltip cleanup

@@ -538,6 +538,86 @@ const Paint = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileSaved]);
 
+  // Auto-reload last bin file on component mount
+  useEffect(() => {
+    const autoReloadLastBin = async () => {
+      // Check if auto-load is enabled
+      try {
+        await electronPrefs.initPromise;
+        const autoLoadEnabled = await electronPrefs.get('AutoLoadEnabled');
+        if (autoLoadEnabled === false) {
+          console.log('⏭️ Auto-load disabled in settings, skipping auto-reload');
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to check auto-load setting, defaulting to enabled:', error);
+      }
+
+      // Only auto-reload if no file is currently loaded
+      if (filePath && filePath !== '') {
+        return;
+      }
+
+      try {
+        await electronPrefs.initPromise;
+        const lastBinPath = await electronPrefs.get('SharedLastBinPath');
+        
+        if (lastBinPath && fs?.existsSync(lastBinPath)) {
+          console.log('🔄 Auto-reloading shared bin:', lastBinPath);
+          setStatusMessage('Auto-reloading last bin file...');
+          
+          // Set the file path and trigger the load
+          setFilePath(lastBinPath);
+          setSelectedFile({ name: lastBinPath.split('\\').pop() });
+          
+          // Generate Python file path
+          const binDir = path.dirname(lastBinPath);
+          const binName = path.basename(lastBinPath, '.bin');
+          const pyFilePath = path.join(binDir, `${binName}.py`);
+          setPyPath(pyFilePath);
+
+          setIsProcessing(true);
+          setProcessingText('Loading last bin file...');
+
+          // Check if .py file already exists
+          if (fs?.existsSync(pyFilePath)) {
+            setProcessingText('Loading existing .py file...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            setProcessingText('Converting .bin to .py...');
+            await ToPyWithPath(lastBinPath, manualRitobinPath);
+            
+            if (fs?.existsSync(pyFilePath)) {
+              const convertedContent = fs.readFileSync(pyFilePath, 'utf8');
+              createBackup(pyFilePath, convertedContent, 'Paint');
+            }
+          }
+
+          setProcessingText('Loading converted data...');
+          const pyFileContent = loadFileWithBackup(pyFilePath, 'Paint');
+          setPyContent(pyFileContent);
+          LoadPyFile(pyFileContent, lastBinPath);
+          setFileCache([]);
+          setStatusMessage("File auto-reloaded successfully");
+        } else if (lastBinPath) {
+          // File no longer exists, clear the saved path
+          console.log('⚠️ Shared bin file no longer exists, clearing saved path');
+          await electronPrefs.set('SharedLastBinPath', '');
+        }
+      } catch (error) {
+        console.error('Error auto-reloading Paint bin:', error);
+        // Don't show error to user, just silently fail
+      } finally {
+        setIsProcessing(false);
+        setProcessingText('');
+      }
+    };
+
+    // Small delay to ensure component is fully mounted
+    const timer = setTimeout(autoReloadLastBin, 100);
+    return () => clearTimeout(timer);
+  }, []); // Only run on mount
+
   // Button container style without backdrop filter to prevent rendering artifacts
   const buttonContainerStyle = {
     background: 'var(--glass-bg)',
@@ -577,15 +657,18 @@ const Paint = () => {
   // NEW: Performance caching effect - automatically cache parsed data with Web Worker
   useEffect(() => {
     if (pyContent && !isRecoloring) {
+      console.log(`[useEffect pyContent] pyContent changed, length=${pyContent.length}, isRecoloring=${isRecoloring}`);
       // Use requestIdleCallback to parse during idle time
       const parseData = () => {
         try {
+          console.log(`[useEffect pyContent] Parsing content for caching...`);
           const systems = parsePyFile(pyContent);
           const materials = parseStaticMaterials(pyContent);
           
           setCachedSystems(systems);
           setCachedMaterials(materials);
           setIsDataCached(true);
+          console.log(`[useEffect pyContent] Cached ${Object.keys(systems).length} systems`);
         } catch (error) {
           console.error('❌ Error caching data:', error);
           setIsDataCached(false);
@@ -598,6 +681,8 @@ const Paint = () => {
       } else {
         setTimeout(parseData, 0);
       }
+    } else {
+      console.log(`[useEffect pyContent] Skipping - pyContent=${!!pyContent}, isRecoloring=${isRecoloring}`);
     }
   }, [pyContent, isRecoloring]);
 
@@ -634,13 +719,14 @@ const Paint = () => {
   // Efficient color block update function - no DOM rebuild needed
   const updateColorBlocksOnly = (updatedPyContent) => {
     try {
+      console.log(`[updateColorBlocksOnly] Called with content length=${updatedPyContent?.length}, current pyContent length=${pyContent?.length}`);
       // PERFORMANCE OPTIMIZATION: Use cached data instead of re-parsing
       let updatedSystems;
       let updatedMaterials;
       
       if (updatedPyContent && updatedPyContent !== pyContent) {
         // Only parse if content actually changed
-        // console.log('🔄 Content changed, parsing updated content...');
+        console.log('[updateColorBlocksOnly] Content changed, parsing updated content...');
         updatedSystems = parsePyFile(updatedPyContent);
         updatedMaterials = hasStaticMaterials(updatedPyContent)
           ? parseStaticMaterials(updatedPyContent)
@@ -649,9 +735,10 @@ const Paint = () => {
         // Update cache with new data
         setCachedSystems(updatedSystems);
         setCachedMaterials(updatedMaterials);
+        console.log(`[updateColorBlocksOnly] Parsed and cached ${Object.keys(updatedSystems).length} systems`);
       } else {
         // Use cached data for better performance
-        // console.log('✅ Using cached systems data for UI update');
+        console.log('[updateColorBlocksOnly] Using cached systems data for UI update');
         updatedSystems = cachedSystems;
         updatedMaterials = cachedMaterials;
       }
@@ -1180,6 +1267,14 @@ const Paint = () => {
       setFileCache([]);
 
       setStatusMessage("File loaded successfully");
+      
+      // Save the bin path for auto-reload on next visit (shared across Paint, Port, and VFXHub)
+      try {
+        await electronPrefs.set('SharedLastBinPath', selectedPath);
+        console.log('💾 Saved shared bin path for auto-reload:', selectedPath);
+      } catch (error) {
+        console.warn('Failed to save shared bin path:', error);
+      }
     } catch (error) {
       console.error('Error loading Python file:', error);
       const errorMessage = error.message || 'Unknown error occurred';
@@ -2603,6 +2698,7 @@ const Paint = () => {
               if (c) {
                 const key = `${systemKey}|${emitter.startLine}|${emitter.endLine}|color`;
                 previewAssignmentsRef.current.set(key, { type: 'emitter', systemKey, name: emitter.name, startLine: emitter.startLine, endLine: emitter.endLine, property: 'color', kind: 'constant', value: c });
+                console.log(`[applyOptimisticPreview] Set preview assignment for color: key=${key}, value=`, c);
               }
             }
           }
@@ -2639,6 +2735,7 @@ const Paint = () => {
               if (c) {
                 const key = `${systemKey}|${emitter.startLine}|${emitter.endLine}|birthColor`;
                 previewAssignmentsRef.current.set(key, { type: 'emitter', systemKey, name: emitter.name, startLine: emitter.startLine, endLine: emitter.endLine, property: 'birthColor', kind: 'constant', value: c });
+                console.log(`[applyOptimisticPreview] Set preview assignment for birthColor: key=${key}, value=`, c);
               }
             }
           }
@@ -2736,30 +2833,62 @@ const Paint = () => {
   // Helpers to write predicted values directly to lines (deterministic)
   const writeEmitterConstantToLines = (lines, systemsData, systemKey, emitterId, propertyKey, vec4) => {
     try {
+      console.log(`[writeEmitterConstantToLines] Starting for ${propertyKey}, systemKey=${systemKey}, emitter=${emitterId.name}`);
       const system = systemsData[systemKey];
-      if (!system) return lines;
+      if (!system) {
+        console.warn(`[writeEmitterConstantToLines] System not found: ${systemKey}`);
+        return lines;
+      }
       const e = system.emitters.find(x => x.name === emitterId.name && x.startLine === emitterId.startLine && x.endLine === emitterId.endLine);
-      if (!e) return lines;
+      if (!e) {
+        console.warn(`[writeEmitterConstantToLines] Emitter not found: ${emitterId.name}`);
+        return lines;
+      }
       let colorProp = propertyKey === 'oc' ? e.fresnelColor : (propertyKey === 'birthColor' ? e.birthColor : e.color);
-      if (!colorProp) return lines;
+      if (!colorProp) {
+        console.warn(`[writeEmitterConstantToLines] Color property not found for ${propertyKey}`);
+        return lines;
+      }
+      console.log(`[writeEmitterConstantToLines] Found colorProp: startLine=${colorProp.startLine}, endLine=${colorProp.endLine}`);
+      
       if (propertyKey === 'oc') {
-        for (let i = colorProp.startLine; i <= colorProp.endLine; i++) {
-          if ((lines[i] || '').includes('fresnelColor: vec4 =')) {
+        for (let i = colorProp.startLine; i <= colorProp.endLine + 10; i++) {
+          if (!lines[i]) continue;
+          if (/fresnelColor:\s*vec4\s*=/i.test(lines[i])) {
             const indent = (lines[i].match(/^(\s*)/) || ['', ''])[1];
+            const oldLine = lines[i];
             lines[i] = `${indent}fresnelColor: vec4 = { ${vec4[0]}, ${vec4[1]}, ${vec4[2]}, ${vec4[3]} }`;
+            console.log(`[writeEmitterConstantToLines] Updated OC at line ${i}:`, oldLine.trim(), '->', lines[i].trim());
             break;
           }
         }
       } else {
-        for (let i = colorProp.startLine; i <= colorProp.endLine; i++) {
-          if ((lines[i] || '').includes('constantValue: vec4 =')) {
+        let found = false;
+        const searchEnd = Math.min(colorProp.endLine + 10, lines.length);
+        for (let i = colorProp.startLine; i < searchEnd; i++) {
+          if (!lines[i]) continue;
+          // Case-insensitive match for constantValue/ConstantValue
+          if (/[Cc]onstantValue:\s*vec4\s*=/i.test(lines[i])) {
             const indent = (lines[i].match(/^(\s*)/) || ['', ''])[1];
-            lines[i] = `${indent}constantValue: vec4 = { ${vec4[0]}, ${vec4[1]}, ${vec4[2]}, ${vec4[3]} }`;
+            const originalLine = lines[i];
+            const caseMatch = originalLine.match(/([Cc]onstantValue)/i);
+            const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+            const oldLine = lines[i];
+            lines[i] = `${indent}${casePreserved}: vec4 = { ${vec4[0]}, ${vec4[1]}, ${vec4[2]}, ${vec4[3]} }`;
+            console.log(`[writeEmitterConstantToLines] Updated ${propertyKey} at line ${i}:`, oldLine.trim(), '->', lines[i].trim());
+            found = true;
             break;
           }
         }
+        if (!found) {
+          console.warn(`[writeEmitterConstantToLines] WARNING: Could not find constantValue line for ${propertyKey} between lines ${colorProp.startLine}-${searchEnd}`);
+          const sampleLines = lines.slice(colorProp.startLine, Math.min(colorProp.startLine + 5, searchEnd));
+          console.warn(`[writeEmitterConstantToLines] Sample lines:`, sampleLines.map((l, idx) => `${colorProp.startLine + idx}: ${l ? l.trim() : '(empty)'}`));
+        }
       }
-    } catch {}
+    } catch (e) {
+      console.error(`[writeEmitterConstantToLines] Error:`, e);
+    }
     return lines;
   };
 
@@ -2952,18 +3081,25 @@ const Paint = () => {
             if (targets.color && emitter.color) {
               const key = `${baseKey}|color`;
               const asn = previewAssignmentsRef.current.get(key);
+              console.log(`[processChunk] Processing color for emitter ${emitter.name}, key=${key}, hasPreviewAssignment=${!!asn}, kind=${asn?.kind}`);
               if (asn && asn.kind === 'constant') {
+                console.log(`[processChunk] Using preview assignment for color, value=`, asn.value);
                 workingLines = writeEmitterConstantToLines(workingLines, systemsToUse, systemKey, emitter, 'color', asn.value);
                 colorsUpdated++;
               } else if (asn && asn.kind === 'dynamics' && Array.isArray(asn.values)) {
+                console.log(`[processChunk] Using preview assignment for color dynamics, values count=${asn.values.length}`);
                 workingLines = writeEmitterDynamicsToLines(workingLines, systemsToUse, systemKey, emitter, 'color', asn.values);
                 colorsUpdated += asn.values.length;
               } else {
+                console.log(`[processChunk] No preview assignment, generating color for color`);
                 const c = generateColorForProperty(emitter, emitter.color, 'color');
                 if (c) {
+                  console.log(`[processChunk] Generated color for color:`, c);
                   const emitterIndex = (systemsToUse[systemKey]?.emitters || []).findIndex(e => e.name === emitter.name && e.startLine === emitter.startLine && e.endLine === emitter.endLine);
                   workingLines = updateColorInPyContent(workingLines, systemsToUse, systemKey, { name: emitter.name, index: emitterIndex, startLine: emitter.startLine, endLine: emitter.endLine }, 'color', c, mode, hslValues, hueValue, ignoreBW, Palette, randomGradient, randomGradientCount, getColorFilterPredicate());
                   colorsUpdated++;
+                } else {
+                  console.warn(`[processChunk] Failed to generate color for color`);
                 }
               }
             }
@@ -2971,18 +3107,25 @@ const Paint = () => {
             if (targets.birthColor && emitter.birthColor) {
               const key = `${baseKey}|birthColor`;
               const asn = previewAssignmentsRef.current.get(key);
+              console.log(`[processChunk] Processing birthColor for emitter ${emitter.name}, key=${key}, hasPreviewAssignment=${!!asn}, kind=${asn?.kind}`);
               if (asn && asn.kind === 'constant') {
+                console.log(`[processChunk] Using preview assignment for birthColor, value=`, asn.value);
                 workingLines = writeEmitterConstantToLines(workingLines, systemsToUse, systemKey, emitter, 'birthColor', asn.value);
                 colorsUpdated++;
               } else if (asn && asn.kind === 'dynamics' && Array.isArray(asn.values)) {
+                console.log(`[processChunk] Using preview assignment for birthColor dynamics, values count=${asn.values.length}`);
                 workingLines = writeEmitterDynamicsToLines(workingLines, systemsToUse, systemKey, emitter, 'birthColor', asn.values);
                 colorsUpdated += asn.values.length;
               } else {
+                console.log(`[processChunk] No preview assignment, generating color for birthColor`);
                 const c = generateColorForProperty(emitter, emitter.birthColor, 'birthColor');
                 if (c) {
+                  console.log(`[processChunk] Generated color for birthColor:`, c);
                   const emitterIndex = (systemsToUse[systemKey]?.emitters || []).findIndex(e => e.name === emitter.name && e.startLine === emitter.startLine && e.endLine === emitter.endLine);
                   workingLines = updateColorInPyContent(workingLines, systemsToUse, systemKey, { name: emitter.name, index: emitterIndex, startLine: emitter.startLine, endLine: emitter.endLine }, 'birthColor', c, mode, hslValues, hueValue, ignoreBW, Palette, randomGradient, randomGradientCount, getColorFilterPredicate());
                   colorsUpdated++;
+                } else {
+                  console.warn(`[processChunk] Failed to generate color for birthColor`);
                 }
               }
             }
@@ -3039,6 +3182,29 @@ const Paint = () => {
       } else {
         if (currentRecolorJobId.current !== jobId) return; // cancelled
         const updatedContent = workingLines.join('\n');
+        console.log(`[processChunk] Finished processing. colorsUpdated=${colorsUpdated}, contentLength=${updatedContent.length}, originalLength=${pyContent.length}`);
+        
+        // Verify some changes were made by comparing actual updated lines
+        if (colorsUpdated > 0) {
+          // Check if content actually changed by comparing specific updated lines
+          const originalLines = pyContent.split('\n');
+          const updatedLines = updatedContent.split('\n');
+          let changedLines = 0;
+          for (let i = 0; i < Math.min(originalLines.length, updatedLines.length); i++) {
+            if (originalLines[i] !== updatedLines[i]) {
+              changedLines++;
+              if (changedLines <= 5) {
+                console.log(`[processChunk] Line ${i} changed:`, originalLines[i]?.substring(0, 60), '->', updatedLines[i]?.substring(0, 60));
+              }
+            }
+          }
+          console.log(`[processChunk] Total lines changed: ${changedLines} out of ${originalLines.length}`);
+          if (changedLines === 0) {
+            console.warn(`[processChunk] WARNING: No lines changed despite ${colorsUpdated} colors reported as updated!`);
+          }
+        } else {
+          console.warn(`[processChunk] WARNING: No colors were updated!`);
+        }
         
         // CRITICAL FIX: Re-parse the systems after recoloring to update originalColor values
         // This ensures that shift mode uses the newly recolored colors as the base, not the original loaded colors
@@ -3057,9 +3223,20 @@ const Paint = () => {
           console.warn('Failed to re-parse systems after recoloring:', error);
         }
         
+        console.log(`[processChunk] About to update UI and set pyContent. updatedContent length=${updatedContent.length}`);
+        // Verify a specific line was actually changed before setting
+        const testLineIndex = 222; // One of the lines we know should be updated
+        const testLineOriginal = pyContent.split('\n')[testLineIndex];
+        const testLineUpdated = updatedContent.split('\n')[testLineIndex];
+        console.log(`[processChunk] Verification - Line ${testLineIndex} original:`, testLineOriginal?.substring(0, 80));
+        console.log(`[processChunk] Verification - Line ${testLineIndex} updated:`, testLineUpdated?.substring(0, 80));
+        console.log(`[processChunk] Line ${testLineIndex} changed:`, testLineOriginal !== testLineUpdated);
+        
         updateColorBlocksOnly(updatedContent);
         restoreCheckboxStates(savedCheckboxStates, particleListRef);
+        console.log(`[processChunk] Setting pyContent to updated content (length=${updatedContent.length})`);
         setPyContent(updatedContent);
+        console.log(`[processChunk] pyContent set, isRecoloring=false`);
         setIsRecoloring(false);
         const totalTime = Date.now() - recolorStartTime;
         setStatusMessage(`Recoloring complete - ${colorsUpdated} colors updated in ${totalTime}ms`);
@@ -4002,6 +4179,159 @@ const Paint = () => {
     };
   }, []);
 
+  // Load saved palette from electronPrefs on component mount
+  useEffect(() => {
+    const loadSavedPalette = async () => {
+      try {
+        await electronPrefs.initPromise;
+        const savedPaletteData = await electronPrefs.get('PaintSavedPalette');
+        const savedMode = await electronPrefs.get('PaintSavedMode');
+        const savedPalettesData = await electronPrefs.get('PaintSavedPalettes');
+        
+        if (savedPaletteData && Array.isArray(savedPaletteData) && savedPaletteData.length > 0) {
+          console.log('🔄 Restoring saved palette from electronPrefs');
+          
+          // Temporarily suppress auto-palette to prevent overwriting restored palette
+          setSuppressAutoPalette(true);
+          
+          // Restore the palette
+          const restoredPalette = savedPaletteData.map(colorData => {
+            const colorHandler = new ColorHandler();
+            if (colorData.hex) {
+              colorHandler.InputHex(colorData.hex);
+            } else if (colorData.vec4) {
+              colorHandler.vec4 = colorData.vec4;
+            }
+            colorHandler.time = colorData.time || 0;
+            return colorHandler;
+          });
+          
+          setPalette(restoredPalette);
+          setColorCount(restoredPalette.length);
+          MapPalette(restoredPalette, setColors);
+          setIsPaletteReady(true);
+          
+          // Restore mode if saved
+          if (savedMode) {
+            setMode(savedMode);
+          }
+          
+          // Restore saved palettes for all modes if available
+          if (savedPalettesData && typeof savedPalettesData === 'object') {
+            const restoredSavedPalettes = {};
+            for (const [modeKey, paletteData] of Object.entries(savedPalettesData)) {
+              if (paletteData && Array.isArray(paletteData) && paletteData.length > 0) {
+                restoredSavedPalettes[modeKey] = paletteData.map(colorData => {
+                  const colorHandler = new ColorHandler();
+                  if (colorData.hex) {
+                    colorHandler.InputHex(colorData.hex);
+                  } else if (colorData.vec4) {
+                    colorHandler.vec4 = colorData.vec4;
+                  }
+                  colorHandler.time = colorData.time || 0;
+                  return colorHandler;
+                });
+              }
+            }
+            setSavedPalettes(prev => ({ ...prev, ...restoredSavedPalettes }));
+          }
+          
+          // Re-enable auto-palette after restoration completes
+          // Use a longer delay to ensure it happens after initialization timeout
+          setTimeout(() => setSuppressAutoPalette(false), 200);
+        } else {
+          // No saved palette, allow normal initialization
+          setTimeout(() => setSuppressAutoPalette(false), 0);
+        }
+      } catch (error) {
+        console.error('Error loading saved palette:', error);
+        // On error, allow normal initialization
+        setTimeout(() => setSuppressAutoPalette(false), 0);
+      }
+    };
+    
+    loadSavedPalette();
+  }, []); // Only run on mount
+
+  // Save palette to electronPrefs whenever it changes (debounced)
+  useEffect(() => {
+    if (suppressAutoPalette || Palette.length === 0) return;
+    
+    const savePaletteToPrefs = async () => {
+      try {
+        await electronPrefs.initPromise;
+        
+        // Serialize current palette
+        const paletteData = Palette.map(color => ({
+          hex: color.ToHEX(),
+          vec4: color.vec4,
+          time: color.time
+        }));
+        
+        // Serialize saved palettes for all modes
+        const savedPalettesData = {};
+        for (const [modeKey, modePalette] of Object.entries(savedPalettes)) {
+          if (modePalette && Array.isArray(modePalette) && modePalette.length > 0) {
+            savedPalettesData[modeKey] = modePalette.map(color => ({
+              hex: color.ToHEX(),
+              vec4: color.vec4,
+              time: color.time
+            }));
+          }
+        }
+        
+        await electronPrefs.set('PaintSavedPalette', paletteData);
+        await electronPrefs.set('PaintSavedMode', mode);
+        await electronPrefs.set('PaintSavedPalettes', savedPalettesData);
+        console.log('💾 Saved palette to electronPrefs');
+      } catch (error) {
+        console.warn('Failed to save palette to electronPrefs:', error);
+      }
+    };
+    
+    // Debounce saves to avoid too many writes
+    const timer = setTimeout(savePaletteToPrefs, 500);
+    return () => clearTimeout(timer);
+  }, [Palette, mode, savedPalettes, suppressAutoPalette]);
+
+  // Save palette when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      // Save on unmount
+      if (Palette.length > 0) {
+        const saveOnUnmount = async () => {
+          try {
+            await electronPrefs.initPromise;
+            const paletteData = Palette.map(color => ({
+              hex: color.ToHEX(),
+              vec4: color.vec4,
+              time: color.time
+            }));
+            
+            const savedPalettesData = {};
+            for (const [modeKey, modePalette] of Object.entries(savedPalettes)) {
+              if (modePalette && Array.isArray(modePalette) && modePalette.length > 0) {
+                savedPalettesData[modeKey] = modePalette.map(color => ({
+                  hex: color.ToHEX(),
+                  vec4: color.vec4,
+                  time: color.time
+                }));
+              }
+            }
+            
+            await electronPrefs.set('PaintSavedPalette', paletteData);
+            await electronPrefs.set('PaintSavedMode', mode);
+            await electronPrefs.set('PaintSavedPalettes', savedPalettesData);
+            console.log('💾 Saved palette on component unmount');
+          } catch (error) {
+            console.warn('Failed to save palette on unmount:', error);
+          }
+        };
+        saveOnUnmount();
+      }
+    };
+  }, [Palette, mode, savedPalettes]);
+
   // Initialize component
   useEffect(() => {
     // Add global error handler to prevent app crashes
@@ -4022,11 +4352,7 @@ const Paint = () => {
 
     // Skip forcing any initial palette so we don't overwrite existing/recolored colors on load
     // Allow downstream logic to populate Palette/Colors when appropriate
-
-
-
-    // After initial checks, allow auto palette logic to run
-    setTimeout(() => setSuppressAutoPalette(false), 0);
+    // Note: suppressAutoPalette is now managed by the palette restoration useEffect
 
     // Make functions globally available for DOM event handlers
     window.checkChildren = CheckChildren;

@@ -333,6 +333,83 @@ const findProjectRoot = (startPath) => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileSaved]);
+
+  // Auto-reload last bin file on component mount
+  useEffect(() => {
+    const autoReloadLastBin = async () => {
+      // Check if auto-load is enabled
+      try {
+        await electronPrefs.initPromise;
+        const autoLoadEnabled = await electronPrefs.get('AutoLoadEnabled');
+        if (autoLoadEnabled === false) {
+          console.log('⏭️ Auto-load disabled in settings, skipping auto-reload');
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to check auto-load setting, defaulting to enabled:', error);
+      }
+
+      // Only auto-reload if no file is currently loaded in target section
+      if (targetPath !== 'This will show target bin') {
+        return;
+      }
+
+      try {
+        await electronPrefs.initPromise;
+        const lastBinPath = await electronPrefs.get('SharedLastBinPath');
+        
+        if (lastBinPath && fs?.existsSync(lastBinPath)) {
+          console.log('🔄 Auto-reloading shared bin:', lastBinPath);
+          setStatusMessage('Auto-reloading last bin file...');
+          
+          setIsProcessing(true);
+          setTargetPath(lastBinPath);
+          
+          const binDir = path.dirname(lastBinPath);
+          const binName = path.basename(lastBinPath, '.bin');
+          const pyFilePath = path.join(binDir, `${binName}.py`);
+          
+          let pyContent;
+          if (fs?.existsSync(pyFilePath)) {
+            setProcessingText('Loading existing .py file...');
+            setStatusMessage('Loading existing .py file...');
+            pyContent = loadFileWithBackup(pyFilePath, 'VFXHub');
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            setProcessingText('Converting .bin to .py...');
+            setStatusMessage('Converting target bin to Python...');
+            pyContent = await ToPyWithPath(lastBinPath);
+            if (fs?.existsSync(pyFilePath)) {
+              createBackup(pyFilePath, pyContent, 'VFXHub');
+            }
+          }
+          
+          setTargetPyContent(pyContent);
+          try { setFileSaved(true); } catch {} // File is loaded from disk, so it's saved
+          
+          const systems = parseVfxEmitters(pyContent);
+          setTargetSystems(systems);
+          setStatusMessage(`Target bin auto-reloaded: ${Object.keys(systems).length} systems found`);
+          setDeletedEmitters(new Map());
+        } else if (lastBinPath) {
+          // File no longer exists, clear the saved path
+          console.log('⚠️ Shared bin file no longer exists, clearing saved path');
+          await electronPrefs.set('SharedLastBinPath', '');
+        }
+      } catch (error) {
+        console.error('Error auto-reloading VFXHub bin:', error);
+        setStatusMessage(`Error auto-reloading: ${error.message}`);
+      } finally {
+        setIsProcessing(false);
+        setProcessingText('');
+      }
+    };
+
+    // Small delay to ensure component is fully mounted
+    const timer = setTimeout(autoReloadLastBin, 100);
+    return () => clearTimeout(timer);
+  }, []); // Only run on mount
+
   // Detect capabilities whenever targetPyContent changes
   useEffect(() => {
     try {
@@ -798,6 +875,15 @@ const findProjectRoot = (startPath) => {
       setTargetSystems(systems);
 
       setStatusMessage(`Target bin loaded: ${Object.keys(systems).length} systems found`);
+      
+      // Save the bin path for auto-reload on next visit (shared across Paint, Port, and VFXHub)
+      try {
+        await electronPrefs.set('SharedLastBinPath', filePath);
+        console.log('💾 Saved shared bin path for auto-reload:', filePath);
+      } catch (error) {
+        console.warn('Failed to save shared bin path:', error);
+      }
+      
       setDeletedEmitters(new Map());
     } catch (error) {
       console.error('Error opening target bin:', error);

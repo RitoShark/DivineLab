@@ -19,8 +19,9 @@ import SpotlightOverlay from './SpotlightOverlay';
  *     padding?: number,
  *   }>
  * - onClose?: () => void
+ * - onStepChange?: (stepIndex: number) => void
  */
-const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
+const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop, onStepChange }) => {
   const [entered, setEntered] = useState(false);
   const [exiting, setExiting] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
@@ -104,14 +105,20 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
 
   const handleNext = () => {
     if (stepIndex < total - 1) {
-      setStepIndex(stepIndex + 1);
+      const newIndex = stepIndex + 1;
+      setStepIndex(newIndex);
+      if (onStepChange) onStepChange(newIndex);
     } else {
       finish();
     }
   };
 
   const handlePrev = () => {
-    if (stepIndex > 0) setStepIndex(stepIndex - 1);
+    if (stepIndex > 0) {
+      const newIndex = stepIndex - 1;
+      setStepIndex(newIndex);
+      if (onStepChange) onStepChange(newIndex);
+    }
   };
 
   const handleSkip = () => finish();
@@ -138,6 +145,13 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
     }
   };
 
+  // Notify parent of step changes
+  useEffect(() => {
+    if (onStepChange) {
+      onStepChange(stepIndex);
+    }
+  }, [stepIndex, onStepChange]);
+
   // Compute and scroll to target element
   useEffect(() => {
     const step = steps[stepIndex];
@@ -151,16 +165,26 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
       return;
     }
 
-    // Scroll to element smoothly if offscreen
-    try {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-    } catch {}
-
+    // Don't scroll - just update rect
     const updateRect = () => {
       const rect = element.getBoundingClientRect();
+      // For step 7, ensure we're getting the correct position after settings panel opens
       setTargetRect({ left: rect.left, top: rect.top, width: rect.width, height: rect.height, padding: step.padding ?? 10 });
     };
-    updateRect();
+    
+    // For step 7 (index 6), wait for settings panel animation to complete (300ms transition)
+    if (stepIndex === 6) {
+      // Wait for settings panel to fully expand before calculating highlight
+      // Settings should already be open from step 6, but wait to ensure DOM is updated
+      const timer = setTimeout(() => {
+        updateRect();
+        // Update again after a short delay to ensure it's correct after all transitions
+        setTimeout(updateRect, 100);
+      }, 400);
+      return () => clearTimeout(timer);
+    } else {
+      updateRect();
+    }
 
     // Keep rect updated on resize/scroll
     const onResize = () => updateRect();
@@ -173,10 +197,13 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
     };
   }, [stepIndex, steps]);
 
+  // Determine if we should position at top-right (for steps 5, 6, and 7, indices 4, 5, and 6)
+  const isTopRight = stepIndex === 4 || stepIndex === 5 || stepIndex === 6;
+  
   const guideContent = (
     <div
       className={
-        `fixed bottom-4 right-4 z-50 flex items-end gap-4 transform will-change-transform will-change-opacity ` +
+        `fixed ${isTopRight ? 'top-4' : 'bottom-4'} right-4 z-50 flex ${isTopRight ? 'items-start' : 'items-end'} gap-4 transform will-change-transform will-change-opacity ` +
         `transition-all duration-700 ease-in-out ` +
         `${entered && !exiting ? 'translate-x-0 opacity-100' : ''} ` +
         `${!entered ? 'translate-x-full opacity-0' : ''} ` +
@@ -187,30 +214,10 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
       {/* Spotlight overlay */}
       <SpotlightOverlay rect={targetRect} padding={targetRect?.padding ?? 10} />
 
-      {/* Character */}
-      <div className="relative" style={{ position: 'relative', zIndex: 9000 }}>
-        <img
-          src={celestiaSrc || `${process.env.PUBLIC_URL}/celestia.webp`}
-          alt="Celestial"
-          className="w-48 h-48 object-contain drop-shadow-2xl brightness-110 contrast-110"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-            const fallback = document.createElement('div');
-            fallback.className = 'w-24 h-24 flex items-center justify-center text-6xl';
-            fallback.textContent = '✨';
-            e.currentTarget.parentElement.appendChild(fallback);
-          }}
-        />
-        <div className="absolute inset-0 rounded-full blur-2xl -z-10 bg-gradient-to-br from-[#783CB5]/30 via-[#9333ea]/20 to-[#a855f7]/30" />
-        <div className="absolute top-2 right-2 w-8 h-8 bg-gradient-to-br from-[#34d399] to-[#10b981] rounded-full flex items-center justify-center text-lg font-bold text-black animate-bounce border border-white/70 shadow-lg">
-          {stepIndex + 1}
-        </div>
-      </div>
-
       {/* Speech bubble */}
       <div
         className="relative bg-gradient-to-br from-[#0f0e13] via-[#1a1825] to-[#25222f] rounded-2xl border border-[#a855f7]/50 shadow-2xl backdrop-blur-sm w-96 p-4 pr-10 flex flex-col"
-        style={{ position: 'relative', zIndex: 9000, minHeight: 180 }}
+        style={{ position: 'relative', zIndex: 9000, minHeight: 180, order: isTopRight ? 1 : 2 }}
       >
         {/* Close */}
         <button
@@ -270,8 +277,32 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop }) => {
           </button>
         </div>
 
-        {/* Tail pointer */}
-        <div className="absolute right-0 bottom-6 translate-x-full w-0 h-0 border-t-8 border-b-8 border-l-8 border-t-transparent border-b-transparent border-l-[#1a1825]" />
+        {/* Tail pointer - points towards character */}
+        {isTopRight ? (
+          <div className="absolute right-0 top-6 translate-x-full w-0 h-0 border-t-8 border-b-8 border-l-8 border-t-transparent border-b-transparent border-l-[#1a1825]" />
+        ) : (
+          <div className="absolute left-0 bottom-6 -translate-x-full w-0 h-0 border-t-8 border-b-8 border-r-8 border-t-transparent border-b-transparent border-r-[#1a1825]" />
+        )}
+      </div>
+
+      {/* Character */}
+      <div className="relative" style={{ position: 'relative', zIndex: 9000, order: isTopRight ? 2 : 1 }}>
+        <img
+          src={celestiaSrc || `${process.env.PUBLIC_URL}/celestia.webp`}
+          alt="Celestial"
+          className="w-48 h-48 object-contain drop-shadow-2xl brightness-110 contrast-110"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+            const fallback = document.createElement('div');
+            fallback.className = 'w-24 h-24 flex items-center justify-center text-6xl';
+            fallback.textContent = '✨';
+            e.currentTarget.parentElement.appendChild(fallback);
+          }}
+        />
+        <div className="absolute inset-0 rounded-full blur-2xl -z-10 bg-gradient-to-br from-[#783CB5]/30 via-[#9333ea]/20 to-[#a855f7]/30" />
+        <div className="absolute top-2 right-2 w-8 h-8 bg-gradient-to-br from-[#34d399] to-[#10b981] rounded-full flex items-center justify-center text-lg font-bold text-black animate-bounce border border-white/70 shadow-lg">
+          {stepIndex + 1}
+        </div>
       </div>
     </div>
   );

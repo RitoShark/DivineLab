@@ -310,6 +310,135 @@ const Port = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileSaved]);
 
+  // Auto-reload last bin files on component mount
+  useEffect(() => {
+    const autoReloadLastBins = async () => {
+      // Check if auto-load is enabled
+      try {
+        await electronPrefs.initPromise;
+        const autoLoadEnabled = await electronPrefs.get('AutoLoadEnabled');
+        if (autoLoadEnabled === false) {
+          console.log('⏭️ Auto-load disabled in settings, skipping auto-reload');
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to check auto-load setting, defaulting to enabled:', error);
+      }
+
+      // Only auto-reload if no target file is currently loaded
+      if (targetPath !== 'This will show target bin') {
+        return;
+      }
+
+      try {
+        await electronPrefs.initPromise;
+        const lastTargetPath = await electronPrefs.get('SharedLastBinPath');
+        const lastDonorPath = await electronPrefs.get('PortLastDonorBinPath');
+        
+        // Auto-reload target bin if it exists (shared across Paint, Port, and VFXHub)
+        if (lastTargetPath && fs?.existsSync(lastTargetPath)) {
+          console.log('🔄 Auto-reloading shared bin:', lastTargetPath);
+          setStatusMessage('Auto-reloading last target bin...');
+          
+          setIsProcessing(true);
+          setTargetPath(lastTargetPath);
+          
+          const binDir = path.dirname(lastTargetPath);
+          const binName = path.basename(lastTargetPath, '.bin');
+          const pyFilePath = path.join(binDir, `${binName}.py`);
+          
+          let pyContent;
+          if (fs?.existsSync(pyFilePath)) {
+            setProcessingText('Loading existing .py file...');
+            setStatusMessage('Loading existing .py file...');
+            pyContent = loadFileWithBackup(pyFilePath, 'port');
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            setProcessingText('Converting .bin to .py...');
+            setStatusMessage('Converting target bin to Python...');
+            pyContent = await ToPyWithPath(lastTargetPath);
+            if (fs?.existsSync(pyFilePath)) {
+              createBackup(pyFilePath, pyContent, 'port');
+            }
+          }
+          
+          setTargetPyContent(pyContent);
+          try { setFileSaved(true); } catch {} // File is loaded from disk, so it's saved
+          
+          // Parse the Python content using VFX emitter parser
+          const systems = parseVfxEmitters(pyContent);
+          setTargetSystems(systems);
+          
+          setStatusMessage(`Target bin auto-reloaded: ${Object.keys(systems).length} systems found`);
+          
+          // Clear deleted emitters when loading a new target file
+          setDeletedEmitters(new Map());
+          
+          // Clear any existing texture preview when loading new file
+          const existingPreview = document.getElementById('port-texture-hover-preview');
+          if (existingPreview) existingPreview.remove();
+          
+          // Clear conversion tracking
+          activeConversions.current.clear();
+          conversionTimers.current.clear();
+          
+          // Clear texture name cache for fresh data
+          textureNameCache.current.clear();
+          
+          // Clear undo history when loading new file
+          setUndoHistory([]);
+        } else if (lastTargetPath) {
+          console.log('⚠️ Shared bin file no longer exists, clearing saved path');
+          await electronPrefs.set('SharedLastBinPath', '');
+        }
+
+        // Auto-reload donor bin if it exists (only if target was successfully loaded or doesn't exist)
+        if (lastDonorPath && fs?.existsSync(lastDonorPath)) {
+          console.log('🔄 Auto-reloading last Port donor bin:', lastDonorPath);
+          setStatusMessage('Auto-reloading last donor bin...');
+          
+          setIsProcessing(true);
+          setDonorPath(lastDonorPath);
+          
+          const binDir = path.dirname(lastDonorPath);
+          const binName = path.basename(lastDonorPath, '.bin');
+          const pyFilePath = path.join(binDir, `${binName}.py`);
+          
+          let pyContent;
+          if (fs?.existsSync(pyFilePath)) {
+            setProcessingText('Loading existing .py file...');
+            pyContent = loadFileWithBackup(pyFilePath, 'port');
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            setProcessingText('Converting .bin to .py...');
+            pyContent = await ToPyWithPath(lastDonorPath);
+            if (fs?.existsSync(pyFilePath)) {
+              createBackup(pyFilePath, pyContent, 'port');
+            }
+          }
+          
+          setDonorPyContent(pyContent);
+          const systems = parseVfxEmitters(pyContent);
+          setDonorSystems(systems);
+          setStatusMessage(`Donor bin auto-reloaded: ${Object.keys(systems).length} systems found`);
+        } else if (lastDonorPath) {
+          console.log('⚠️ Last Port donor bin file no longer exists, clearing saved path');
+          await electronPrefs.set('PortLastDonorBinPath', '');
+        }
+      } catch (error) {
+        console.error('Error auto-reloading Port bins:', error);
+        setStatusMessage(`Error auto-reloading: ${error.message}`);
+      } finally {
+        setIsProcessing(false);
+        setProcessingText('');
+      }
+    };
+
+    // Small delay to ensure component is fully mounted
+    const timer = setTimeout(autoReloadLastBins, 100);
+    return () => clearTimeout(timer);
+  }, []); // Only run on mount
+
   // Handle unsaved dialog actions
   const handleUnsavedSave = async () => {
     const targetPath = pendingNavigationPathRef.current;
@@ -504,6 +633,14 @@ const Port = () => {
 
       setStatusMessage(`Target bin loaded: ${Object.keys(systems).length} systems found`);
 
+      // Save the target bin path for auto-reload on next visit (shared across Paint, Port, and VFXHub)
+      try {
+        await electronPrefs.set('SharedLastBinPath', filePath);
+        console.log('💾 Saved shared bin path for auto-reload:', filePath);
+      } catch (error) {
+        console.warn('Failed to save shared bin path:', error);
+      }
+
       // Clear deleted emitters when loading a new target file
       setDeletedEmitters(new Map());
 
@@ -589,6 +726,14 @@ const Port = () => {
       setDonorSystems(systems);
 
       setStatusMessage(`Donor bin loaded: ${Object.keys(systems).length} systems found`);
+
+      // Save the donor bin path for auto-reload on next visit
+      try {
+        await electronPrefs.set('PortLastDonorBinPath', filePath);
+        console.log('💾 Saved Port donor bin path for auto-reload:', filePath);
+      } catch (error) {
+        console.warn('Failed to save Port donor bin path:', error);
+      }
 
       // Clear any existing texture preview when loading new file
       const existingPreview = document.getElementById('port-texture-hover-preview');
@@ -2113,8 +2258,8 @@ const Port = () => {
 
       const results = [];
 
-      // Match ValueColor blocks with constantValue
-      const valueColorRegex = /(\w*color\w*)\s*:\s*embed\s*=\s*ValueColor\s*\{[\s\S]*?constantValue\s*:\s*vec4\s*=\s*\{\s*([^}]+)\s*\}[\s\S]*?\}/gi;
+      // Match ValueColor blocks with constantValue (case-insensitive)
+      const valueColorRegex = /(\w*color\w*)\s*:\s*embed\s*=\s*valuecolor\s*\{[\s\S]*?constantvalue\s*:\s*vec4\s*=\s*\{\s*([^}]+)\s*\}[\s\S]*?\}/gi;
       let match;
       while ((match = valueColorRegex.exec(originalContent)) !== null) {
         const name = match[1] || 'color';
@@ -2129,8 +2274,8 @@ const Port = () => {
         }
       }
 
-      // Match Animated color lists
-      const animatedRegex = /(\w*color\w*)[\s\S]*?VfxAnimatedColorVariableData\s*\{[\s\S]*?values\s*:\s*list\[vec4\]\s*=\s*\{([\s\S]*?)\}[\s\S]*?\}/gi;
+      // Match Animated color lists (case-insensitive)
+      const animatedRegex = /(\w*color\w*)[\s\S]*?vfxanimatedcolorvariabledata\s*\{[\s\S]*?values\s*:\s*list\[vec4\]\s*=\s*\{([\s\S]*?)\}[\s\S]*?\}/gi;
       let anim;
       while ((anim = animatedRegex.exec(originalContent)) !== null) {
         const name = anim[1] || 'colorAnim';

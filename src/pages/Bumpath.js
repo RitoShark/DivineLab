@@ -27,8 +27,10 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  Tooltip,
 } from '@mui/material';
 import ConsoleWindow from '../components/ConsoleWindow';
+import CelestiaGuide from '../components/CelestiaGuide';
 import {
   Folder as FolderIcon,
   Delete as DeleteIcon,
@@ -49,6 +51,7 @@ import {
   Terminal as TerminalIcon,
   Edit as EditIcon,
   CheckBox as CheckBoxIcon,
+  CheckBoxOutlineBlank as CheckboxIcon,
   Clear as ClearIcon,
   Search as SearchIcon,
   FormatListBulleted as FormatListBulletedIcon,
@@ -82,6 +85,98 @@ const Bumpath = () => {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [showCelestiaGuide, setShowCelestiaGuide] = useState(false);
+  const [celestiaStepIndex, setCelestiaStepIndex] = useState(0);
+  const [simulatedBinSelected, setSimulatedBinSelected] = useState(false);
+  const [binListHighlightRect, setBinListHighlightRect] = useState(null);
+  const [settingsAutoOpened, setSettingsAutoOpened] = useState(false);
+
+  // Reset simulated state when step changes or guide closes
+  useEffect(() => {
+    if (celestiaStepIndex !== 1) {
+      setSimulatedBinSelected(false);
+    }
+  }, [celestiaStepIndex]);
+
+  useEffect(() => {
+    if (!showCelestiaGuide) {
+      setSimulatedBinSelected(false);
+      setBinListHighlightRect(null);
+      // Reset auto-opened flag and close settings when guide closes
+      if (settingsAutoOpened) {
+        setSettingsExpanded(false);
+        setSettingsAutoOpened(false);
+      }
+    }
+  }, [showCelestiaGuide, settingsAutoOpened]);
+
+  // Update bin list highlight rect when on step 2 (bin list step, index 1)
+  useEffect(() => {
+    if (showCelestiaGuide && celestiaStepIndex === 1) {
+      const updateRect = () => {
+        const element = document.querySelector('[data-bumpath-bin-list]');
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          const padding = 15; // Same padding as in the step definition
+          setBinListHighlightRect({
+            left: rect.left - padding,
+            top: rect.top - padding,
+            width: rect.width + padding * 2,
+            height: rect.height + padding * 2,
+          });
+        } else {
+          setBinListHighlightRect(null);
+        }
+      };
+      
+      updateRect();
+      const onResize = () => updateRect();
+      const onScroll = () => updateRect();
+      window.addEventListener('resize', onResize, { passive: true });
+      window.addEventListener('scroll', onScroll, true);
+      
+      return () => {
+        window.removeEventListener('resize', onResize);
+        window.removeEventListener('scroll', onScroll, true);
+      };
+    } else {
+      setBinListHighlightRect(null);
+    }
+  }, [showCelestiaGuide, celestiaStepIndex]);
+
+  // Auto-open/close settings when on step 7 (index 6)
+  useEffect(() => {
+    if (!showCelestiaGuide) {
+      // Don't do anything if guide is not open
+      return;
+    }
+
+    // Only manage settings on step 7
+    if (celestiaStepIndex === 6) {
+      // Open settings when entering step 7
+      setSettingsAutoOpened(true);
+      setSettingsExpanded(true);
+    } else {
+      // Close settings when not on step 7
+      // If we auto-opened them, close and reset the flag
+      if (settingsAutoOpened) {
+        const timer = setTimeout(() => {
+          setSettingsExpanded(false);
+          setSettingsAutoOpened(false);
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+      // Also ensure settings are closed if they're open when guide starts on earlier steps
+      // This prevents settings from briefly showing when guide opens on step 1
+      if (settingsExpanded && !settingsAutoOpened) {
+        // Settings were manually opened, but we want them closed for the guide
+        // Only close if we're on step 1-6 (indices 0-5)
+        if (celestiaStepIndex < 6) {
+          setSettingsExpanded(false);
+        }
+      }
+    }
+  }, [showCelestiaGuide, celestiaStepIndex, settingsAutoOpened, settingsExpanded]);
 
   // Add log to console
   const addLog = useCallback((message) => {
@@ -342,7 +437,62 @@ const Bumpath = () => {
       });
 
       if (result.success) {
-        setScannedData(result.data);
+        // The apply-prefix endpoint returns a different structure than scan
+        // Preserve existing scanned data and just update the prefixes to avoid losing entry names
+        if (scannedData) {
+          const updatedData = {
+            ...scannedData,
+            entries: { ...scannedData.entries }
+          };
+          
+          // Update prefixes for selected entries (preserve all other data including type_name)
+          selectedEntries.forEach(entryHash => {
+            if (updatedData.entries[entryHash]) {
+              updatedData.entries[entryHash] = {
+                ...updatedData.entries[entryHash],
+                prefix: debouncedPrefixText.trim()
+                // type_name and other fields are preserved via spread operator
+              };
+            }
+          });
+          
+          setScannedData(updatedData);
+        } else {
+          // If no scanned data exists, try to convert backend response
+          if (result.data.entries && result.data.entry_names && result.data.entry_prefixes) {
+            const convertedData = {
+              entries: {},
+              all_bins: {}
+            };
+            
+            for (const [entryHash, entryData] of Object.entries(result.data.entries)) {
+              if (entryHash === 'All_BINs') continue;
+              
+              const referenced_files = [];
+              if (typeof entryData === 'object' && entryData !== null) {
+                for (const [unify_file, fileData] of Object.entries(entryData)) {
+                  if (Array.isArray(fileData) && fileData.length === 2) {
+                    const [exists, path] = fileData;
+                    referenced_files.push({
+                      path: path,
+                      exists: exists,
+                      unify_file: unify_file
+                    });
+                  }
+                }
+              }
+              
+              convertedData.entries[entryHash] = {
+                name: result.data.entry_names[entryHash] || scannedData?.entries[entryHash]?.name || `Entry_${entryHash}`,
+                type_name: scannedData?.entries[entryHash]?.type_name,  // Preserve type_name from existing data
+                prefix: result.data.entry_prefixes[entryHash] || scannedData?.entries[entryHash]?.prefix || 'bum',
+                referenced_files: referenced_files.length > 0 ? referenced_files : (scannedData?.entries[entryHash]?.referenced_files || [])
+              };
+            }
+            
+            setScannedData(convertedData);
+          }
+        }
         
         // Update UI prefix tracking
         const newAppliedPrefixes = new Map(appliedPrefixes);
@@ -504,6 +654,51 @@ const Bumpath = () => {
     data.rel_path.toLowerCase().includes(binFilter.toLowerCase())
   );
 
+  // Helper function to clean path by removing prefix and normalizing
+  const cleanPath = useCallback((path) => {
+    if (!path) return path;
+    // Remove any prefix at the start (e.g., "bum/Characters/..." -> "Characters/...")
+    let cleaned = path.replace(/^[^\/\\]+\/(assets|data|characters|particles|materials)/i, '$1');
+    // Remove leading 'assets/' or 'data/' if present for cleaner display
+    cleaned = cleaned.replace(/^(assets|data)[\/\\]/i, '');
+    // Normalize to lowercase for consistency
+    return cleaned.toLowerCase();
+  }, []);
+
+  // Helper function to get display name for entry
+  const getEntryDisplayName = useCallback((entryHash, entryData) => {
+    // Priority 1: Use entry type name if available (like VFXSystemDefinitionData)
+    if (entryData.type_name) {
+      return entryData.type_name;
+    }
+    
+    // Priority 2: Try to get a better name from referenced files (show actual file paths)
+    // Referenced files should contain the original paths without prefix
+    if (entryData.referenced_files && entryData.referenced_files.length > 0) {
+      // Use the first referenced file path
+      const firstFile = entryData.referenced_files[0];
+      if (firstFile && firstFile.path) {
+        return cleanPath(firstFile.path);
+      }
+    }
+    
+    // Priority 3: If name is already a proper path (not a hash), use it (but clean prefix)
+    const name = entryData.name || '';
+    
+    // Check if name is just a hash (8 hex characters) or starts with "Entry_"
+    const isHash = /^[0-9a-f]{8}$/i.test(name);
+    const isEntryHash = name.startsWith('Entry_') && /^Entry_[0-9a-f]{8}$/i.test(name);
+    
+    // If name is empty, same as hash, or looks like a hash, use fallback
+    if (isHash || isEntryHash || !name || name === entryHash) {
+      // Final fallback: show the hash but indicate it's an entry
+      return `Entry_${entryHash}`;
+    }
+    
+    // Clean prefix from name if present
+    return cleanPath(name);
+  }, [cleanPath]);
+
   // Filter scanned entries based on missing files only
   const filteredEntries = scannedData ? Object.entries(scannedData.entries).filter(([hash, data]) => {
     if (!showMissingOnly) return true;
@@ -594,6 +789,7 @@ const Bumpath = () => {
               startIcon={<CheckBoxIcon />}
               onClick={handleSelectAll}
               disabled={!scannedData || Object.keys(scannedData.entries).length === 0}
+              data-bumpath-select-all
               sx={{ 
                 borderColor: '#10b981', 
                 color: '#10b981',
@@ -707,7 +903,7 @@ const Bumpath = () => {
             flexDirection: 'column'
           }}>
             {/* Source Directories */}
-            <Box sx={{ p: 2, borderBottom: '1px solid var(--glass-border)' }}>
+            <Box sx={{ p: 2, borderBottom: '1px solid var(--glass-border)' }} data-bumpath-source-dirs>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                 <SourceIcon sx={{ 
                   color: 'var(--accent)',
@@ -822,7 +1018,7 @@ const Bumpath = () => {
             </Box>
 
             {/* Source BINs */}
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }} data-bumpath-bin-list>
               <Box sx={{ p: 2, borderBottom: '1px solid var(--glass-border)' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1125,7 +1321,7 @@ const Bumpath = () => {
                                 flex: '1 1 auto',
                                 minWidth: 0
                               }}>
-                                {entryData.name}
+                                {getEntryDisplayName(entryHash, entryData)}
                               </Typography>
                               <Box sx={{ 
                                 backgroundColor: 'rgba(6, 182, 212, 0.1)',
@@ -1270,6 +1466,7 @@ const Bumpath = () => {
             size="small"
             value={prefixText}
             onChange={handlePrefixTextChange}
+            data-bumpath-prefix
             sx={{
               width: '100px',
               '& .MuiOutlinedInput-root': { 
@@ -1349,6 +1546,7 @@ const Bumpath = () => {
             variant="outlined"
             startIcon={<FolderIcon />}
             onClick={handleSelectOutputDir}
+            data-bumpath-output
             sx={{ 
               borderColor: '#06b6d4', 
               color: '#06b6d4',
@@ -1388,6 +1586,7 @@ const Bumpath = () => {
             startIcon={isProcessing ? <CircularProgress size={16} /> : <PlayArrowIcon />}
             onClick={handleProcess}
             disabled={isProcessing || !scannedData || !outputPath}
+            data-bumpath-process
             sx={{ 
               borderColor: '#f97316', 
               color: '#f97316',
@@ -1474,7 +1673,12 @@ const Bumpath = () => {
 
             <Button
               variant="outlined"
-              onClick={() => setSettingsExpanded(!settingsExpanded)}
+              onClick={() => {
+                setSettingsExpanded(!settingsExpanded);
+                // Reset auto-opened flag when manually toggled
+                setSettingsAutoOpened(false);
+              }}
+              data-bumpath-settings
               sx={{
                 borderColor: '#6b7280',
                 color: '#6b7280',
@@ -1517,14 +1721,16 @@ const Bumpath = () => {
         </Box>
 
         {/* Collapsible Settings Panel */}
-        <Box sx={{ 
-          ...glassPanelSx,
-          borderTop: '1px solid var(--glass-border)',
-          overflow: 'hidden',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          maxHeight: settingsExpanded ? '120px' : '0px',
-          opacity: settingsExpanded ? 1 : 0
-        }}>
+        <Box 
+          data-bumpath-settings-panel
+          sx={{ 
+            ...glassPanelSx,
+            borderTop: '1px solid var(--glass-border)',
+            overflow: 'hidden',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            maxHeight: settingsExpanded ? '120px' : '0px',
+            opacity: settingsExpanded ? 1 : 0
+          }}>
           <Box sx={{ 
             p: 2,
             display: 'flex',
@@ -1726,6 +1932,7 @@ const Bumpath = () => {
                 readOnly: true,
               }}
               helperText="Hash files are automatically managed. Use Settings page to download/update hash files."
+              data-bumpath-hash-dir
               sx={{
                 '& .MuiOutlinedInput-root': { 
                   color: 'var(--accent)',
@@ -1756,6 +1963,470 @@ const Bumpath = () => {
         logs={consoleLogs}
         onRefresh={fetchLogs}
       />
+
+      {/* Floating Celestia trigger button */}
+      {!showCelestiaGuide && (
+        <Tooltip title="Celestia guide" placement="left" arrow>
+          <IconButton
+            onClick={() => setShowCelestiaGuide(true)}
+            aria-label="Open Celestia guide"
+            sx={{
+              position: 'fixed',
+              bottom: 90,
+              right: 24,
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              zIndex: 4500,
+              background: 'linear-gradient(135deg, var(--accent2), color-mix(in srgb, var(--accent2), transparent 35%))',
+              color: 'var(--text)',
+              border: '1px solid rgba(255,255,255,0.6)',
+              boxShadow: '0 8px 22px rgba(0,0,0,0.35), 0 0 8px color-mix(in srgb, var(--accent2), transparent 45%)',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: '0 10px 26px rgba(0,0,0,0.45), 0 0 12px color-mix(in srgb, var(--accent2), transparent 30%)',
+                background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent2), transparent 10%), var(--accent2))'
+              },
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <Box component="span" sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1 }}>!</Box>
+          </IconButton>
+        </Tooltip>
+      )}
+
+      {/* Simulated BIN List Overlay for Tutorial - Show on BIN list step (step index 1) */}
+      {showCelestiaGuide && celestiaStepIndex === 1 && binListHighlightRect && (
+        <>
+          <Box
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              pointerEvents: 'none',
+              zIndex: 1000,
+            }}
+          >
+            {/* Simulated BIN list - positioned to match highlight size exactly */}
+            <Box
+              sx={{
+                position: 'fixed',
+                left: `${binListHighlightRect.left}px`,
+                top: `${binListHighlightRect.top}px`,
+                width: `${binListHighlightRect.width}px`,
+                height: `${binListHighlightRect.height}px`,
+                ...glassPanelSx,
+                opacity: 0.95,
+                pointerEvents: 'none',
+                border: '2px solid var(--accent)',
+                boxShadow: '0 0 20px rgba(139, 92, 246, 0.5)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Simulated BIN list content - sized to match highlight */}
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+                {/* Simulated header */}
+                <Box sx={{ p: 2, borderBottom: '1px solid var(--glass-border)', flexShrink: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <FormatListBulletedIcon sx={{ 
+                        color: 'var(--accent)',
+                        fontSize: '1.2rem'
+                      }} />
+                      <Typography variant="h6" sx={{ 
+                        color: 'var(--accent)',
+                        fontSize: '1rem'
+                      }}>
+                        Source BINs:
+                      </Typography>
+                    </Box>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 1,
+                      px: 1.5,
+                      py: 0.5,
+                      borderRadius: 1,
+                      backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                      border: '1px solid rgba(139, 92, 246, 0.2)'
+                    }}>
+                      <Typography variant="body2" sx={{ 
+                        color: '#8b5cf6',
+                        fontSize: '0.7rem',
+                        fontWeight: '600'
+                      }}>
+                        {simulatedBinSelected ? '1' : '0'} / 3 selected
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Box>
+                
+                {/* Simulated BIN list */}
+                <Box sx={{ flex: 1, overflow: 'auto', p: 0.5 }}>
+                <List dense sx={{ py: 0 }}>
+                  {[
+                    { path: 'data\\characters\\aatrox\\skins\\skin0', ext: 'bin', selected: simulatedBinSelected, animateClick: true },
+                    { path: 'data\\characters\\aatrox\\skins\\skin1', ext: 'bin', selected: false, animateClick: false },
+                    { path: 'data\\characters\\aatrox\\skins\\skin3', ext: 'bin', selected: false, animateClick: false },
+                  ].map((bin, idx) => (
+                  <ListItem 
+                    key={idx}
+                    sx={{ 
+                      px: 1, 
+                      py: 0.75,
+                      minHeight: 'auto',
+                      backgroundColor: idx % 2 === 0 ? 'rgba(139, 92, 246, 0.02)' : 'transparent',
+                      borderRadius: '4px',
+                      mb: 0.25,
+                      position: 'relative',
+                    }}
+                  >
+                    {/* Animated click indicator for skin0 */}
+                    {bin.animateClick && !simulatedBinSelected && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          left: '8px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(139, 92, 246, 0.3)',
+                          border: '2px solid var(--accent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          animation: 'clickPulse 1.5s ease-in-out infinite',
+                          zIndex: 1,
+                          '@keyframes clickPulse': {
+                            '0%, 100%': {
+                              transform: 'translateY(-50%) scale(1)',
+                              opacity: 1,
+                            },
+                            '50%': {
+                              transform: 'translateY(-50%) scale(1.3)',
+                              opacity: 0.6,
+                            },
+                          },
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: 'var(--accent)',
+                          }}
+                        />
+                      </Box>
+                    )}
+                    <Checkbox
+                      checked={bin.selected}
+                      sx={{ 
+                        color: '#8b5cf6',
+                        '&.Mui-checked': { 
+                          color: '#7c3aed',
+                        },
+                        p: 0.25,
+                        mr: 1,
+                        position: 'relative',
+                        zIndex: 2,
+                        '& .MuiSvgIcon-root': {
+                          fontSize: '1.1rem'
+                        },
+                        transition: 'all 0.3s ease',
+                      }}
+                    />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.25 }}>
+                        <Typography variant="body2" sx={{ 
+                          color: 'var(--accent2)',
+                          fontSize: '0.65rem',
+                          opacity: 0.7,
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}>
+                          {bin.path.split('\\').slice(0, -1).join('\\')}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="body2" sx={{ 
+                          color: 'var(--accent)',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}>
+                          {bin.path.split('\\').pop()}
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          color: '#06b6d4',
+                          fontSize: '0.7rem',
+                          fontWeight: '700',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                          px: 0.5,
+                          py: 0.25,
+                          borderRadius: '3px'
+                        }}>
+                          .{bin.ext}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    </ListItem>
+                  ))}
+                </List>
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+          
+          {/* Auto-click animation effect - mouse cursor click (matches clickPulse position) */}
+          {celestiaStepIndex === 1 && !simulatedBinSelected && binListHighlightRect && (
+            <Box
+              sx={{
+                position: 'fixed',
+                left: `${binListHighlightRect.left + 4 + 8}px`, // Container padding (4px) + ListItem px:1 (8px) = checkbox position
+                top: `${binListHighlightRect.top + 64 + 6 + 11}px`, // Header (~64px) + ListItem py:0.75 (6px) + checkbox center (~11px)
+                width: '20px',
+                height: '20px',
+                pointerEvents: 'none',
+                zIndex: 1001,
+                animation: 'autoClick 2s ease-in-out 1',
+                '@keyframes autoClick': {
+                  '0%': {
+                    opacity: 0,
+                    transform: 'scale(0.8)',
+                  },
+                  '30%': {
+                    opacity: 1,
+                    transform: 'scale(1.2)',
+                  },
+                  '50%': {
+                    opacity: 1,
+                    transform: 'scale(0.9)',
+                  },
+                  '100%': {
+                    opacity: 0,
+                    transform: 'scale(1)',
+                  },
+                },
+              }}
+              onAnimationEnd={() => {
+                setTimeout(() => setSimulatedBinSelected(true), 200);
+              }}
+            >
+              <Box
+                sx={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(139, 92, 246, 0.6)',
+                  border: '2px solid var(--accent)',
+                  boxShadow: '0 0 10px rgba(139, 92, 246, 0.8)',
+                }}
+              />
+            </Box>
+          )}
+        </>
+      )}
+
+      {/* Simulated Entries Overlay for Tutorial - Show on Select All step (step index 2) */}
+      {showCelestiaGuide && celestiaStepIndex === 2 && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: 'none',
+            zIndex: 1000,
+          }}
+        >
+          {/* Simulated entries in the right panel - positioned to match actual right panel */}
+          <Box
+            sx={{
+              position: 'absolute',
+              left: '414px', // 64px (navbar) + 350px (left panel)
+              right: 0,
+              top: '60px', // Top bar height
+              bottom: 0,
+              ...glassPanelSx,
+              p: 1,
+              opacity: 0.95,
+              pointerEvents: 'none',
+              border: '2px solid var(--accent)',
+              boxShadow: '0 0 20px rgba(139, 92, 246, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <List dense sx={{ py: 0 }}>
+              {[
+                { id: '00276f1a', prefix: 'bum' },
+                { id: '012770ad', prefix: 'bum' },
+                { id: '1bb05ac9', prefix: 'bum' },
+                { id: '1fb3af50', prefix: 'bum' },
+                { id: '21b3b276', prefix: 'bum' },
+                { id: '22b3b409', prefix: 'bum' },
+                { id: '23ac426b', prefix: 'bum' },
+                { id: '27f20d91', prefix: 'bum' },
+                { id: '2822d7b8', prefix: 'bum' },
+                { id: '2c0d8728', prefix: 'bum' },
+              ].map((entry, idx) => (
+                <ListItem 
+                  key={idx}
+                  sx={{ 
+                    px: 1,
+                    py: 0.5,
+                    borderBottom: '1px solid var(--glass-border)',
+                    '&:hover': { backgroundColor: 'color-mix(in srgb, var(--accent2), transparent 95%)' }
+                  }}
+                >
+                  <Box sx={{ width: '100%' }}>
+                    {/* Entry Header */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <IconButton 
+                        size="small"
+                        sx={{ 
+                          color: '#06b6d4',
+                          backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                          borderRadius: '6px',
+                          width: 24,
+                          height: 24,
+                          p: 0.5,
+                        }}
+                      >
+                        <ChevronRightIcon sx={{ fontSize: '0.9rem' }} />
+                      </IconButton>
+                      
+                      <Checkbox
+                        checked={true}
+                        sx={{ 
+                          color: '#10b981',
+                          '&.Mui-checked': { 
+                            color: '#059669',
+                          },
+                          p: 0.25,
+                          mr: 1,
+                          '& .MuiSvgIcon-root': {
+                            fontSize: '1.1rem'
+                          },
+                        }}
+                      />
+                      
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25, flexWrap: 'wrap' }}>
+                          <Typography variant="body2" sx={{ 
+                            color: 'var(--accent)',
+                            fontSize: '0.7rem',
+                            fontWeight: '600',
+                            fontFamily: 'JetBrains Mono, monospace',
+                            flex: '1 1 auto',
+                            minWidth: 0
+                          }}>
+                            {entry.id}
+                          </Typography>
+                          <Box sx={{ 
+                            backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                            border: '1px solid rgba(6, 182, 212, 0.2)',
+                            borderRadius: '3px',
+                            px: 0.5,
+                            py: 0.25,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            flex: '0 0 auto'
+                          }}>
+                            <Typography variant="body2" sx={{ 
+                              color: '#06b6d4',
+                              fontSize: '0.65rem',
+                              fontWeight: '600',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              lineHeight: 1,
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {entry.prefix}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        <Typography variant="body2" sx={{ 
+                          color: 'var(--accent2)',
+                          fontSize: '0.65rem',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          opacity: 0.7,
+                          display: 'block',
+                          width: '100%'
+                        }}>
+                          ID: {entry.id}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        </Box>
+      )}
+
+      {/* Celestia Guide */}
+      {showCelestiaGuide && (
+        <CelestiaGuide
+          id="bumpath-guide"
+          onStepChange={(stepIndex) => setCelestiaStepIndex(stepIndex)}
+          steps={[
+            {
+              title: "Source Directories",
+              text: "Add folders containing your mod files here. These are the directories where your modified game files (like .bin files) are located. Bumpath will scan these folders to find files that need to be repathed. You can add multiple source directories and reorder them - files are processed in the order listed.",
+              targetSelector: "[data-bumpath-source-dirs]",
+              padding: 15,
+            },
+            {
+              title: "Source BINs List",
+              text: "After adding source directories, BIN files will appear in this list. Select your main BIN file - this is usually skin0.bin or the primary BIN file for your mod. Click the checkbox next to the BIN file you want to scan. The main BIN file typically contains references to all the other files in your mod.",
+              targetSelector: "[data-bumpath-bin-list]",
+              padding: 15,
+            },
+            {
+              title: "Select All Entries",
+              text: "After scanning your BIN file, entries will appear in the right panel. Click 'Select All' to select all entries that need to be repathed. This ensures all file references in your mod are updated with the prefix, preventing broken file paths and ensuring your mod works correctly.",
+              targetSelector: "[data-bumpath-select-all]",
+              padding: 15,
+            },
+            {
+              title: "Prefix",
+              text: "The prefix is CRITICAL for preventing your mod from breaking. When you set a prefix (like 'bum'), all file paths will be moved to 'assets/bum/path/to/file' instead of 'assets/path/to/file'. This prevents conflicts with the original game files and ensures your mod files are loaded correctly. Without a prefix, your mod may break when the game updates or when other mods are installed. Always use a unique prefix for your mod!",
+              targetSelector: "[data-bumpath-prefix]",
+              padding: 15,
+            },
+            {
+              title: "Output Directory",
+              text: "This is where the repathed files will be saved. Select a folder where you want the processed files to be written. The output directory should be different from your source directories to avoid overwriting your original mod files. Typically, this would be your League of Legends mod folder or a staging directory.",
+              targetSelector: "[data-bumpath-output]",
+              padding: 15,
+            },
+            {
+              title: "Process Button",
+              text: "Click this button to start the repathing process. Bumpath will scan the selected BIN files, apply the prefix to all file paths (moving them to assets/[prefix]/...), and write the modified files to the output directory. Make sure you have selected source directories, chosen your main BIN file, selected all entries, set a prefix, and chosen an output directory before processing.",
+              targetSelector: "[data-bumpath-process]",
+              padding: 15,
+            },
+            {
+              title: "Settings",
+              text: "These settings control how Bumpath processes your files. 'Ignore Missing Files' should usually be ON - it prevents errors when some referenced files don't exist. 'Combine Linked BINs to Source BINs' should also typically be ON - it ensures all linked BIN files are properly combined with your source BIN. Most users should keep both of these enabled for the best results. The settings panel can be toggled open and closed using the gear icon button.",
+              targetSelector: "[data-bumpath-settings-panel]",
+              padding: 15,
+            },
+          ]}
+          onClose={() => {
+            setShowCelestiaGuide(false);
+          }}
+        />
+      )}
     </Box>
   );
 };

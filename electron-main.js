@@ -366,6 +366,9 @@ function createWindow() {
       // Wait a moment for cleanup
       await new Promise(resolve => setTimeout(resolve, 500));
 
+      // Clear saved bin paths before quitting
+      clearSavedBinPaths();
+
       // Now actually close the window
       console.log('🔄 Destroying window and quitting app...');
       try { mainWindow.destroy(); } catch {}
@@ -610,6 +613,23 @@ const savePrefs = (prefs) => {
     fs.writeFileSync(prefsPath, JSON.stringify(prefs, null, 2));
   } catch (error) {
     console.error('Error saving preferences:', error);
+  }
+};
+
+// Clear saved bin paths on app quit
+const clearSavedBinPaths = () => {
+  try {
+    const prefs = loadPrefs();
+    // Clear all saved bin paths (shared and individual)
+    prefs.SharedLastBinPath = '';
+    prefs.PaintLastBinPath = '';
+    prefs.PortLastTargetBinPath = '';
+    prefs.PortLastDonorBinPath = '';
+    prefs.VFXHubLastBinPath = '';
+    savePrefs(prefs);
+    console.log('🧹 Cleared saved bin paths on app quit');
+  } catch (error) {
+    console.error('Error clearing saved bin paths:', error);
   }
 };
 
@@ -1195,6 +1215,8 @@ app.on('before-quit', async (e) => {
       await stopBackendService();
       // Clean up _MEI* folders on app close
       cleanupMeiFolders();
+      // Clear saved bin paths before quitting (only when actually shutting down)
+      clearSavedBinPaths();
       return;
     }
 
@@ -1215,6 +1237,8 @@ app.on('before-quit', async (e) => {
       await stopBackendService();
       // Clean up _MEI* folders on app close
       cleanupMeiFolders();
+      // Clear saved bin paths before quitting (only when actually shutting down)
+      clearSavedBinPaths();
       return;
     }
 
@@ -1241,6 +1265,8 @@ app.on('before-quit', async (e) => {
       await stopBackendService();
       // Clean up _MEI* folders on app close
       cleanupMeiFolders();
+      // Clear saved bin paths before quitting (only when actually shutting down)
+      clearSavedBinPaths();
       const w = win; // reference before async quit
       try { w?.destroy?.(); } catch {}
       app.quit();
@@ -1258,6 +1284,8 @@ app.on('before-quit', async (e) => {
     await stopBackendService();
     // Clean up _MEI* folders on app close
     cleanupMeiFolders();
+    // Clear saved bin paths before quitting (only when actually shutting down)
+    clearSavedBinPaths();
   }
 });
 

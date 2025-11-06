@@ -418,8 +418,8 @@ const parseValueFloat = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (/constantValue:\s*f32\s*=/i.test(line)) {
-      const valueMatch = line.match(/constantValue:\s*f32\s*=\s*([0-9.eE+-]+)/i);
+    if (/constantvalue:\s*f32\s*=/i.test(line)) {
+      const valueMatch = line.match(/constantvalue:\s*f32\s*=\s*([0-9.eE+-]+)/i);
       if (valueMatch) {
         const value = parseFloat(valueMatch[1]);
         if (!isNaN(value)) {
@@ -462,7 +462,7 @@ const parseValueColor = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (/constantValue:\s*vec4\s*=/i.test(line)) {
+    if (/constantvalue:\s*vec4\s*=/i.test(line)) {
       const vecStr = line.split('=')[1];
       const cleanStr = vecStr.replace(/[{}]/g, '').trim();
       if (cleanStr) {
@@ -471,7 +471,7 @@ const parseValueColor = (lines, startLine) => {
           valueColor.constantValue = values;
         }
       }
-    } else if (/dynamics:\s*pointer\s*=\s*VfxAnimatedColorVariableData\s*\{/i.test(line)) {
+    } else if (/dynamics:\s*pointer\s*=\s*vfxanimatedcolorvariabledata\s*\{/i.test(line)) {
       valueColor.dynamics = parseAnimatedColorVariableData(lines, i);
     }
 
@@ -507,7 +507,7 @@ const parseValueVector3 = (lines, startLine) => {
     const closeBrackets = (line.match(/}/g) || []).length;
     bracketDepth += openBrackets - closeBrackets;
 
-    if (/constantValue:\s*vec3\s*=/i.test(line)) {
+    if (/constantvalue:\s*vec3\s*=/i.test(line)) {
       const vecStr = line.split('=')[1];
       const cleanStr = vecStr.replace(/[{}]/g, '').trim();
       if (cleanStr) {
@@ -516,7 +516,7 @@ const parseValueVector3 = (lines, startLine) => {
           valueVector3.constantValue = values;
         }
       }
-    } else if (/dynamics:\s*pointer\s*=\s*VfxAnimatedVector3fVariableData\s*\{/i.test(line)) {
+    } else if (/dynamics:\s*pointer\s*=\s*vfxanimatedvector3fvariabledata\s*\{/i.test(line)) {
       valueVector3.dynamics = parseAnimatedVector3VariableData(lines, i);
     }
 
