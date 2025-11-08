@@ -1,7 +1,7 @@
 {
   "name": "quartz",
   "productName": "Quartz",
-  "version": "1.1.7",
+  "version": "1.1.9",
   "description": "Quartz - League of Legends Modding Suite",
   "homepage": "./",
   "main": "electron-main.js",
@@ -125,6 +125,7 @@
     "electron-color-picker": "^0.2.0",
     "electron-is-dev": "^2.0.0",
     "electron-store": "^10.1.0",
+    "electron-updater": "^6.1.7",
     "fraction.js": "^5.2.2",
     "lodash": "^4.17.21",
     "lucide-react": "^0.539.0",
@@ -134,8 +135,8 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.1",
     "react-scripts": "5.0.1",
-    "ts-ritofile": "^1.4.0",
-    "electron-updater": "^6.1.7"
+    "react-window": "^2.2.3",
+    "ts-ritofile": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

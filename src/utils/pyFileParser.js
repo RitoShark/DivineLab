@@ -382,8 +382,8 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
       try { console.log(`[recolor] Searching for constantValue in ${colorType} from line ${colorProp.startLine} to ${searchEnd}`); } catch {}
       for (let i = colorProp.startLine; i < searchEnd; i++) {
         if (!lines[i]) continue;
-        // Try multiple patterns to match constantValue/ConstantValue
-        const lineMatches = /[Cc]onstantValue:\s*vec4\s*=/i.test(lines[i]);
+        // Try multiple patterns to match constantValue/ConstantValue (case-insensitive)
+        const lineMatches = /constantvalue:\s*vec4\s*=/i.test(lines[i]);
         if (lineMatches) {
           try { console.log(`[recolor] Found constantValue line at index ${i}:`, lines[i].trim()); } catch {}
           const indent = lines[i].match(/^(\s*)/)[1];
@@ -407,8 +407,8 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
           
           // Preserve original case of constantValue
           const originalLine = lines[i];
-          const caseMatch = originalLine.match(/([Cc]onstantValue)/i);
-          const casePreserved = caseMatch ? caseMatch[1] : 'constantValue';
+          const caseMatch = originalLine.match(/(constantvalue)/i);
+          const casePreserved = caseMatch ? originalLine.match(/constantvalue/i)[0] : 'constantValue';
           const oldValue = lines[i];
           lines[i] = `${indent}${casePreserved}: vec4 = { ${writeColor[0]}, ${writeColor[1]}, ${writeColor[2]}, ${writeColor[3]} }`;
           try { console.log(`[recolor] Updated ${colorType} constantValue at line ${i}:`, oldValue.trim(), '->', lines[i].trim()); } catch {}
@@ -457,8 +457,8 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
           
           // Preserve original case of fresnelColor
           const originalLine = lines[i];
-          const caseMatch = originalLine.match(/(fresnelColor)/i);
-          const casePreserved = caseMatch ? caseMatch[1] : 'fresnelColor';
+          const caseMatch = originalLine.match(/(fresnelcolor)/i);
+          const casePreserved = caseMatch ? originalLine.match(/fresnelcolor/i)[0] : 'fresnelColor';
           lines[i] = `${indent}${casePreserved}: vec4 = { ${writeColor[0]}, ${writeColor[1]}, ${writeColor[2]}, ${writeColor[3]} }`;
           break;
         }
@@ -701,7 +701,7 @@ const updateColorInPyContent = (lines, systems, systemKey, emitterRef, colorType
     let valueIndex = 0;
     
     for (let lineIndex = colorProp.startLine; lineIndex <= colorProp.endLine; lineIndex++) {
-      if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(lines[lineIndex]) || /Values:\s*list\[vec4\]\s*=\s*\{/i.test(lines[lineIndex])) {
+      if (/values:\s*list\[vec4\]\s*=\s*\{/i.test(lines[lineIndex])) {
         inValues = true;
         continue;
       }

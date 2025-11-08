@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Port.css'; // Reuse existing styles
 import themeManager from '../utils/themeManager.js';
 import electronPrefs from '../utils/electronPrefs.js';
-import { Box, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
-import { Apps as AppsIcon, Add as AddIcon, Folder as FolderIcon } from '@mui/icons-material';
+import { Box, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography, Select, MenuItem, FormControl, Checkbox, FormControlLabel } from '@mui/material';
+import { Apps as AppsIcon, Add as AddIcon, Folder as FolderIcon, Warning as WarningIcon } from '@mui/icons-material';
 import GlowingSpinner from '../components/GlowingSpinner';
 import { ToPyWithPath } from '../utils/fileOperations.js';
 import { loadFileWithBackup, createBackup } from '../utils/backupManager.js';
@@ -82,6 +82,69 @@ const findProjectRoot = (startPath) => {
   return startPath;
 };
 
+// Memoized Input component to prevent parent re-renders on every keystroke
+const MemoizedInput = React.memo(({
+  value,
+  onChange,
+  type = 'text',
+  placeholder = '',
+  min,
+  max,
+  style = {},
+  onKeyPress,
+  autoFocus = false
+}) => {
+  const [localValue, setLocalValue] = useState(value || '');
+  const valueRef = useRef(value || '');
+
+  useEffect(() => {
+    setLocalValue(value || '');
+    valueRef.current = value || '';
+  }, [value]);
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue);
+    valueRef.current = newValue;
+    // Don't call onChange immediately - only update local state
+  };
+
+  const handleBlur = () => {
+    // Sync with parent on blur
+    if (valueRef.current !== value) {
+      const syntheticEvent = {
+        target: { value: valueRef.current }
+      };
+      onChange(syntheticEvent);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (onKeyPress) {
+      onKeyPress(e);
+    }
+    // Also sync on Enter
+    if (e.key === 'Enter') {
+      handleBlur();
+    }
+  };
+
+  return (
+    <input
+      type={type}
+      value={localValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyPress={handleKeyPress}
+      placeholder={placeholder}
+      min={min}
+      max={max}
+      autoFocus={autoFocus}
+      style={style}
+    />
+  );
+});
+
   const VFXHub = () => {
     // Apply saved theme variant (do not force-reset to default)
     React.useEffect(() => {
@@ -113,7 +176,13 @@ const findProjectRoot = (startPath) => {
       `;
       document.head.appendChild(style);
       return () => {
-        document.head.removeChild(style);
+        try {
+          if (style && style.parentNode === document.head) {
+            document.head.removeChild(style);
+          }
+        } catch (e) {
+          // Ignore - may already be removed
+        }
       };
     }, []);
 
@@ -165,6 +234,23 @@ const findProjectRoot = (startPath) => {
   useEffect(() => {
     try { window.__DL_unsavedBin = !fileSaved; } catch {}
   }, [fileSaved]);
+
+  // Clean up large state objects on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Clear large state objects to prevent memory leaks when switching pages
+      setTargetSystems({});
+      setDonorSystems({});
+      setTargetPyContent('');
+      setDonorPyContent('');
+      setAllVfxSystems([]);
+      setSelectedCollection(null);
+      setSelectedDonorSystems(new Set());
+      setSelectedTargetSystems(new Set());
+      
+      console.log('🧹 Cleaned up VFXHub.js memory on unmount');
+    };
+  }, []);
 
   // Modal resize handlers
   const handleMouseDown = (e, handle) => {
@@ -5632,190 +5718,362 @@ const findProjectRoot = (startPath) => {
       )}
 
       {/* New VFX System Modal */}
-      {showNewSystemModal && (
-        <div
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex',
-            alignItems: 'center', justifyContent: 'center', padding: '20px',
-            paddingLeft: '100px'
+      <Dialog
+        open={showNewSystemModal}
+        onClose={() => setShowNewSystemModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+            backdropFilter: 'saturate(180%) blur(20px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+            boxShadow: 'var(--glass-shadow)',
+            borderRadius: 3,
+            overflow: 'hidden',
+          }
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent2), var(--accent))',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 3s ease-in-out infinite',
+            '@keyframes shimmer': {
+              '0%': { backgroundPosition: '200% 0' },
+              '100%': { backgroundPosition: '-200% 0' },
+            },
           }}
-        >
-          <div
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
-              border: '1px solid rgba(255,255,255,0.14)',
-              backdropFilter: 'saturate(200%) blur(20px)',
-              WebkitBackdropFilter: 'saturate(200%) blur(20px)',
-              borderRadius: 12,
-              width: 520,
-              maxWidth: '90%',
+        />
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1.5,
+          pb: 1.5,
+          pt: 2.5,
+          px: 3,
+          borderBottom: '1px solid var(--glass-border)',
+        }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(var(--accent-rgb), 0.15)',
               display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{
-              padding: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.12)',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              background: 'rgba(255,255,255,0.02)'
-            }}>
-              <h2 style={{ margin: 0, color: 'var(--accent)', fontSize: '1.25rem', fontWeight: 600 }}>New VFX System</h2>
-              <button
-                onClick={() => setShowNewSystemModal(false)}
+            <WarningIcon sx={{ color: 'var(--accent)', fontSize: '1.5rem' }} />
+          </Box>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 600, 
+            color: 'var(--accent)',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '1rem',
+          }}>
+            New VFX System
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+              }}>
+                System Name
+              </Typography>
+              <MemoizedInput
+                autoFocus
+                value={newSystemName}
+                onChange={e => setNewSystemName(e.target.value)}
+                placeholder="Enter a unique name (e.g., testname)"
                 style={{
-                  background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
-                  width: 32, height: 32, borderRadius: '50%', color: 'var(--accent)', cursor: 'pointer'
+                  width: '100%',
+                  padding: '8px 12px',
+                  background: 'var(--surface)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
-              >×</button>
-            </div>
-            <div style={{ padding: '1rem 1.25rem', display: 'grid', gap: 12 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.85)' }}>System Name</span>
-                <input
-                  autoFocus
-                  value={newSystemName}
-                  onChange={e => setNewSystemName(e.target.value)}
-                  placeholder="Enter a unique name (e.g., testname)"
-                  style={{
-                    padding: '10px 12px', background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
-                    color: 'var(--accent)', fontSize: '0.95rem'
-                  }}
-                />
-              </label>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>
-                This will create a minimal system with empty emitters list and add a resolver mapping.
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, padding: '0 1.25rem 1.25rem' }}>
-              <button
-                onClick={() => setShowNewSystemModal(false)}
-                style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 6, color: 'var(--text)' }}
-              >Cancel</button>
-              <button
-                onClick={handleCreateNewSystem}
-                style={{ padding: '8px 14px', background: 'linear-gradient(135deg, #6aec96, #1e9b50)', border: 'none', borderRadius: 6, color: 'var(--surface)', fontWeight: 700 }}
-              >Create</button>
-            </div>
-          </div>
-        </div>
-      )}
+              />
+            </Box>
+            <Typography variant="body2" sx={{ 
+              color: 'var(--accent-muted)', 
+              fontSize: '0.75rem',
+              fontStyle: 'italic',
+            }}>
+              This will create a minimal system with empty emitters list and add a resolver mapping.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          pt: 2,
+          borderTop: '1px solid var(--glass-border)',
+          gap: 1.5,
+        }}>
+          <Button
+            onClick={() => setShowNewSystemModal(false)}
+            variant="outlined"
+            sx={{
+              color: 'var(--accent2)',
+              borderColor: 'var(--glass-border)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              px: 2,
+              '&:hover': {
+                borderColor: 'var(--accent)',
+                backgroundColor: 'rgba(var(--accent-rgb), 0.05)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreateNewSystem}
+            variant="contained"
+            sx={{
+              backgroundColor: 'var(--accent)',
+              color: 'var(--surface)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              px: 2.5,
+              '&:hover': {
+                backgroundColor: 'var(--accent2)',
+              },
+            }}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <VFXHubUploadModal />
 
       {/* Idle Particles Modal */}
-      {showIdleParticleModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
+      <Dialog
+        open={showIdleParticleModal}
+        onClose={() => {
+          setShowIdleParticleModal(false);
+          setSelectedSystemForIdle(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+            backdropFilter: 'saturate(180%) blur(20px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+            boxShadow: 'var(--glass-shadow)',
+            borderRadius: 3,
+            overflow: 'hidden',
+          }
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent2), var(--accent))',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 3s ease-in-out infinite',
+            '@keyframes shimmer': {
+              '0%': { backgroundPosition: '200% 0' },
+              '100%': { backgroundPosition: '-200% 0' },
+            },
+          }}
+        />
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1.5,
+          pb: 1.5,
+          pt: 2.5,
+          px: 3,
+          borderBottom: '1px solid var(--glass-border)',
         }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #2a2737 0%, #0b0a0f 100%)',
-            border: '2px solid #ad7e34',
-            borderRadius: '8px',
-            padding: '20px',
-            minWidth: '400px',
-            maxWidth: '500px'
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(var(--accent-rgb), 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <WarningIcon sx={{ color: 'var(--accent)', fontSize: '1.5rem' }} />
+          </Box>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 600, 
+            color: 'var(--accent)',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '1rem',
           }}>
-            <h3 style={{ color: 'var(--accent-muted)', marginBottom: '15px', textAlign: 'center' }}>
-              Add Idle Particles
-            </h3>
-
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
-                VFX System: <strong style={{ color: 'var(--accent-muted)' }}>{selectedSystemForIdle?.name}</strong>
-              </p>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
+            {isEditingIdle ? 'Edit Idle Particles' : 'Add Idle Particles'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="body2" sx={{ 
+              color: 'var(--accent2)', 
+              lineHeight: 1.6,
+              fontSize: '0.875rem',
+            }}>
+              VFX System: <strong style={{ color: 'var(--accent)' }}>{selectedSystemForIdle?.name}</strong>
+            </Typography>
+            
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+              }}>
                 {isEditingIdle ? 'Select or enter a new bone for this idle particle:' : 'Select bone to attach particles:'}
-              </p>
+              </Typography>
+              <FormControl fullWidth size="small">
+                <Select
+                  value={selectedBoneName}
+                  onChange={(e) => setSelectedBoneName(e.target.value)}
+                  sx={{
+                    color: 'var(--accent)',
+                    backgroundColor: 'var(--surface)',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--glass-border)',
+                    },
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '& .MuiSvgIcon-root': {
+                      color: 'var(--accent)',
+                    },
+                  }}
+                >
+                  {BONE_NAMES.map(bone => (
+                    <MenuItem key={bone} value={bone} sx={{ color: 'var(--accent2)' }}>
+                      {bone}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
 
-              <select
-                value={selectedBoneName}
-                onChange={(e) => setSelectedBoneName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid #ad7e34',
-                  borderRadius: '4px',
-                  fontSize: '14px'
-                }}
-              >
-                {BONE_NAMES.map(bone => (
-                  <option key={bone} value={bone}>{bone}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px' }}>
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+              }}>
                 Or type a custom bone name:
-              </p>
-              <input
+              </Typography>
+              <MemoizedInput
                 value={customBoneName}
                 onChange={(e) => setCustomBoneName(e.target.value)}
                 placeholder={isEditingIdle && existingIdleBone ? `Current: ${existingIdleBone}` : 'e.g., r_weapon, C_Head_Jnt, etc.'}
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
-                  color: 'var(--accent-muted)',
-                  border: '1px solid #ad7e34',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                  color: 'var(--accent)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
-            </div>
+            </Box>
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => {
-                  setShowIdleParticleModal(false);
-                  setSelectedSystemForIdle(null);
-                }}
-                style={{
-                  padding: '8px 16px',
-                  background: 'var(--text-2)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmIdleParticles}
-                style={{
-                  padding: '8px 16px',
-                  background: 'linear-gradient(135deg, #ecb96a, #ad7e34)',
-                  color: 'var(--surface)',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
-                }}
-              >
-                {isEditingIdle ? 'Update Idle Bone' : 'Add Idle Particles'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            {isEditingIdle && existingIdleBone && (
+              <Box sx={{ 
+                backgroundColor: 'rgba(var(--accent-rgb), 0.08)',
+                border: '1px solid rgba(var(--accent-rgb), 0.2)',
+                borderRadius: 1.5,
+                p: 2,
+              }}>
+                <Typography variant="body2" sx={{ 
+                  color: 'var(--accent2)', 
+                  fontSize: '0.8rem',
+                }}>
+                  Current bone: <strong style={{ color: 'var(--accent)' }}>{existingIdleBone}</strong>
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          pt: 2,
+          borderTop: '1px solid var(--glass-border)',
+          gap: 1.5,
+        }}>
+          <Button
+            onClick={() => {
+              setShowIdleParticleModal(false);
+              setSelectedSystemForIdle(null);
+            }}
+            variant="outlined"
+            sx={{
+              color: 'var(--accent2)',
+              borderColor: 'var(--glass-border)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              px: 2,
+              '&:hover': {
+                borderColor: 'var(--accent)',
+                backgroundColor: 'rgba(var(--accent-rgb), 0.05)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmIdleParticles}
+            variant="contained"
+            sx={{
+              backgroundColor: 'var(--accent)',
+              color: 'var(--surface)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              px: 2.5,
+              '&:hover': {
+                backgroundColor: 'var(--accent2)',
+              },
+            }}
+          >
+            {isEditingIdle ? 'Update Idle Bone' : 'Add Idle Particles'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Matrix Editor Modal */}
       {showMatrixModal && (

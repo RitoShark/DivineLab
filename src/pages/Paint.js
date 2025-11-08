@@ -70,6 +70,7 @@ import {
   handleModeChange
 } from '../utils/stateUtils';
 import electronPrefs from '../utils/electronPrefs.js';
+import { FixedSizeList } from 'react-window';
 
 
 // Import necessary Node.js modules for Electron
@@ -151,6 +152,96 @@ const colorReducer = (state, action) => {
 };
 
 
+
+// Feature flag for virtualization - set to false to disable if issues occur
+// DISABLED BY DEFAULT for safety - enable after testing
+// Note: Paint.js uses DOM manipulation, so virtualization requires different approach than Port.js
+const ENABLE_VIRTUALIZATION = false;
+// Minimum number of systems before virtualization kicks in (to avoid overhead for small lists)
+const VIRTUALIZATION_THRESHOLD = 20;
+
+// Memoized TextField component to prevent parent re-renders on every keystroke
+const MemoizedSearchInput = React.memo(({
+  value,
+  onChange,
+  placeholder,
+  inputRef,
+  sx,
+  style
+}) => {
+  const [localValue, setLocalValue] = useState(value || '');
+  const valueRef = useRef(value || '');
+  const debounceTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    setLocalValue(value || '');
+    valueRef.current = value || '';
+  }, [value]);
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue);
+    valueRef.current = newValue;
+    
+    // Debounce the onChange call to trigger filtering while typing, but prevent parent re-renders
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    
+    // Call onChange (which triggers filtering) after user stops typing
+    // This allows filtering to happen as they type, but prevents parent re-renders
+    debounceTimeoutRef.current = setTimeout(() => {
+      onChange(newValue);
+    }, 100);
+  };
+
+  const handleBlur = () => {
+    // Clear any pending debounced call
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+      debounceTimeoutRef.current = null;
+    }
+    // Sync with parent on blur
+    if (valueRef.current !== value) {
+      onChange(valueRef.current);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    // Also sync on Enter
+    if (e.key === 'Enter') {
+      // Clear any pending debounced call
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+      handleBlur();
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <TextField
+      placeholder={placeholder}
+      value={localValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyPress={handleKeyPress}
+      inputRef={inputRef}
+      size="small"
+      style={style}
+      sx={sx}
+    />
+  );
+});
 
 const Paint = () => {
   // Core state variables for Python-based approach
@@ -341,7 +432,11 @@ const Paint = () => {
   const [cachedMaterials, setCachedMaterials] = useState({});
   const [isDataCached, setIsDataCached] = useState(false);
   
-
+  // Progressive lazy loading state (only on first load)
+  const [isLazyLoading, setIsLazyLoading] = useState(false);
+  const [lazyLoadProgress, setLazyLoadProgress] = useState({ loaded: 0, total: 0 });
+  const lazyLoadRef = useRef({ isActive: false, loadedSystems: 0, totalSystems: 0, allSystems: null, allMaterials: null, currentFilePath: null });
+  const lazyLoadAnimationFrameRef = useRef(null); // Track pending animation frames
   
   // NEW: CSS to disable all transitions for instant, snappy UI
   useEffect(() => {
@@ -596,6 +691,11 @@ const Paint = () => {
           setProcessingText('Loading converted data...');
           const pyFileContent = loadFileWithBackup(pyFilePath, 'Paint');
           setPyContent(pyFileContent);
+          
+          // Hide spinner before loading - LoadPyFile will handle its own loading state
+          setIsProcessing(false);
+          setProcessingText('');
+          
           LoadPyFile(pyFileContent, lastBinPath);
           setFileCache([]);
           setStatusMessage("File auto-reloaded successfully");
@@ -1263,6 +1363,11 @@ const Paint = () => {
       // Load the Python content with backup
       const pyFileContent = loadFileWithBackup(pyFilePath, 'Paint');
       setPyContent(pyFileContent);
+      
+      // Hide spinner before loading - LoadPyFile will handle its own loading state
+      setIsProcessing(false);
+      setProcessingText('');
+      
       LoadPyFile(pyFileContent, selectedPath);
       setFileCache([]);
 
@@ -1301,6 +1406,163 @@ const Paint = () => {
     }
   };
 
+  // Progressive lazy loader - loads systems in chunks after initial render
+  const progressiveLoadSystems = useCallback(() => {
+    if (!lazyLoadRef.current.isActive || !particleListRef.current) {
+      return;
+    }
+
+    const { allSystems, allMaterials, currentFilePath, loadedSystems, totalSystems } = lazyLoadRef.current;
+    const systemsArray = Object.values(allSystems);
+    const CHUNK_SIZE = 15; // Load 15 systems at a time (increased for faster loading)
+
+    // Calculate how many to load in this chunk
+    const startIndex = loadedSystems;
+    const endIndex = Math.min(startIndex + CHUNK_SIZE, totalSystems);
+    const systemsToLoad = systemsArray.slice(startIndex, endIndex);
+
+    // Use DocumentFragment to batch DOM inserts for better performance
+    const fragment = document.createDocumentFragment();
+    systemsToLoad.forEach(system => {
+      const systemDiv = renderSingleSystem(system, currentFilePath);
+      if (systemDiv) {
+        fragment.appendChild(systemDiv);
+      }
+    });
+    
+    // Single DOM update instead of multiple appends
+    particleListRef.current.appendChild(fragment);
+
+    // Update progress
+    const newLoaded = endIndex;
+    lazyLoadRef.current.loadedSystems = newLoaded;
+    setLazyLoadProgress({ loaded: newLoaded, total: totalSystems });
+
+    // Check if we're done
+    if (newLoaded >= totalSystems) {
+      // All systems loaded - now render materials using DocumentFragment for batching
+      const materialsFragment = document.createDocumentFragment();
+      Object.entries(allMaterials).forEach(([materialKey, material]) => {
+        const materialDiv = document.createElement('div');
+        materialDiv.className = 'Particle-Div';
+        materialDiv.id = `material_${materialKey}`;
+
+        // Create header for material
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'Particle-Title-Div';
+
+        const headerContent = document.createElement('div');
+        headerContent.style.display = 'flex';
+        headerContent.style.alignItems = 'center';
+        headerContent.style.gap = '8px';
+        headerContent.style.cursor = 'pointer';
+        headerContent.style.padding = '4px';
+        headerContent.style.borderRadius = '4px';
+        headerContent.style.transition = 'background-color 0.2s ease';
+
+        const materialCheckbox = document.createElement('input');
+        materialCheckbox.type = 'checkbox';
+        materialCheckbox.className = 'CheckBox';
+        materialCheckbox.style.accentColor = 'var(--accent)';
+        materialCheckbox.style.width = '18px';
+        materialCheckbox.style.height = '18px';
+        materialCheckbox.style.transform = 'translateY(1px)';
+        materialCheckbox.style.border = '1px solid color-mix(in srgb, var(--accent), transparent 60%)';
+        materialCheckbox.style.borderRadius = '4px';
+        materialCheckbox.style.background = 'var(--glass-overlay-light)';
+        materialCheckbox.onchange = (event) => {
+          CheckChildren(materialDiv.children, event.target.checked);
+        };
+
+        const materialNameLabel = document.createElement('div');
+        materialNameLabel.className = 'Label';
+        materialNameLabel.style.flex = '1';
+        materialNameLabel.style.overflow = 'hidden';
+        materialNameLabel.style.textOverflow = 'ellipsis';
+        materialNameLabel.style.color = 'var(--accent-muted)';
+        materialNameLabel.style.fontWeight = '600';
+        materialNameLabel.style.fontSize = '1rem';
+        materialNameLabel.style.textShadow = '0 1px 2px var(--shadow-dark)';
+        materialNameLabel.textContent = material.name || materialKey;
+
+        const materialTypeLabel = document.createElement('div');
+        materialTypeLabel.className = 'Label';
+        materialTypeLabel.style.fontSize = '0.8rem';
+        materialTypeLabel.style.opacity = '0.7';
+        materialTypeLabel.style.color = 'var(--accent-muted)';
+        materialTypeLabel.textContent = '🎨 Material';
+
+        const colorParamCountLabel = document.createElement('div');
+        colorParamCountLabel.className = 'Label';
+        colorParamCountLabel.style.fontSize = '0.8rem';
+        colorParamCountLabel.style.opacity = '0.7';
+        colorParamCountLabel.textContent = `${material.colorParams.length} colors`;
+
+        headerContent.appendChild(materialCheckbox);
+        headerContent.appendChild(materialNameLabel);
+        headerContent.appendChild(materialTypeLabel);
+        headerContent.appendChild(colorParamCountLabel);
+
+        headerContent.onclick = (event) => {
+          if (event.target !== materialCheckbox) {
+            materialCheckbox.checked = !materialCheckbox.checked;
+            CheckChildren(materialDiv.children, materialCheckbox.checked);
+          }
+        };
+
+        headerContent.onmouseenter = () => {
+          headerContent.style.backgroundColor = 'color-mix(in srgb, var(--accent), transparent 90%)';
+        };
+
+        headerContent.onmouseleave = () => {
+          headerContent.style.backgroundColor = 'transparent';
+        };
+
+        headerDiv.appendChild(headerContent);
+        materialDiv.appendChild(headerDiv);
+
+        material.colorParams.forEach((param, paramIndex) => {
+          const paramDiv = createMaterialParamDiv(param, materialKey, paramIndex, currentFilePath);
+          materialDiv.appendChild(paramDiv);
+        });
+
+        materialsFragment.appendChild(materialDiv);
+      });
+      
+      // Single DOM update for all materials
+      particleListRef.current.appendChild(materialsFragment);
+
+      // Done loading
+      lazyLoadRef.current.isActive = false;
+      setIsLazyLoading(false);
+      setLazyLoadProgress({ loaded: totalSystems, total: totalSystems });
+      
+      const totalEmitters = Object.values(allSystems).reduce((total, system) => total + system.emitters.length, 0);
+      const totalMaterials = Object.keys(allMaterials).length;
+      setStatusMessage(`Loaded ${totalSystems} VFX systems with ${totalEmitters} emitters and ${totalMaterials} materials`);
+    } else {
+      // Schedule next chunk - use requestAnimationFrame for smoother updates
+      const scheduleNext = () => {
+        // Cancel any pending animation frame
+        if (lazyLoadAnimationFrameRef.current) {
+          cancelAnimationFrame(lazyLoadAnimationFrameRef.current);
+        }
+        
+        // Use requestAnimationFrame for immediate next frame, or very short timeout
+        if (window.requestAnimationFrame) {
+          lazyLoadAnimationFrameRef.current = requestAnimationFrame(() => {
+            lazyLoadAnimationFrameRef.current = null;
+            // Use a tiny delay to allow browser to paint, but keep it fast
+            setTimeout(() => progressiveLoadSystems(), 0);
+          });
+        } else {
+          setTimeout(() => progressiveLoadSystems(), 0);
+        }
+      };
+      scheduleNext();
+    }
+  }, []);
+
   const LoadPyFile = (pyFileContent, currentFilePath = null) => {
     if (!pyFileContent || !particleListRef.current) return;
 
@@ -1315,11 +1577,24 @@ const Paint = () => {
     const existingPreview = document.getElementById('paint-texture-hover-preview');
     if (existingPreview) existingPreview.remove();
 
-    // Clear existing particles
-    particleListRef.current.innerHTML = "";
+    // Clear existing particles - safe to do here as we're in control
+    if (particleListRef.current) {
+      // Remove children one by one to avoid React conflicts
+      while (particleListRef.current.firstChild) {
+        particleListRef.current.removeChild(particleListRef.current.firstChild);
+      }
+    }
     
     // Clear filter cache since DOM will be rebuilt
     cachedElementsRef.current = null;
+
+    // Stop any ongoing lazy loading and cancel pending animation frames
+    if (lazyLoadAnimationFrameRef.current) {
+      cancelAnimationFrame(lazyLoadAnimationFrameRef.current);
+      lazyLoadAnimationFrameRef.current = null;
+    }
+    lazyLoadRef.current.isActive = false;
+    setIsLazyLoading(false);
 
     // Parse Python content
     const parsedSystems = parsePyFile(pyFileContent);
@@ -1338,8 +1613,6 @@ const Paint = () => {
     const systemKeys = Object.keys(parsedSystems);
     const materialKeys = Object.keys(parsedMaterials);
     
-          // Debug info removed for cleaner console
-    
     if (systemKeys.length === 0 && materialKeys.length === 0) {
       setStatusMessage("Warning: No VFX systems or materials found in this file");
       if (CreateMessage) {
@@ -1352,12 +1625,51 @@ const Paint = () => {
       return;
     }
 
-    renderSystems(parsedSystems, parsedMaterials, currentFilePath);
+    // Determine if we should use lazy loading (only on first load, for files with many systems)
+    const INITIAL_LOAD_COUNT = 20; // Show first 20 systems immediately (increased for faster perceived load)
+    const LAZY_LOAD_THRESHOLD = 25; // Only lazy load if we have more than 25 systems
+    const shouldLazyLoad = systemKeys.length > LAZY_LOAD_THRESHOLD;
 
-    // Count total emitters and materials
-    const totalEmitters = Object.values(parsedSystems).reduce((total, system) => total + system.emitters.length, 0);
-    const totalMaterials = materialKeys.length;
-    setStatusMessage(`Loaded ${systemKeys.length} VFX systems with ${totalEmitters} emitters and ${totalMaterials} materials`);
+    if (shouldLazyLoad) {
+      // Progressive lazy loading: render first N systems immediately, then load rest in background
+      setIsLazyLoading(true);
+      setLazyLoadProgress({ loaded: INITIAL_LOAD_COUNT, total: systemKeys.length });
+      
+      // Store all data for progressive loading
+      lazyLoadRef.current = {
+        isActive: true,
+        loadedSystems: INITIAL_LOAD_COUNT,
+        totalSystems: systemKeys.length,
+        allSystems: parsedSystems,
+        allMaterials: parsedMaterials,
+        currentFilePath: currentFilePath
+      };
+
+      // Render first N systems immediately
+      renderSystems(parsedSystems, {}, currentFilePath, INITIAL_LOAD_COUNT);
+      
+      // Start progressive loading immediately (reduced delay for faster loading)
+      // Cancel any pending animation frame first
+      if (lazyLoadAnimationFrameRef.current) {
+        cancelAnimationFrame(lazyLoadAnimationFrameRef.current);
+      }
+      lazyLoadAnimationFrameRef.current = requestAnimationFrame(() => {
+        lazyLoadAnimationFrameRef.current = null;
+        if (lazyLoadRef.current.isActive) {
+          progressiveLoadSystems();
+        }
+      });
+      
+      setStatusMessage(`Loading ${systemKeys.length} VFX systems... (${INITIAL_LOAD_COUNT} shown, loading rest in background)`);
+    } else {
+      // Normal loading: render everything at once
+      renderSystems(parsedSystems, parsedMaterials, currentFilePath);
+
+      // Count total emitters and materials
+      const totalEmitters = Object.values(parsedSystems).reduce((total, system) => total + system.emitters.length, 0);
+      const totalMaterials = materialKeys.length;
+      setStatusMessage(`Loaded ${systemKeys.length} VFX systems with ${totalEmitters} emitters and ${totalMaterials} materials`);
+    }
 
     // Set status messages for shift modes
     if (mode === 'shift') {
@@ -1370,102 +1682,141 @@ const Paint = () => {
     }
   };
 
-  const renderSystems = (systemsData, materialsData = {}, currentFilePath = null) => {
+  // Helper function to render a single system (for progressive loading)
+  const renderSingleSystem = (system, currentFilePath) => {
+    if (!particleListRef.current) return null;
+
+    const systemDiv = document.createElement('div');
+    systemDiv.className = 'Particle-Div';
+    systemDiv.id = system.key;
+
+    // Create header
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'Particle-Title-Div';
+
+    const headerContent = document.createElement('div');
+    headerContent.style.display = 'flex';
+    headerContent.style.alignItems = 'center';
+    headerContent.style.gap = '8px';
+    headerContent.style.cursor = 'pointer';
+    headerContent.style.padding = '4px';
+    headerContent.style.borderRadius = '4px';
+    headerContent.style.transition = 'background-color 0.2s ease';
+
+    const systemCheckbox = document.createElement('input');
+    systemCheckbox.type = 'checkbox';
+    systemCheckbox.className = 'CheckBox';
+    systemCheckbox.style.accentColor = 'var(--accent)';
+    systemCheckbox.style.width = '18px';
+    systemCheckbox.style.height = '18px';
+    systemCheckbox.style.transform = 'translateY(1px)';
+    systemCheckbox.style.border = '1px solid color-mix(in srgb, var(--accent), transparent 60%)';
+    systemCheckbox.style.borderRadius = '4px';
+    systemCheckbox.style.background = 'var(--glass-overlay-light)';
+    systemCheckbox.onchange = (event) => {
+      CheckChildren(systemDiv.children, event.target.checked);
+    };
+
+    const systemNameLabel = document.createElement('div');
+    systemNameLabel.className = 'Label';
+    systemNameLabel.style.flex = '1';
+    systemNameLabel.style.overflow = 'hidden';
+    systemNameLabel.style.textOverflow = 'ellipsis';
+    systemNameLabel.style.color = 'var(--accent)';
+    systemNameLabel.style.fontWeight = '600';
+    systemNameLabel.style.fontSize = '1rem';
+    systemNameLabel.style.textShadow = '0 1px 2px var(--shadow-dark)';
+    systemNameLabel.textContent = system.name;
+
+    const emitterCountLabel = document.createElement('div');
+    emitterCountLabel.className = 'Label';
+    emitterCountLabel.style.fontSize = '0.8rem';
+    emitterCountLabel.style.opacity = '0.7';
+    emitterCountLabel.textContent = `${system.emitters.length} emitters`;
+
+    headerContent.appendChild(systemCheckbox);
+    headerContent.appendChild(systemNameLabel);
+    headerContent.appendChild(emitterCountLabel);
+
+    // Make the entire header clickable
+    headerContent.onclick = (event) => {
+      // Don't trigger if clicking on the checkbox itself
+      if (event.target !== systemCheckbox) {
+        systemCheckbox.checked = !systemCheckbox.checked;
+        CheckChildren(systemDiv.children, systemCheckbox.checked);
+      }
+    };
+
+    // Add hover effect
+    headerContent.onmouseenter = () => {
+      headerContent.style.backgroundColor = 'color-mix(in srgb, var(--accent), transparent 90%)';
+    };
+
+    headerContent.onmouseleave = () => {
+      headerContent.style.backgroundColor = 'transparent';
+    };
+
+    headerDiv.appendChild(headerContent);
+    systemDiv.appendChild(headerDiv);
+
+    // Create emitters
+    system.emitters.forEach(emitter => {
+      const emitterDiv = createEmitterDiv(emitter, system.key, currentFilePath);
+      systemDiv.appendChild(emitterDiv);
+    });
+
+    return systemDiv;
+  };
+
+  const renderSystems = (systemsData, materialsData = {}, currentFilePath = null, limit = null) => {
     // Debug info removed for cleaner console
     
     if (!particleListRef.current) return;
 
-    particleListRef.current.innerHTML = '';
-    
-    // Clear filter cache since DOM will be rebuilt
-    cachedElementsRef.current = null;
-
-    // Render VFX Systems
-    Object.values(systemsData).forEach(system => {
-      const systemDiv = document.createElement('div');
-      systemDiv.className = 'Particle-Div';
-      systemDiv.id = system.key;
-
-      // Create header
-      const headerDiv = document.createElement('div');
-      headerDiv.className = 'Particle-Title-Div';
-
-      const headerContent = document.createElement('div');
-      headerContent.style.display = 'flex';
-      headerContent.style.alignItems = 'center';
-      headerContent.style.gap = '8px';
-      headerContent.style.cursor = 'pointer';
-      headerContent.style.padding = '4px';
-      headerContent.style.borderRadius = '4px';
-      headerContent.style.transition = 'background-color 0.2s ease';
-
-      const systemCheckbox = document.createElement('input');
-      systemCheckbox.type = 'checkbox';
-      systemCheckbox.className = 'CheckBox';
-      systemCheckbox.style.accentColor = 'var(--accent)';
-      systemCheckbox.style.width = '18px';
-      systemCheckbox.style.height = '18px';
-      systemCheckbox.style.transform = 'translateY(1px)';
-      systemCheckbox.style.border = '1px solid color-mix(in srgb, var(--accent), transparent 60%)';
-      systemCheckbox.style.borderRadius = '4px';
-      systemCheckbox.style.background = 'var(--glass-overlay-light)';
-      systemCheckbox.onchange = (event) => {
-        CheckChildren(systemDiv.children, event.target.checked);
-      };
-
-      const systemNameLabel = document.createElement('div');
-      systemNameLabel.className = 'Label';
-      systemNameLabel.style.flex = '1';
-      systemNameLabel.style.overflow = 'hidden';
-      systemNameLabel.style.textOverflow = 'ellipsis';
-      systemNameLabel.style.color = 'var(--accent)';
-      systemNameLabel.style.fontWeight = '600';
-      systemNameLabel.style.fontSize = '1rem';
-      systemNameLabel.style.textShadow = '0 1px 2px var(--shadow-dark)';
-      systemNameLabel.textContent = system.name;
-
-      const emitterCountLabel = document.createElement('div');
-      emitterCountLabel.className = 'Label';
-      emitterCountLabel.style.fontSize = '0.8rem';
-      emitterCountLabel.style.opacity = '0.7';
-      emitterCountLabel.textContent = `${system.emitters.length} emitters`;
-
-      headerContent.appendChild(systemCheckbox);
-      headerContent.appendChild(systemNameLabel);
-      headerContent.appendChild(emitterCountLabel);
-
-      // Make the entire header clickable
-      headerContent.onclick = (event) => {
-        // Don't trigger if clicking on the checkbox itself
-        if (event.target !== systemCheckbox) {
-          systemCheckbox.checked = !systemCheckbox.checked;
-          CheckChildren(systemDiv.children, systemCheckbox.checked);
+    // Only clear DOM if not doing progressive loading (limit is null means full render)
+    if (limit === null) {
+      // Remove children one by one to avoid React conflicts
+      if (particleListRef.current) {
+        while (particleListRef.current.firstChild) {
+          particleListRef.current.removeChild(particleListRef.current.firstChild);
         }
-      };
+      }
+      // Clear filter cache since DOM will be rebuilt
+      cachedElementsRef.current = null;
+    }
 
-      // Add hover effect
-      headerContent.onmouseenter = () => {
-        headerContent.style.backgroundColor = 'color-mix(in srgb, var(--accent), transparent 90%)';
-      };
+    // Check if we should use virtualization
+    const shouldVirtualize = ENABLE_VIRTUALIZATION && Object.keys(systemsData).length >= VIRTUALIZATION_THRESHOLD;
+    
+    // TODO: Implement virtualization for Paint.js
+    // Note: Paint.js uses DOM manipulation (document.createElement) rather than React components,
+    // so virtualization would require a different approach than Port.js
+    // For now, always use normal rendering
+    if (shouldVirtualize) {
+      console.warn('Virtualization enabled but not yet implemented for Paint.js (uses DOM manipulation)');
+    }
 
-      headerContent.onmouseleave = () => {
-        headerContent.style.backgroundColor = 'transparent';
-      };
+    // Convert to array for easier slicing
+    const systemsArray = Object.values(systemsData);
+    const systemsToRender = limit !== null ? systemsArray.slice(0, limit) : systemsArray;
 
-      headerDiv.appendChild(headerContent);
-      systemDiv.appendChild(headerDiv);
-
-      // Create emitters
-      system.emitters.forEach(emitter => {
-        const emitterDiv = createEmitterDiv(emitter, system.key, currentFilePath);
-        systemDiv.appendChild(emitterDiv);
-      });
-
-      particleListRef.current.appendChild(systemDiv);
+    // Use DocumentFragment to batch DOM inserts for better performance
+    const systemsFragment = document.createDocumentFragment();
+    systemsToRender.forEach(system => {
+      const systemDiv = renderSingleSystem(system, currentFilePath);
+      if (systemDiv) {
+        systemsFragment.appendChild(systemDiv);
+      }
     });
+    
+    // Single DOM update instead of multiple appends
+    particleListRef.current.appendChild(systemsFragment);
 
-    // Render StaticMaterialDef entries
-    Object.entries(materialsData).forEach(([materialKey, material]) => {
+    // Only render materials if doing full render (not progressive)
+    if (limit === null) {
+      // Render StaticMaterialDef entries using DocumentFragment for batching
+      const materialsFragment = document.createDocumentFragment();
+      Object.entries(materialsData).forEach(([materialKey, material]) => {
       const materialDiv = document.createElement('div');
       materialDiv.className = 'Particle-Div';
       materialDiv.id = `material_${materialKey}`;
@@ -1548,13 +1899,17 @@ const Paint = () => {
       materialDiv.appendChild(headerDiv);
 
       // Create color parameter entries
-      material.colorParams.forEach((param, paramIndex) => {
-        const paramDiv = createMaterialParamDiv(param, materialKey, paramIndex, currentFilePath);
-        materialDiv.appendChild(paramDiv);
-      });
+        material.colorParams.forEach((param, paramIndex) => {
+          const paramDiv = createMaterialParamDiv(param, materialKey, paramIndex, currentFilePath);
+          materialDiv.appendChild(paramDiv);
+        });
 
-      particleListRef.current.appendChild(materialDiv);
+      materialsFragment.appendChild(materialDiv);
     });
+    
+    // Single DOM update for all materials
+    particleListRef.current.appendChild(materialsFragment);
+    }
   };
 
 
@@ -2905,7 +3260,7 @@ const Paint = () => {
       let valueIndex = 0;
       for (let lineIndex = colorProp.startLine; lineIndex <= colorProp.endLine; lineIndex++) {
         const t = lines[lineIndex] || '';
-        if (!inValues && t.includes('values: list[vec4] = {')) {
+        if (!inValues && /values:\s*list\[vec4\]\s*=\s*\{/i.test(t)) {
           inValues = true;
           continue;
         }
@@ -3822,7 +4177,7 @@ const Paint = () => {
   };
   
   const handleFilterChange = useCallback((value) => {
-    // Update state immediately for smooth typing
+    // Update state (this will be called on blur/Enter from MemoizedSearchInput)
     setFilterText(value);
     
     // Clear existing timeout
@@ -4371,6 +4726,56 @@ const Paint = () => {
       window.removeEventListener('error', handleGlobalError);
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       cleanupColorPickers();
+      
+      // Comprehensive cleanup to prevent memory leaks when switching pages
+      // Clear large state objects
+      setSystems({});
+      setPyContent('');
+      setCachedSystems({});
+      setCachedMaterials({});
+      setIsDataCached(false);
+      
+      // Clear lazy loading state and cancel pending animation frames
+      if (lazyLoadAnimationFrameRef.current) {
+        cancelAnimationFrame(lazyLoadAnimationFrameRef.current);
+        lazyLoadAnimationFrameRef.current = null;
+      }
+      lazyLoadRef.current = {
+        isActive: false,
+        loadedSystems: 0,
+        totalSystems: 0,
+        allSystems: null,
+        allMaterials: null,
+        currentFilePath: null
+      };
+      setIsLazyLoading(false);
+      setLazyLoadProgress({ loaded: 0, total: 0 });
+      
+      // Clear active conversions and timers
+      activeConversions.current.clear();
+      conversionTimers.current.forEach(timer => {
+        if (timer) clearTimeout(timer);
+      });
+      conversionTimers.current.clear();
+      
+      // Clear filter cache
+      cachedElementsRef.current = null;
+      
+      // Don't manually clear DOM during unmount - React will handle it
+      // Manually clearing can cause conflicts with React's cleanup phase
+      // React manages the DOM lifecycle, so we just clear refs and state
+      
+      // Clear any texture preview (safe to remove as it's not React-managed)
+      try {
+        const existingPreview = document.getElementById('paint-texture-hover-preview');
+        if (existingPreview && existingPreview.parentNode) {
+          existingPreview.parentNode.removeChild(existingPreview);
+        }
+      } catch (e) {
+        // Ignore - may already be removed
+      }
+      
+      console.log('🧹 Cleaned up Paint.js memory on unmount');
     };
   }, []);
 
@@ -5481,12 +5886,11 @@ const Paint = () => {
             }}
           />
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
-            <TextField
+            <MemoizedSearchInput
               placeholder={getSearchPlaceholder()}
               value={filterText}
-              onChange={(e) => handleFilterChange(e.target.value)}
+              onChange={(value) => handleFilterChange(value)}
               inputRef={inputRef}
-              size="small"
               style={{ flex: 1 }}
               sx={{
                 '& .MuiOutlinedInput-root': {
@@ -5643,10 +6047,10 @@ const Paint = () => {
         p: 0.5,
         ...glassSection,
         borderRadius: 1,
-        height: '24px',
         minHeight: '24px',
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
+        alignItems: 'stretch',
       }}>
         <Typography sx={{
           color: 'var(--accent)',
@@ -5655,6 +6059,32 @@ const Paint = () => {
         }}>
           {statusMessage}
         </Typography>
+        {isLazyLoading && lazyLoadProgress.total > 0 && (
+          <Box sx={{ mt: 1, width: '100%' }}>
+            <LinearProgress 
+              variant="determinate" 
+              value={(lazyLoadProgress.loaded / lazyLoadProgress.total) * 100}
+              sx={{
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: 'rgba(var(--accent-rgb), 0.1)',
+                '& .MuiLinearProgress-bar': {
+                  backgroundColor: 'var(--accent)',
+                  borderRadius: 2,
+                },
+              }}
+            />
+            <Typography sx={{
+              color: 'var(--accent-muted)',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.65rem',
+              mt: 0.5,
+              textAlign: 'center',
+            }}>
+              {lazyLoadProgress.loaded} / {lazyLoadProgress.total} systems loaded
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       {/* Manual Ritobin Path Input (Temporary Workaround) */}

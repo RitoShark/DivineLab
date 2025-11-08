@@ -1,25 +1,91 @@
 // UI utility functions for DOM manipulation
+// OPTIMIZED: Batches DOM updates and uses requestAnimationFrame for chunking
 const CheckToggle = (checked, particleListRef, colorFilterFn = null, systemsData = null) => {
   if (!particleListRef.current) return;
 
   const ParticleListChildren = particleListRef.current.children;
+  
+  // Collect all checkboxes to update (batch operation)
+  const checkboxesToUpdate = [];
+  const systemHeadersToUpdate = [];
+  
+  // First pass: collect all checkboxes that need updating
   for (let I = 0; I < ParticleListChildren.length; I++) {
     const node = ParticleListChildren[I];
-    if (node.style.display !== "none") {
-      // Skip StaticMaterialDef blocks (id starts with 'material_') to avoid bulk-selecting materials
-      if (node.id && node.id.startsWith('material_')) {
-        continue;
-      }
+    if (node.style.display === "none") continue;
+    
+    // Skip StaticMaterialDef blocks (id starts with 'material_') to avoid bulk-selecting materials
+    if (node.id && node.id.startsWith('material_')) {
+      continue;
+    }
 
-      // Only apply to system emitters (children of a VFX system block)
-      // This will also update the system checkbox state via updateSystemCheckboxState
-      CheckChildren(node.children, checked, colorFilterFn, systemsData, node.id);
+    // Collect emitter checkboxes
+    const children = node.children;
+    for (let i = 1; i < children.length; i++) {
+      const row = children[i];
+      if (row.style.display === "none") continue;
+      if (row.id && row.id.startsWith('material_')) continue;
+
+      const firstChild = row.children[0];
+      if (firstChild && firstChild.type === 'checkbox') {
+        // If we have a color filter function and we're checking (not unchecking)
+        if (colorFilterFn && checked) {
+          const shouldFilter = checkEmitterColorFilterFromData(row, colorFilterFn, systemsData, node.id);
+          if (shouldFilter) {
+            continue; // Skip this emitter
+          }
+        }
+        checkboxesToUpdate.push(firstChild);
+      }
+    }
+    
+    // Collect system header for later batch update
+    if (children[0]) {
+      systemHeadersToUpdate.push(children[0]);
+    }
+  }
+
+  // Batch update all checkboxes (single DOM operation per checkbox, but batched in chunks)
+  const CHUNK_SIZE = 100; // Process 100 checkboxes per frame to avoid blocking
+  let currentIndex = 0;
+
+  const processChunk = () => {
+    const endIndex = Math.min(currentIndex + CHUNK_SIZE, checkboxesToUpdate.length);
+    
+    // Update checkboxes in this chunk
+    for (let i = currentIndex; i < endIndex; i++) {
+      checkboxesToUpdate[i].checked = checked;
+    }
+    
+    currentIndex = endIndex;
+    
+    if (currentIndex < checkboxesToUpdate.length) {
+      // More work to do, schedule next chunk
+      requestAnimationFrame(processChunk);
+    } else {
+      // All checkboxes updated, now update system headers in batch
+      for (const headerDiv of systemHeadersToUpdate) {
+        updateSystemCheckboxState(headerDiv);
+      }
+    }
+  };
+
+  // Start processing
+  if (checkboxesToUpdate.length > 0) {
+    requestAnimationFrame(processChunk);
+  } else {
+    // No checkboxes to update, but still update system headers
+    for (const headerDiv of systemHeadersToUpdate) {
+      updateSystemCheckboxState(headerDiv);
     }
   }
 };
 
+// OPTIMIZED: Collects checkboxes instead of updating immediately
 const CheckChildren = (children, checked, colorFilterFn = null, systemsData = null, systemKey = null) => {
   // children[0] is the header; apply only to emitter rows that have a checkbox as first child
+  const checkboxesToUpdate = [];
+  
   for (let i = 1; i < children.length; i++) {
     const row = children[i];
     if (row.style.display === "none") continue;
@@ -39,12 +105,19 @@ const CheckChildren = (children, checked, colorFilterFn = null, systemsData = nu
           continue;
         }
       }
-      firstChild.checked = checked;
+      checkboxesToUpdate.push(firstChild);
     }
   }
 
-  // Always update system checkbox state to reflect the current emitter states
-  updateSystemCheckboxState(children[0]);
+  // Batch update all checkboxes at once
+  for (const checkbox of checkboxesToUpdate) {
+    checkbox.checked = checked;
+  }
+
+  // Update system checkbox state to reflect the current emitter states
+  if (children[0]) {
+    updateSystemCheckboxState(children[0]);
+  }
 };
 
 // Helper function to check if an emitter should be filtered based on its actual color data
@@ -60,13 +133,7 @@ const checkEmitterColorFilterFromData = (emitterRow, colorFilterFn, systemsData,
     const emitter = system.emitters[emitterIndex];
     if (!emitter) return false;
     
-    console.log('🔍 Checking emitter:', emitter.name, 'colors:', {
-      color: emitter.color,
-      birthColor: emitter.birthColor,
-      fresnelColor: emitter.fresnelColor
-    });
-    
-    // Check all color properties
+    // Check all color properties (removed console.logs for performance)
     const colorProperties = [
       { prop: emitter.color, name: 'color' },
       { prop: emitter.birthColor, name: 'birthColor' },
@@ -78,9 +145,7 @@ const checkEmitterColorFilterFromData = (emitterRow, colorFilterFn, systemsData,
       
       // Check constant value
       if (prop.constantValue && Array.isArray(prop.constantValue)) {
-        console.log(`🔍 Checking ${name} constant:`, prop.constantValue);
         if (colorFilterFn(prop.constantValue)) {
-          console.log(`✅ Filtered out ${emitter.name} due to ${name} constant`);
           return true;
         }
       }
@@ -89,9 +154,7 @@ const checkEmitterColorFilterFromData = (emitterRow, colorFilterFn, systemsData,
       if (prop.dynamics && prop.dynamics.values && Array.isArray(prop.dynamics.values)) {
         for (const value of prop.dynamics.values) {
           if (Array.isArray(value)) {
-            console.log(`🔍 Checking ${name} dynamic:`, value);
             if (colorFilterFn(value)) {
-              console.log(`✅ Filtered out ${emitter.name} due to ${name} dynamic`);
               return true;
             }
           }
@@ -115,7 +178,6 @@ const checkEmitterColorFilter = (emitterRow, colorFilterFn) => {
     for (const block of colorBlocks) {
       // Try to extract color from the background style
       const bgStyle = block.style.background;
-      console.log('🔍 Checking color block:', bgStyle);
       if (bgStyle) {
         // Handle solid colors
         if (bgStyle.startsWith('rgb(') || bgStyle.startsWith('rgba(')) {
@@ -178,6 +240,7 @@ const hexToRgb = (hex) => {
   } : null;
 };
 
+// OPTIMIZED: More efficient DOM traversal
 const updateSystemCheckboxState = (headerDiv) => {
   if (!headerDiv || !headerDiv.children || !headerDiv.children[0]) return;
 
@@ -186,15 +249,27 @@ const updateSystemCheckboxState = (headerDiv) => {
   if (!systemCheckbox || systemCheckbox.type !== 'checkbox') return;
 
   const systemDiv = headerDiv.parentNode;
-  const emitterDivs = Array.from(systemDiv.children).slice(1); // Skip header
+  const children = systemDiv.children;
+  let visibleCount = 0;
+  let checkedCount = 0;
 
-  const visibleEmitters = emitterDivs.filter(div => div.style.display !== "none");
-  const checkedEmitters = visibleEmitters.filter(div => div.children[0] && div.children[0].checked);
+  // Single pass through emitters (skip header at index 0)
+  for (let i = 1; i < children.length; i++) {
+    const emitterDiv = children[i];
+    if (emitterDiv.style.display === "none") continue;
+    
+    visibleCount++;
+    const checkbox = emitterDiv.children[0];
+    if (checkbox && checkbox.type === 'checkbox' && checkbox.checked) {
+      checkedCount++;
+    }
+  }
 
-  if (checkedEmitters.length === 0) {
+  // Update checkbox state based on counts
+  if (checkedCount === 0) {
     systemCheckbox.checked = false;
     systemCheckbox.indeterminate = false;
-  } else if (checkedEmitters.length === visibleEmitters.length) {
+  } else if (checkedCount === visibleCount) {
     systemCheckbox.checked = true;
     systemCheckbox.indeterminate = false;
   } else {
@@ -268,6 +343,7 @@ const restoreCheckboxStates = (states, particleListRef) => {
   }
 };
 
+// OPTIMIZED: Single pass through DOM, batches all updates
 const selectByBlendMode = (blendModeFilter, blendModeSlider, particleListRef, setStatusMessage) => {
   if (!particleListRef.current) return;
 
@@ -275,73 +351,86 @@ const selectByBlendMode = (blendModeFilter, blendModeSlider, particleListRef, se
   const probability = parseInt(blendModeSlider) / 100;
   const SystemListChildren = particleListRef.current.children;
 
-  // First uncheck all items
-  CheckToggle(false, particleListRef);
-
-  // Collect matching emitters
+  // Collect all checkboxes to uncheck and matching emitters in a single pass
+  const checkboxesToUncheck = [];
   const matchingEmitters = [];
+  const allSystemHeaders = new Map(); // Map systemDiv -> headerDiv for efficient lookup
 
+  // Single pass: collect everything we need
   for (let i = 0; i < SystemListChildren.length; i++) {
-    if (SystemListChildren[i].style.display !== "none" &&
-      SystemListChildren[i].className === "Particle-Div") {
+    const systemDiv = SystemListChildren[i];
+    
+    if (systemDiv.style.display === "none" || systemDiv.className !== "Particle-Div") {
+      continue;
+    }
 
-      const systemDiv = SystemListChildren[i];
+    // Skip StaticMaterialDef blocks (they don't have blend modes)
+    if (systemDiv.id && systemDiv.id.startsWith('material_')) {
+      continue;
+    }
+
+    // Store system header for later
+    const headerDiv = systemDiv.children[0];
+    if (headerDiv) {
+      allSystemHeaders.set(systemDiv, headerDiv);
+    }
+
+    // Process emitters
+    const emitterChildren = systemDiv.children;
+    for (let j = 1; j < emitterChildren.length; j++) {
+      const emitterDiv = emitterChildren[j];
       
-      // Skip StaticMaterialDef blocks (they don't have blend modes)
-      if (systemDiv.id && systemDiv.id.startsWith('material_')) {
-        continue;
+      // Collect checkbox for unchecking
+      const checkbox = emitterDiv.children[0];
+      if (checkbox && checkbox.type === 'checkbox') {
+        checkboxesToUncheck.push(checkbox);
       }
 
-      for (let j = 1; j < systemDiv.children.length; j++) {
-        const emitterDiv = systemDiv.children[j];
-        const blendModeInput = emitterDiv.children[emitterDiv.children.length - 1];
+      // Check blend mode
+      const blendModeInput = emitterDiv.children[emitterDiv.children.length - 1];
+      if (blendModeInput) {
+        let currentBlendMode;
+        if (blendModeInput.style.visibility === "hidden" || !blendModeInput.placeholder) {
+          currentBlendMode = 0;
+        } else {
+          currentBlendMode = parseInt(blendModeInput.placeholder);
+        }
 
-        if (blendModeInput) {
-          let currentBlendMode;
-
-          if (blendModeInput.style.visibility === "hidden" || !blendModeInput.placeholder) {
-            currentBlendMode = 0;
-          } else {
-            currentBlendMode = parseInt(blendModeInput.placeholder);
-          }
-
-          if (currentBlendMode === targetBlendMode) {
-            matchingEmitters.push({
-              systemDiv: systemDiv,
-              emitterDiv: emitterDiv
-            });
-          }
+        if (currentBlendMode === targetBlendMode) {
+          matchingEmitters.push({
+            systemDiv: systemDiv,
+            emitterDiv: emitterDiv,
+            checkbox: checkbox
+          });
         }
       }
     }
   }
 
-  // Randomly select emitters based on probability
+  // Batch uncheck all checkboxes
+  for (const checkbox of checkboxesToUncheck) {
+    checkbox.checked = false;
+  }
+
+  // Randomly select emitters based on probability and check them
   const selectedEmitters = [];
   const systemsWithSelectedEmitters = new Set();
 
   for (const emitter of matchingEmitters) {
     if (Math.random() <= probability) {
+      if (emitter.checkbox) {
+        emitter.checkbox.checked = true;
+      }
       selectedEmitters.push(emitter);
       systemsWithSelectedEmitters.add(emitter.systemDiv);
     }
   }
 
-  // Check selected emitters
-  for (const emitter of selectedEmitters) {
-    emitter.emitterDiv.children[0].checked = true;
-  }
-
-  // Check system headers (only for VFX systems, not StaticMaterialDef)
+  // Batch update system headers
   for (const systemDiv of systemsWithSelectedEmitters) {
-    // Skip StaticMaterialDef blocks (they have different structure)
-    if (systemDiv.id && systemDiv.id.startsWith('material_')) {
-      continue;
-    }
-    
-    const systemCheckbox = systemDiv.children[0].children[0];
-    if (systemCheckbox && systemCheckbox.type === 'checkbox') {
-      systemCheckbox.checked = true;
+    const headerDiv = allSystemHeaders.get(systemDiv);
+    if (headerDiv) {
+      updateSystemCheckboxState(headerDiv);
     }
   }
 

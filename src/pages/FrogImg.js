@@ -23,6 +23,21 @@ import {
 import { glassButton, glassButtonOutlined } from '../utils/glassStyles';
 import electronPrefs from '../utils/electronPrefs.js';
 
+// Helper function to log to file via IPC (similar to backend logging)
+const logToFile = async (message, level = 'INFO', data = null) => {
+  try {
+    if (window.require) {
+      const { ipcRenderer } = window.require('electron');
+      await ipcRenderer.invoke('log-texture-conversion', { level, message, data });
+    }
+    // Also log to console
+    const prefix = level === 'ERROR' ? '❌' : level === 'WARNING' ? '⚠️' : 'ℹ️';
+    console.log(`${prefix} [FrogImg] ${message}`, data ? data : '');
+  } catch (error) {
+    console.error('Failed to log to file:', error);
+  }
+};
+
 const FrogImg = () => {
   // Core state
   const [selectedFolder, setSelectedFolder] = useState(null);
@@ -218,39 +233,27 @@ const FrogImg = () => {
         setDdsFiles(ddsFilesList);
         setTexFiles(texFilesList);
 
-        console.log("DDS files found:", ddsFilesList);
-        console.log("TEX files found:", texFilesList);
+        await logToFile('Folder scanned for files', 'INFO', {
+          folder: folderPath,
+          ddsFiles: ddsFilesList.length,
+          texFiles: texFilesList.length,
+          totalFiles: files.length
+        });
       } else {
         // Mock data for non-Electron environment
         setDdsFiles(['sample1.dds', 'sample2.dds']);
         setTexFiles(['sample1.tex', 'sample2.tex']);
       }
     } catch (error) {
-      console.error('Error scanning folder:', error);
-    }
-  };
-
-
-  // Check if ImageMagick is available
-  const isImageMagickAvailable = async () => {
-    if (!window.require) return false;
-    
-    try {
-      const { exec } = window.require('child_process');
-      await new Promise((resolve, reject) => {
-        exec('"C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe" -version', { timeout: 5000 }, (error, stdout, stderr) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
-        });
+      await logToFile('Error scanning folder', 'ERROR', {
+        folder: folderPath,
+        error: error.message,
+        stack: error.stack
       });
-      return true;
-    } catch (error) {
-      return false;
     }
   };
+
+
 
 
   // Convert all PNGs to cyan base - using main loading bar
@@ -476,18 +479,34 @@ if __name__ == "__main__":
     });
   };
 
-  // TEX to PNG conversion: TEX -> DDS -> PNG (like original)
+  // TEX/DDS to PNG conversion: TEX -> DDS -> PNG or DDS -> PNG (if only DDS files)
   const handleConvertTEXToPNG = async () => {
-    if (!texFiles.length) return;
+    // Allow conversion if there are TEX files OR DDS files
+    if (!texFiles.length && !ddsFiles.length) {
+      await logToFile('Conversion cancelled: No TEX or DDS files found', 'WARNING');
+      return;
+    }
 
     setIsConverting(true);
     setConversionProgress(0);
-    setConversionStatus('Converting TEX to DDS...');
+    
+    // Determine conversion mode
+    const hasTexFiles = texFiles.length > 0;
+    const hasDdsFiles = ddsFiles.length > 0;
+    const conversionMode = hasTexFiles ? 'TEX->DDS->PNG' : 'DDS->PNG';
+    
+    await logToFile(`Starting conversion: ${conversionMode}`, 'INFO', {
+      texFiles: texFiles.length,
+      ddsFiles: ddsFiles.length,
+      folder: selectedFolder
+    });
+    
+    setConversionStatus(hasTexFiles ? 'Converting TEX to DDS...' : 'Converting DDS to PNG...');
 
     // Optimized performance settings for batch processing
     const os = window.require('os');
     const cpuCores = (os.cpus && os.cpus().length) ? os.cpus().length : 4;
-    const PNG_BATCH_SIZE = Math.min(64, Math.max(32, cpuCores * 8));      // Larger batches for DDS→PNG (ImageMagick is fast)
+    const PNG_BATCH_SIZE = Math.min(64, Math.max(32, cpuCores * 8));      // Batch size for DDS→PNG conversion
     const ANALYSIS_BATCH_SIZE = Math.min(64, Math.max(32, cpuCores * 8)); // Larger batches for color detection
     const FILE_TIMEOUT = 10000;     // 10 seconds per file (reduced since batch processing is faster)
     const BATCH_DELAY = 0;          // No delay between batches for maximum speed
@@ -504,94 +523,110 @@ if __name__ == "__main__":
       const pythonPath = getPythonPath(ltmaoPath);
       const cliScript = path.join(ltmaoPath, "src", "cli.py");
 
-      // Verify Python and CLI script exist
-      if (!fs.existsSync(pythonPath)) {
-        throw new Error(`Python executable not found at: ${pythonPath}`);
-      }
-      if (!fs.existsSync(cliScript)) {
-        throw new Error(`CLI script not found at: ${cliScript}`);
-      }
+      // Verify Python and CLI script exist (only needed if we have TEX files)
+      if (hasTexFiles) {
+        if (!fs.existsSync(pythonPath)) {
+          const errorMsg = `Python executable not found at: ${pythonPath}`;
+          await logToFile(errorMsg, 'ERROR', { pythonPath, ltmaoPath });
+          throw new Error(errorMsg);
+        }
+        if (!fs.existsSync(cliScript)) {
+          const errorMsg = `CLI script not found at: ${cliScript}`;
+          await logToFile(errorMsg, 'ERROR', { cliScript, ltmaoPath });
+          throw new Error(errorMsg);
+        }
 
-      console.log('Python path:', pythonPath);
-      console.log('CLI script:', cliScript);
-      console.log('Selected folder:', selectedFolder);
-      console.log('Total TEX files to process:', texFiles.length);
-
-      // Test Python environment first
-      setConversionStatus('Testing Python environment...');
-      try {
-        const testProcess = spawn(pythonPath, ['--version'], {
-          cwd: ltmaoPath,
-          stdio: ['pipe', 'pipe', 'pipe']
+        await logToFile('Python and CLI paths verified', 'INFO', {
+          pythonPath,
+          cliScript,
+          selectedFolder,
+          texFilesCount: texFiles.length
         });
+
+        // Test Python environment first (only if we have TEX files)
+        setConversionStatus('Testing Python environment...');
+        try {
+          const testProcess = spawn(pythonPath, ['--version'], {
+            cwd: ltmaoPath,
+            stdio: ['pipe', 'pipe', 'pipe']
+          });
+
+          await new Promise((resolve, reject) => {
+            let stdout = '';
+            let stderr = '';
+
+            testProcess.stdout.on('data', (data) => {
+              stdout += data.toString();
+            });
+
+            testProcess.stderr.on('data', (data) => {
+              stderr += data.toString();
+            });
+
+            testProcess.on('close', (code) => {
+              if (code === 0) {
+                logToFile(`Python test successful: ${stdout.trim()}`, 'INFO');
+                resolve();
+              } else {
+                const errorMsg = 'Python environment test failed';
+                logToFile(errorMsg, 'ERROR', { stderr, code });
+                reject(new Error(errorMsg));
+              }
+            });
+
+            testProcess.on('error', (error) => {
+              logToFile('Python test error', 'ERROR', { error: error.message });
+              reject(error);
+            });
+
+            setTimeout(() => {
+              testProcess.kill();
+              reject(new Error('Python test timeout'));
+            }, 10000);
+          });
+        } catch (error) {
+          await logToFile('Python environment test failed', 'ERROR', { error: error.message });
+          setConversionStatus('Python environment test failed. Check console for details.');
+          setIsConverting(false);
+          return;
+        }
+
+        // Step 1: Ultra-fast batch TEX to DDS conversion using LtMAO's native directory processing
+        setConversionProgress(10);
+        setConversionStatus('Starting ultra-fast batch TEX to DDS conversion...');
+
+        await logToFile('Starting TEX to DDS conversion', 'INFO', {
+          command: 'tex2ddsdir',
+          folder: selectedFolder
+        });
+        
+        // Use LtMAO's native batch processing - much faster than individual file processing
+        const batchCommand = `"${pythonPath}" "${cliScript}" -t tex2ddsdir -src "${selectedFolder}"`;
+        await logToFile('Executing batch TEX to DDS command', 'INFO', { command: batchCommand });
 
         await new Promise((resolve, reject) => {
-          let stdout = '';
-          let stderr = '';
-
-          testProcess.stdout.on('data', (data) => {
-            stdout += data.toString();
-          });
-
-          testProcess.stderr.on('data', (data) => {
-            stderr += data.toString();
-          });
-
-          testProcess.on('close', (code) => {
-            if (code === 0) {
-              console.log('Python test successful:', stdout.trim());
-              resolve();
+          exec(batchCommand, {
+                cwd: ltmaoPath,
+            timeout: 300000 // 5 minutes for entire folder (much more reasonable)
+          }, (error, stdout, stderr) => {
+            if (error) {
+              logToFile('Batch TEX to DDS error', 'ERROR', {
+                error: error.message,
+                stdout,
+                stderr,
+                command: batchCommand
+              });
+              reject(error);
             } else {
-              console.error('Python test failed:', stderr);
-              reject(new Error('Python environment test failed'));
+              logToFile('Batch TEX to DDS completed successfully', 'INFO', {
+                stdout,
+                stderr: stderr || null
+              });
+              resolve();
             }
           });
-
-          testProcess.on('error', (error) => {
-            console.error('Python test error:', error);
-            reject(error);
-          });
-
-          setTimeout(() => {
-            testProcess.kill();
-            reject(new Error('Python test timeout'));
-          }, 10000);
         });
-      } catch (error) {
-        console.error('Python environment test failed:', error);
-        setConversionStatus('Python environment test failed. Check console for details.');
-        setIsConverting(false);
-        return;
       }
-
-      // Step 1: Ultra-fast batch TEX to DDS conversion using LtMAO's native directory processing
-      setConversionProgress(10);
-      setConversionStatus('Starting ultra-fast batch TEX to DDS conversion...');
-
-      console.log('🚀 Using LtMAO tex2ddsdir for maximum speed - processing entire folder in one command');
-      
-      // Use LtMAO's native batch processing - much faster than individual file processing
-      const batchCommand = `"${pythonPath}" "${cliScript}" -t tex2ddsdir -src "${selectedFolder}"`;
-      console.log('🚀 Executing batch TEX to DDS command:', batchCommand);
-
-      await new Promise((resolve, reject) => {
-        exec(batchCommand, {
-              cwd: ltmaoPath,
-          timeout: 300000 // 5 minutes for entire folder (much more reasonable)
-        }, (error, stdout, stderr) => {
-          if (error) {
-            console.error('❌ Batch TEX to DDS error:', error);
-            console.error('❌ stdout:', stdout);
-            console.error('❌ stderr:', stderr);
-            reject(error);
-          } else {
-            console.log('✅ Batch TEX to DDS completed successfully');
-            console.log('✅ stdout:', stdout);
-            if (stderr) console.log('⚠️ stderr:', stderr);
-            resolve();
-          }
-        });
-      });
 
       // Scan for all DDS files (both newly created and existing)
       const allDdsFiles = [];
@@ -603,68 +638,39 @@ if __name__ == "__main__":
           }
         }
       } catch (error) {
-        console.error('Error scanning for DDS files:', error);
+        await logToFile('Error scanning for DDS files', 'ERROR', { error: error.message });
       }
 
-      console.log('✅ Batch TEX to DDS conversion completed. Found DDS files:', allDdsFiles);
+      if (hasTexFiles) {
+        await logToFile('TEX to DDS conversion completed', 'INFO', {
+          ddsFilesFound: allDdsFiles.length,
+          files: allDdsFiles.slice(0, 10) // Log first 10 files
+        });
+      } else {
+        await logToFile('Using existing DDS files (no TEX conversion needed)', 'INFO', {
+          ddsFilesFound: allDdsFiles.length,
+          files: allDdsFiles.slice(0, 10)
+        });
+      }
 
-      // Step 2: Optimized DDS to PNG conversion using ImageMagick (much faster than Python)
-      setConversionProgress(30);
-      setConversionStatus('Starting optimized DDS to PNG conversion...');
+      // Step 2: DDS to PNG conversion using LtMAO Python
+      if (hasTexFiles) {
+        setConversionProgress(30);
+      } else {
+        setConversionProgress(10); // Start at 10% if skipping TEX->DDS step
+      }
+      setConversionStatus('Starting DDS to PNG conversion...');
 
       const allPngFiles = [];
       let completedDdsFiles = 0;
       let failedDdsFiles = [];
 
-      console.log('Starting DDS to PNG conversion for files:', allDdsFiles);
-
-      // Check if ImageMagick is available for faster conversion
-      const imageMagickAvailable = await isImageMagickAvailable();
+      await logToFile('Starting DDS to PNG conversion using LtMAO', 'INFO', {
+        ddsFilesCount: allDdsFiles.length,
+        files: allDdsFiles.slice(0, 10)
+      });
       
-      if (imageMagickAvailable) {
-        console.log('🚀 Using ImageMagick batch processing for DDS to PNG conversion (fastest method)');
-        
-        // Use ImageMagick batch processing - convert all DDS files in folder to PNG
-        const batchCommand = `"C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe" mogrify -path "${selectedFolder}" -format png -alpha on -quality 95 -define png:compression-level=1 "${selectedFolder}\\*.dds"`;
-        console.log('🚀 Executing ImageMagick batch command:', batchCommand);
-
-        await new Promise((resolve, reject) => {
-          exec(batchCommand, { timeout: 300000 }, (error, stdout, stderr) => {
-            if (error) {
-              console.error('❌ ImageMagick batch DDS to PNG error:', error);
-              console.error('❌ stdout:', stdout);
-              console.error('❌ stderr:', stderr);
-              reject(error);
-            } else {
-              console.log('✅ ImageMagick batch DDS to PNG completed successfully');
-              console.log('✅ stdout:', stdout);
-              if (stderr) console.log('⚠️ stderr:', stderr);
-              resolve();
-            }
-          });
-        });
-
-        // Scan for newly created PNG files
-        const files = fs.readdirSync(selectedFolder);
-        for (const file of files) {
-          if (file.endsWith('.png')) {
-            // Check if corresponding DDS file exists (meaning it was just converted)
-            const ddsFile = file.replace('.png', '.dds');
-            if (allDdsFiles.includes(ddsFile)) {
-              allPngFiles.push(file);
-            }
-          }
-        }
-        
-        completedDdsFiles = allPngFiles.length;
-        const progress = 30 + (completedDdsFiles / allDdsFiles.length) * 30;
-        setConversionProgress(progress);
-        setConversionStatus(`Converted ${completedDdsFiles}/${allDdsFiles.length} DDS files to PNG...`);
-        
-      } else {
-        console.log('⚠️ ImageMagick not available, falling back to LtMAO Python conversion');
-        
-        // Fallback to Python conversion with optimized batch processing
+      // Use LtMAO Python conversion with optimized batch processing
       for (let i = 0; i < allDdsFiles.length; i += PNG_BATCH_SIZE) {
         const batch = allDdsFiles.slice(i, i + PNG_BATCH_SIZE);
         const batchPromises = [];
@@ -683,7 +689,10 @@ if __name__ == "__main__":
             let hasError = false;
 
             process.on('error', (error) => {
-              console.error(`Failed to convert ${ddsFile} to PNG:`, error.message);
+              logToFile(`Failed to convert ${ddsFile} to PNG`, 'ERROR', {
+                file: ddsFile,
+                error: error.message
+              });
               hasError = true;
               failedDdsFiles.push({ file: ddsFile, error: error.message });
               resolve();
@@ -691,16 +700,22 @@ if __name__ == "__main__":
 
             process.on('close', (code) => {
               completedDdsFiles++;
-              const progress = 30 + (completedDdsFiles / allDdsFiles.length) * 30;
+              const baseProgress = hasTexFiles ? 30 : 10;
+              const progress = baseProgress + (completedDdsFiles / allDdsFiles.length) * (hasTexFiles ? 30 : 50);
               setConversionProgress(progress);
               setConversionStatus(`Converted ${completedDdsFiles}/${allDdsFiles.length} DDS files to PNG...`);
 
               if (code === 0 && !hasError && fs.existsSync(pngPath)) {
                 allPngFiles.push(pngName);
-                console.log(`Successfully converted ${ddsFile} to ${pngName}`);
+                logToFile(`Successfully converted ${ddsFile} to ${pngName}`, 'INFO');
               } else {
-                  console.warn(`Failed to convert ${ddsFile} to PNG (code: ${code}, hasError: ${hasError})`);
-                  failedDdsFiles.push({ file: ddsFile, code });
+                logToFile(`Failed to convert ${ddsFile} to PNG`, 'WARNING', {
+                  file: ddsFile,
+                  code,
+                  hasError,
+                  pngPathExists: fs.existsSync(pngPath)
+                });
+                failedDdsFiles.push({ file: ddsFile, code });
               }
               resolve();
             });
@@ -708,7 +723,7 @@ if __name__ == "__main__":
             setTimeout(() => {
               if (!process.killed) {
                 process.kill();
-                console.warn(`Timeout converting ${ddsFile} to PNG`);
+                logToFile(`Timeout converting ${ddsFile} to PNG`, 'WARNING', { file: ddsFile });
                 failedDdsFiles.push({ file: ddsFile, error: 'Timeout' });
                 resolve();
               }
@@ -719,15 +734,20 @@ if __name__ == "__main__":
         }
 
         await Promise.all(batchPromises);
-        }
       }
 
-      console.log('DDS to PNG conversion completed. Failed files:', failedDdsFiles);
-      console.log('Successfully converted PNG files:', allPngFiles);
+      await logToFile('DDS to PNG conversion completed', 'INFO', {
+        successful: allPngFiles.length,
+        failed: failedDdsFiles.length,
+        failedFiles: failedDdsFiles.slice(0, 10)
+      });
 
       // Check if we have any successfully converted files
       if (allPngFiles.length === 0) {
-        console.warn('No PNG files were successfully converted. Stopping conversion process.');
+        await logToFile('No PNG files were successfully converted. Stopping conversion process.', 'ERROR', {
+          failedDdsFiles: failedDdsFiles.length,
+          allDdsFiles: allDdsFiles.length
+        });
         setConversionStatus('No files were successfully converted. Check console for errors.');
         setIsConverting(false);
         return;
@@ -739,31 +759,32 @@ if __name__ == "__main__":
       setDdsFiles(prev => Array.from(new Set([...(prev || []), ...allDdsFiles]))); // Update DDS files list too
 
       // Final summary
-      console.log('=== TEX CONVERSION SUMMARY ===');
-      console.log(`Total TEX files processed: ${texFiles.length}`);
-      console.log(`Successfully converted to DDS: ${allDdsFiles.length}`);
-      console.log(`Successfully converted to PNG: ${allPngFiles.length}`);
-      console.log(`Failed TEX files: ${failedFiles.length}`);
-      console.log(`Failed DDS files: ${failedDdsFiles.length}`);
-      console.log('================================');
+      await logToFile('Conversion summary', 'INFO', {
+        mode: conversionMode,
+        texFilesProcessed: hasTexFiles ? texFiles.length : 0,
+        ddsFilesFound: allDdsFiles.length,
+        pngFilesCreated: allPngFiles.length,
+        failedDdsFiles: failedDdsFiles.length
+      });
 
       setConversionProgress(100);
-      setConversionStatus(`TEX conversion complete! ${allPngFiles.length} files converted.`);
+      setConversionStatus(`${conversionMode} conversion complete! ${allPngFiles.length} files converted. You can now select PNG files to convert to cyan.`);
 
-      if (allPngFiles.length > 0) {
-        console.log(`Starting cyan conversion for ${allPngFiles.length} files`);
-        // Convert PNGs to cyan base
-        await convertAllPNGsToCyan(allPngFiles);
-        console.log('Cyan conversion completed');
-      } else {
-        console.log('No files found, skipping cyan conversion');
-      }
+      await logToFile('Conversion to PNG completed - user can now select PNGs to convert to cyan', 'INFO', {
+        pngFilesCreated: allPngFiles.length
+      });
 
     } catch (error) {
-      console.error('TEX conversion error:', error);
-      setConversionStatus('TEX conversion failed');
+      await logToFile('Conversion error', 'ERROR', {
+        error: error.message,
+        stack: error.stack,
+        mode: conversionMode,
+        folder: selectedFolder
+      });
+      setConversionStatus(`${conversionMode} conversion failed: ${error.message}`);
     } finally {
       setIsConverting(false);
+      await logToFile('Conversion process finished', 'INFO');
     }
   };
 
@@ -922,8 +943,18 @@ if __name__ == "__main__":
       let newSaturation = hsl.s;
       let newLightness = hsl.l;
 
-      // Absolute saturation: 0% => grayscale, 100% => original saturation
-      const satLevel = Math.max(0, Math.min(1, saturationBoost / 100));
+      // Enhanced saturation curve: 0-50% gives less boost, 50-100% gives more aggressive boost
+      // Uses a power curve that emphasizes the upper range (50-100%)
+      let satLevel;
+      if (saturationBoost <= 50) {
+        // 0-50% maps to 0-0.3 (gentle increase)
+        satLevel = (saturationBoost / 50) * 0.3;
+      } else {
+        // 50-100% maps to 0.3-1.0 (aggressive increase)
+        const upperRange = (saturationBoost - 50) / 50; // 0 to 1
+        satLevel = 0.3 + (upperRange * upperRange * 0.7); // Quadratic curve for more boost
+      }
+      satLevel = Math.max(0, Math.min(1, satLevel));
       newSaturation = Math.max(0, Math.min(1, hsl.s * satLevel));
 
       // Apply lightness adjustment
@@ -1181,8 +1212,15 @@ def apply_recolor(image_path, target_hue, saturation_boost, lightness_adjust):
           # Enhanced recoloring algorithm - set target hue directly
           new_h = target_hue / 360.0  # Convert to 0-1 range
           
-          # Absolute saturation: 0 -> grayscale, 1 -> original saturation
-          sat_level = max(0.0, min(1.0, saturation_boost / 100.0))
+          # Enhanced saturation curve: 0-50% gives less boost, 50-100% gives more aggressive boost
+          if saturation_boost <= 50:
+              # 0-50% maps to 0-0.3 (gentle increase)
+              sat_level = (saturation_boost / 50.0) * 0.3
+          else:
+              # 50-100% maps to 0.3-1.0 (aggressive increase)
+              upper_range = (saturation_boost - 50.0) / 50.0  # 0 to 1
+              sat_level = 0.3 + (upper_range * upper_range * 0.7)  # Quadratic curve for more boost
+          sat_level = max(0.0, min(1.0, sat_level))
           new_s = max(0.0, min(1.0, s * sat_level))
           
           # Apply lightness adjustment
@@ -1414,8 +1452,15 @@ def apply_recolor(image_path, target_hue, saturation_boost, lightness_adjust):
           # Enhanced recoloring algorithm - set target hue directly
           new_h = target_hue / 360.0  # Convert to 0-1 range
           
-          # Absolute saturation: 0 -> grayscale, 1 -> original saturation
-          sat_level = max(0.0, min(1.0, saturation_boost / 100.0))
+          # Enhanced saturation curve: 0-50% gives less boost, 50-100% gives more aggressive boost
+          if saturation_boost <= 50:
+              # 0-50% maps to 0-0.3 (gentle increase)
+              sat_level = (saturation_boost / 50.0) * 0.3
+          else:
+              # 50-100% maps to 0.3-1.0 (aggressive increase)
+              upper_range = (saturation_boost - 50.0) / 50.0  # 0 to 1
+              sat_level = 0.3 + (upper_range * upper_range * 0.7)  # Quadratic curve for more boost
+          sat_level = max(0.0, min(1.0, sat_level))
           new_s = max(0.0, min(1.0, s * sat_level))
           
           # Apply lightness adjustment
@@ -1525,63 +1570,20 @@ if __name__ == "__main__":
         return;
       }
 
-      // Step 1: Optimized PNG to DDS conversion using ImageMagick
-      setConversionStatus('Starting optimized PNG to DDS conversion...');
+      // Step 1: PNG to DDS conversion using LtMAO
+      setConversionStatus('Starting PNG to DDS conversion...');
       const tempDdsFiles = [];
       let completedPngFiles = 0;
 
-      // Check if ImageMagick is available for faster conversion
-      const imageMagickAvailable = await isImageMagickAvailable();
+      await logToFile('Starting PNG to DDS conversion using LtMAO', 'INFO', {
+        pngFilesCount: filesToProcess.length
+      });
       
-      if (imageMagickAvailable) {
-        console.log('🚀 Using ImageMagick for PNG to DDS conversion (much faster than Python)');
-        
-        // Process files in parallel with ImageMagick
-        const imageMagickPromises = filesToProcess.map(async (pngFile) => {
-          // Handle both full paths (from selectedPngFiles) and filenames (from pngFiles)
-          const pngPath = path.isAbsolute(pngFile) ? pngFile : path.join(selectedFolder, pngFile);
-          const ddsName = path.basename(pngFile, '.png') + '.dds';
-          const ddsPath = path.join(selectedFolder, ddsName);
-
-          try {
-            // Use ImageMagick for PNG to DDS conversion with DXT5 format
-            const command = `"C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe" "${pngPath}" -define dds:compression=dxt5 -define dds:cluster-fit=true "${ddsPath}"`;
-            
-            await new Promise((resolve, reject) => {
-              exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-                if (error) {
-                  console.warn(`⚠️ ImageMagick PNG to DDS conversion failed for ${pngFile}:`, error.message);
-                  reject(error);
-                } else {
-                  console.log(`✅ ImageMagick PNG to DDS conversion successful for ${pngFile}`);
-                  resolve();
-                }
-              });
-            });
-
-            if (fs.existsSync(ddsPath)) {
-              tempDdsFiles.push(ddsName);
-              completedPngFiles++;
-              const progress = (completedPngFiles / filesToProcess.length) * 50; // First 50% for PNG to DDS
-              setConversionProgress(progress);
-              setConversionStatus(`Converted ${completedPngFiles}/${filesToProcess.length} PNG files to DDS...`);
-            }
-          } catch (error) {
-            console.warn(`Failed to convert ${pngFile} with ImageMagick:`, error.message);
-          }
-        });
-
-        // Wait for all ImageMagick conversions to complete
-        await Promise.allSettled(imageMagickPromises);
-        
-      } else {
-        console.log('⚠️ ImageMagick not available, using LtMAO batch processing');
-        
-        // Use LtMAO's native batch processing for PNG to DDS - much faster than individual file processing
-        console.log('🚀 Using LtMAO png2ddsdir for maximum speed - processing entire folder in one command');
+      // Use LtMAO's native batch processing for PNG to DDS - much faster than individual file processing
+      await logToFile('Using LtMAO png2ddsdir for batch processing', 'INFO');
         
         const batchCommand = `"${pythonPath}" "${cliScript}" -t png2ddsdir -src "${selectedFolder}"`;
-        console.log('🚀 Executing batch PNG to DDS command:', batchCommand);
+        await logToFile('Executing batch PNG to DDS command', 'INFO', { command: batchCommand });
 
         await new Promise((resolve, reject) => {
           exec(batchCommand, {
@@ -1589,14 +1591,18 @@ if __name__ == "__main__":
             timeout: 300000 // 5 minutes for entire folder
           }, (error, stdout, stderr) => {
             if (error) {
-              console.error('❌ Batch PNG to DDS error:', error);
-              console.error('❌ stdout:', stdout);
-              console.error('❌ stderr:', stderr);
+              logToFile('Batch PNG to DDS error', 'ERROR', {
+                error: error.message,
+                stdout,
+                stderr,
+                command: batchCommand
+              });
               reject(error);
             } else {
-              console.log('✅ Batch PNG to DDS completed successfully');
-              console.log('✅ stdout:', stdout);
-              if (stderr) console.log('⚠️ stderr:', stderr);
+              logToFile('Batch PNG to DDS completed successfully', 'INFO', {
+                stdout,
+                stderr: stderr || null
+              });
               resolve();
             }
           });
@@ -1618,35 +1624,41 @@ if __name__ == "__main__":
         const progress = (completedPngFiles / filesToProcess.length) * 50; // First 50% for PNG to DDS
         setConversionProgress(progress);
         setConversionStatus(`Converted ${completedPngFiles}/${filesToProcess.length} PNG files to DDS...`);
-      }
 
-      console.log('PNG to DDS conversion completed. Successfully converted DDS files:', tempDdsFiles);
+      await logToFile('PNG to DDS conversion completed', 'INFO', {
+        convertedFiles: tempDdsFiles.length,
+        files: tempDdsFiles.slice(0, 10)
+      });
 
-      // Step 2: Ultra-fast batch DDS to TEX conversion using LtMAO's native directory processing
-      setConversionStatus('Starting ultra-fast batch DDS to TEX conversion...');
+      // Step 2: Batch DDS to TEX conversion using LtMAO's native directory processing
+      setConversionStatus('Starting batch DDS to TEX conversion...');
       
-      console.log('🚀 Using LtMAO dds2texdir for maximum speed - processing entire folder in one command');
+      await logToFile('Using LtMAO dds2texdir for batch processing', 'INFO');
       
-      // Use LtMAO's native batch processing for DDS to TEX - much faster than individual file processing
-      const batchCommand = `"${pythonPath}" "${cliScript}" -t dds2texdir -src "${selectedFolder}"`;
-      console.log('🚀 Executing batch DDS to TEX command:', batchCommand);
+      // Use LtMAO's native batch processing for DDS to TEX
+      const ddsToTexCommand = `"${pythonPath}" "${cliScript}" -t dds2texdir -src "${selectedFolder}"`;
+      await logToFile('Executing batch DDS to TEX command', 'INFO', { command: ddsToTexCommand });
 
       await new Promise((resolve, reject) => {
-        exec(batchCommand, {
+        exec(ddsToTexCommand, {
               cwd: ltmaoPath,
           timeout: 300000 // 5 minutes for entire folder
         }, (error, stdout, stderr) => {
           if (error) {
-            console.error('❌ Batch DDS to TEX error:', error);
-            console.error('❌ stdout:', stdout);
-            console.error('❌ stderr:', stderr);
+            logToFile('Batch DDS to TEX error', 'ERROR', {
+              error: error.message,
+              stdout,
+              stderr,
+              command: ddsToTexCommand
+            });
             reject(error);
-              } else {
-            console.log('✅ Batch DDS to TEX completed successfully');
-            console.log('✅ stdout:', stdout);
-            if (stderr) console.log('⚠️ stderr:', stderr);
-                resolve();
-              }
+          } else {
+            logToFile('Batch DDS to TEX completed successfully', 'INFO', {
+              stdout,
+              stderr: stderr || null
+            });
+            resolve();
+          }
         });
       });
 
@@ -1664,15 +1676,22 @@ if __name__ == "__main__":
           }
         }
       } catch (error) {
-        console.error('Error scanning for TEX files:', error);
+        await logToFile('Error scanning for TEX files', 'ERROR', { error: error.message });
       }
 
       setConversionProgress(100);
       setConversionStatus(`TEX conversion complete! ${successfulTexFiles.length}/${filesToProcess.length} files converted.`);
-      console.log(`Successfully converted ${successfulTexFiles.length} out of ${filesToProcess.length} PNG files to TEX`);
+      await logToFile('TEX conversion completed', 'INFO', {
+        successful: successfulTexFiles.length,
+        total: filesToProcess.length,
+        files: successfulTexFiles.slice(0, 10)
+      });
 
     } catch (error) {
-      console.error('TEX conversion error:', error);
+      await logToFile('PNG to TEX conversion error', 'ERROR', {
+        error: error.message,
+        stack: error.stack
+      });
       setConversionStatus('TEX conversion failed');
     } finally {
       setIsConverting(false);
@@ -1794,7 +1813,7 @@ if __name__ == "__main__":
             variant="contained"
             startIcon={<TransformIcon />}
             onClick={handleConvertTEXToPNG}
-            disabled={!texFiles.length || isConverting}
+            disabled={(!texFiles.length && !ddsFiles.length) || isConverting}
             sx={{
               ...glassButton,
               padding: '12px 20px',

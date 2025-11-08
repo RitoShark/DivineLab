@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Port.css';
-import { Box, IconButton, Tooltip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
-import { Apps as AppsIcon, Add as AddIcon, Folder as FolderIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
+import { Box, IconButton, Tooltip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography, Checkbox, FormControlLabel, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
+import { Apps as AppsIcon, Add as AddIcon, Folder as FolderIcon, ArrowBack as ArrowBackIcon, Warning as WarningIcon } from '@mui/icons-material';
 import CropOriginalIcon from '@mui/icons-material/CropOriginal';
 import { ToPyWithPath } from '../utils/fileOperations.js';
 import { loadFileWithBackup, createBackup } from '../utils/backupManager.js';
@@ -23,6 +23,175 @@ import { addChildParticleEffect, findAvailableVfxSystems, hasChildParticleEffect
 import { scanEffectKeys, extractSubmeshes, insertOrUpdatePersistentEffect, insertMultiplePersistentEffects, ensureResolverMapping, resolveEffectKey, extractExistingPersistentConditions } from '../utils/persistentEffectsManager.js';
 import MatrixEditor from '../components/MatrixEditor';
 import { parseSystemMatrix, upsertSystemMatrix, replaceSystemBlockInFile } from '../utils/matrixUtils.js';
+import debounce from 'lodash/debounce';
+import { FixedSizeList } from 'react-window';
+
+// Separate component for rename input to prevent full re-renders on typing
+const RenameInput = React.memo(({ initialValue, onConfirm, onCancel, onClick }) => {
+  const [localValue, setLocalValue] = useState(initialValue);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, []);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onConfirm(localValue);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onCancel();
+    }
+  };
+
+  const handleBlur = () => {
+    if (localValue && localValue.trim() !== '' && localValue !== initialValue) {
+      onConfirm(localValue);
+    } else {
+      onCancel();
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onKeyDown={handleKeyDown}
+      onBlur={handleBlur}
+      onClick={onClick}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        padding: '4px 8px',
+        background: 'var(--surface-2)',
+        border: '1px solid var(--accent)',
+        borderRadius: '4px',
+        color: 'var(--accent)',
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: '0.95rem',
+        fontWeight: '600',
+        outline: 'none'
+      }}
+    />
+  );
+});
+
+// Separate component for search input to prevent full re-renders on typing
+const SearchInput = React.memo(({ 
+  initialValue,
+  placeholder, 
+  onChange
+}) => {
+  const [localValue, setLocalValue] = useState(initialValue || '');
+  
+  // Sync with external value changes (like clearing)
+  useEffect(() => {
+    setLocalValue(initialValue || '');
+  }, [initialValue]);
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue); // Update local state (no parent re-render)
+    onChange(newValue); // Notify parent (debounced, won't cause lag)
+  };
+
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={localValue}
+      onChange={handleChange}
+      style={{
+        flex: 1,
+        padding: '8px 16px',
+        background: 'var(--surface-2)',
+        border: '1px solid #444',
+        borderRadius: '6px',
+        color: 'var(--accent)',
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: '14px',
+        outline: 'none',
+        marginTop: '-4px'
+      }}
+    />
+  );
+});
+
+// Simple memoized input component for preventing re-renders on typing
+const MemoizedInput = React.memo(({ 
+  value, 
+  onChange, 
+  type = 'text',
+  placeholder = '',
+  min,
+  max,
+  style = {},
+  onKeyPress,
+  autoFocus = false
+}) => {
+  const [localValue, setLocalValue] = useState(value || '');
+  const valueRef = useRef(value || '');
+  
+  useEffect(() => {
+    setLocalValue(value || '');
+    valueRef.current = value || '';
+  }, [value]);
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue);
+    valueRef.current = newValue;
+    // Don't call onChange immediately - only update local state
+    // Parent will get the value on blur or when needed
+  };
+
+  const handleBlur = () => {
+    // Sync with parent on blur
+    if (valueRef.current !== value) {
+      const syntheticEvent = {
+        target: { value: valueRef.current }
+      };
+      onChange(syntheticEvent);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (onKeyPress) {
+      onKeyPress(e);
+    }
+    // Also sync on Enter
+    if (e.key === 'Enter') {
+      handleBlur();
+    }
+  };
+
+  return (
+    <input
+      type={type}
+      value={localValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyPress={handleKeyPress}
+      placeholder={placeholder}
+      min={min}
+      max={max}
+      autoFocus={autoFocus}
+      style={style}
+    />
+  );
+});
+
+// Feature flag for virtualization - set to false to disable if issues occur
+// DISABLED BY DEFAULT for safety - enable after testing
+const ENABLE_VIRTUALIZATION = true;
+// Minimum number of systems before virtualization kicks in (to avoid overhead for small lists)
+const VIRTUALIZATION_THRESHOLD = 20;
 
 const Port = () => {
   const navigate = useNavigate();
@@ -30,8 +199,39 @@ const Port = () => {
   const [donorPath, setDonorPath] = useState('This will show donor bin');
   const [targetFilter, setTargetFilter] = useState('');
   const [donorFilter, setDonorFilter] = useState('');
+  // Local input states for immediate UI feedback
+  const [targetFilterInput, setTargetFilterInput] = useState('');
+  const [donorFilterInput, setDonorFilterInput] = useState('');
   const [enableTargetEmitterSearch, setEnableTargetEmitterSearch] = useState(false);
   const [enableDonorEmitterSearch, setEnableDonorEmitterSearch] = useState(false);
+
+  // Debounced filter setters for performance
+  const debouncedSetTargetFilter = useCallback(
+    debounce((value) => setTargetFilter(value), 200),
+    []
+  );
+
+  const debouncedSetDonorFilter = useCallback(
+    debounce((value) => setDonorFilter(value), 200),
+    []
+  );
+
+  // Sync input states with filter states (for external changes like clearing)
+  useEffect(() => {
+    setTargetFilterInput(targetFilter);
+  }, [targetFilter]);
+
+  useEffect(() => {
+    setDonorFilterInput(donorFilter);
+  }, [donorFilter]);
+
+  // Cleanup debounced functions on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSetTargetFilter.cancel();
+      debouncedSetDonorFilter.cancel();
+    };
+  }, [debouncedSetTargetFilter, debouncedSetDonorFilter]);
 
   // File data states
   const [targetSystems, setTargetSystems] = useState({});
@@ -202,6 +402,12 @@ const Port = () => {
   // Matrix editor modal state
   const [showMatrixModal, setShowMatrixModal] = useState(false);
   const [matrixModalState, setMatrixModalState] = useState({ systemKey: null, initial: null });
+  
+  // Emitter rename state
+  const [renamingEmitter, setRenamingEmitter] = useState(null); // { systemKey, emitterName, newName }
+  
+  // System rename state
+  const [renamingSystem, setRenamingSystem] = useState(null); // { systemKey, newName }
 
   // Optimistic delete helpers
   const backgroundSaveTimerRef = useRef(null);
@@ -247,6 +453,10 @@ const Port = () => {
   
   // Backup viewer state
   const [showBackupViewer, setShowBackupViewer] = useState(false);
+  
+  // Container name trimming preferences
+  const [trimTargetNames, setTrimTargetNames] = useState(true);
+  const [trimDonorNames, setTrimDonorNames] = useState(true);
   
   // Simplified undo system state - only undo, no redo
   const [undoHistory, setUndoHistory] = useState([]);
@@ -497,6 +707,7 @@ const Port = () => {
   const [isDragOverVfx, setIsDragOverVfx] = useState(false);
   const [pressedSystemKey, setPressedSystemKey] = useState(null);
   const [dragStartedKey, setDragStartedKey] = useState(null);
+  const [draggedEmitter, setDraggedEmitter] = useState(null); // { sourceSystemKey, emitterName }
   const dragEnterCounter = useRef(0);
   const targetListRef = useRef(null);
   const donorListRef = useRef(null);
@@ -516,16 +727,33 @@ const Port = () => {
     };
   }, []);
 
-  // Clean up texture previews and timers on unmount
+  // Clean up texture previews, timers, and state on unmount
   useEffect(() => {
     return () => {
-      // Clear any existing texture preview
-      const existingPreview = document.getElementById('port-texture-hover-preview');
-      if (existingPreview) existingPreview.remove();
+      // Clear any existing texture preview (safe to remove as it's not React-managed)
+      try {
+        const existingPreview = document.getElementById('port-texture-hover-preview');
+        if (existingPreview && existingPreview.parentNode) {
+          existingPreview.parentNode.removeChild(existingPreview);
+        }
+      } catch (e) {
+        // Ignore - may already be removed
+      }
       
       // Clear conversion tracking
       activeConversions.current.clear();
+      conversionTimers.current.forEach(timer => {
+        if (timer) clearTimeout(timer);
+      });
       conversionTimers.current.clear();
+      
+      // Clear large state objects to prevent memory leaks when switching pages
+      setTargetSystems({});
+      setDonorSystems({});
+      setTargetPyContent('');
+      setDonorPyContent('');
+      
+      console.log('🧹 Cleaned up Port.js memory on unmount');
     };
   }, []);
 
@@ -771,8 +999,8 @@ const Port = () => {
     
     setUndoHistory(prev => {
       const newHistory = [...prev, currentState];
-      // Keep only last 20 actions to prevent memory issues
-      return newHistory.slice(-20);
+      // Keep only last 10 actions to prevent memory issues
+      return newHistory.slice(-10);
     });
     
   };
@@ -1531,6 +1759,489 @@ const Port = () => {
     }
   };
 
+  // Function to rename an emitter in the target system
+  const handleRenameEmitter = (systemKey, oldEmitterName, newEmitterName) => {
+    if (!newEmitterName || newEmitterName.trim() === '') {
+      setStatusMessage('Emitter name cannot be empty');
+      return;
+    }
+
+    if (newEmitterName === oldEmitterName) {
+      setRenamingEmitter(null);
+      return;
+    }
+
+    // Save state to history BEFORE making changes
+    try { saveStateToHistory(`Rename emitter "${oldEmitterName}" to "${newEmitterName}"`); } catch {}
+
+    const system = targetSystems[systemKey];
+    if (!system) {
+      setStatusMessage(`System "${systemKey}" not found`);
+      setRenamingEmitter(null);
+      return;
+    }
+
+    // Check if new name already exists in this system
+    const existingEmitter = system.emitters?.find(e => e.name === newEmitterName);
+    if (existingEmitter) {
+      setStatusMessage(`Emitter "${newEmitterName}" already exists in this system`);
+      setRenamingEmitter(null);
+      return;
+    }
+
+    // Update the emitter name in the system's rawContent
+    const systemRawContent = system.rawContent || '';
+    const lines = systemRawContent.split('\n');
+    let inTargetEmitter = false;
+    let emitterBracketDepth = 0;
+    let foundEmitterName = false;
+    let updatedLines = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Check if this line starts the target emitter
+      if (trimmed.startsWith('VfxEmitterDefinitionData {')) {
+        inTargetEmitter = true;
+        emitterBracketDepth = 1;
+        foundEmitterName = false;
+        updatedLines.push(line);
+        continue;
+      }
+
+      if (inTargetEmitter) {
+        // Track bracket depth
+        const openBrackets = (line.match(/\{/g) || []).length;
+        const closeBrackets = (line.match(/\}/g) || []).length;
+        emitterBracketDepth += openBrackets - closeBrackets;
+
+        // Check if this is the emitterName line for our target emitter
+        if (!foundEmitterName && trimmed.includes('emitterName: string = "')) {
+          const match = trimmed.match(/emitterName:\s*string\s*=\s*"([^"]+)"/);
+          if (match && match[1] === oldEmitterName) {
+            // Replace the emitter name
+            const indent = line.match(/^(\s*)/)?.[1] || '';
+            updatedLines.push(`${indent}emitterName: string = "${newEmitterName}"`);
+            foundEmitterName = true;
+            continue;
+          }
+        }
+
+        updatedLines.push(line);
+
+        // Exit emitter when brackets close
+        if (emitterBracketDepth <= 0) {
+          inTargetEmitter = false;
+        }
+      } else {
+        updatedLines.push(line);
+      }
+    }
+
+    const updatedSystemRawContent = updatedLines.join('\n');
+
+    // Update the system's rawContent
+    setTargetSystems(prev => ({
+      ...prev,
+      [systemKey]: {
+        ...prev[systemKey],
+        rawContent: updatedSystemRawContent,
+        emitters: prev[systemKey].emitters.map(e => 
+          e.name === oldEmitterName ? { ...e, name: newEmitterName } : e
+        )
+      }
+    }));
+
+    // Update the full targetPyContent
+    try {
+      const sysKeyForReplace = (system.key || systemKey);
+      const newFileText = replaceSystemBlockInFile(targetPyContent || '', sysKeyForReplace, updatedSystemRawContent);
+      setTargetPyContent(newFileText);
+      try { setFileSaved(false); } catch {}
+    } catch (e) {
+      console.warn('Failed to update file content:', e);
+    }
+
+    // Update deleted emitters map if the old name was tracked
+    const oldKey = `${systemKey}:${oldEmitterName}`;
+    if (deletedEmitters.has(oldKey)) {
+      setDeletedEmitters(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(oldKey);
+        return newMap;
+      });
+    }
+
+    setStatusMessage(`Renamed emitter "${oldEmitterName}" to "${newEmitterName}"`);
+    setRenamingEmitter(null);
+  };
+
+  // Function to rename a VFX system and update ResourceResolver entries
+  const handleRenameSystem = (systemKey, newSystemName) => {
+    if (!newSystemName || newSystemName.trim() === '') {
+      setStatusMessage('System name cannot be empty');
+      return;
+    }
+
+    const system = targetSystems[systemKey];
+    if (!system) {
+      setStatusMessage(`System "${systemKey}" not found`);
+      setRenamingSystem(null);
+      return;
+    }
+
+    const oldSystemName = system.name || system.key;
+    if (newSystemName === oldSystemName) {
+      setRenamingSystem(null);
+      return;
+    }
+
+    // Check if new name already exists
+    const existingSystem = Object.values(targetSystems).find(s => 
+      (s.name === newSystemName || s.key === newSystemName) && s.key !== systemKey
+    );
+    if (existingSystem) {
+      setStatusMessage(`System "${newSystemName}" already exists`);
+      setRenamingSystem(null);
+      return;
+    }
+
+    // Save state to history BEFORE making changes
+    try { saveStateToHistory(`Rename system "${oldSystemName}" to "${newSystemName}"`); } catch {}
+
+    let updatedContent = targetPyContent || '';
+
+    // 1. Update the system header (the key assignment)
+    // Support both quoted keys and hash keys, case-insensitive
+    const escapedOldKey = systemKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const oldKeyPattern = systemKey.startsWith('0x') 
+      ? new RegExp(`^\\s*${escapedOldKey}\\s*=\\s*VfxSystemDefinitionData\\s*\\{`, 'mi')
+      : new RegExp(`^\\s*"${escapedOldKey}"\\s*=\\s*VfxSystemDefinitionData\\s*\\{`, 'mi');
+    
+    const newKey = newSystemName.startsWith('0x') ? newSystemName : `"${newSystemName}"`;
+    updatedContent = updatedContent.replace(oldKeyPattern, (match) => {
+      // Preserve the original whitespace before the key
+      const leadingWhitespace = match.match(/^(\s*)/)?.[1] || '';
+      return `${leadingWhitespace}${newKey} = VfxSystemDefinitionData {`;
+    });
+
+    // 2. Update particleName and particlePath within the system
+    // Find the system block and update its internal fields
+    const lines = updatedContent.split('\n');
+    let inTargetSystem = false;
+    let systemBracketDepth = 0;
+    let systemStartLine = -1;
+    let systemEndLine = -1;
+
+    // Find the system block
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      // Case-insensitive check for the system header
+      const systemHeaderPattern = new RegExp(`${newKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*VfxSystemDefinitionData\\s*\\{`, 'i');
+      if (systemHeaderPattern.test(trimmed)) {
+        inTargetSystem = true;
+        systemStartLine = i;
+        systemBracketDepth = 1;
+        continue;
+      }
+
+      if (inTargetSystem) {
+        const openBrackets = (line.match(/\{/g) || []).length;
+        const closeBrackets = (line.match(/\}/g) || []).length;
+        systemBracketDepth += openBrackets - closeBrackets;
+
+        // Update particleName
+        if (trimmed.includes('particleName: string = "')) {
+          lines[i] = line.replace(/particleName:\s*string\s*=\s*"[^"]*"/, `particleName: string = "${newSystemName}"`);
+        }
+
+        // Update particlePath
+        if (trimmed.includes('particlePath: string = "')) {
+          lines[i] = line.replace(/particlePath:\s*string\s*=\s*"[^"]*"/, `particlePath: string = "${newSystemName}"`);
+        }
+
+        if (systemBracketDepth <= 0) {
+          systemEndLine = i;
+          break;
+        }
+      }
+    }
+
+    updatedContent = lines.join('\n');
+
+    // 3. Update ResourceResolver entries that reference this system
+    // Find all ResourceResolver blocks and update entries where the key or value matches the old system name
+    const updatedLines = updatedContent.split('\n');
+    let inResourceMap = false;
+    let resourceMapDepth = 0;
+
+    for (let i = 0; i < updatedLines.length; i++) {
+      const line = updatedLines[i];
+      const trimmed = line.trim();
+
+      // Check if we're entering resourceMap
+      if (trimmed.includes('resourceMap: map[hash,link] = {')) {
+        inResourceMap = true;
+        resourceMapDepth = 1;
+        continue;
+      }
+
+      if (inResourceMap) {
+        const openBrackets = (line.match(/\{/g) || []).length;
+        const closeBrackets = (line.match(/\}/g) || []).length;
+        resourceMapDepth += openBrackets - closeBrackets;
+
+        // Check if this line is a ResourceResolver entry
+        // Pattern: "key" = "value" or 0xHASH = "value" or "key" = 0xHASH
+        const entryMatch = trimmed.match(/^(?:"([^"]+)"|(0x[0-9a-fA-F]+))\s*=\s*(?:"([^"]+)"|(0x[0-9a-fA-F]+))/);
+        if (entryMatch) {
+          const entryKey = entryMatch[1] || entryMatch[2];
+          const entryValue = entryMatch[3] || entryMatch[4];
+
+          // Clean the old system name for comparison
+          const oldNameClean = oldSystemName.replace(/^"|"$/g, '');
+          const entryKeyClean = entryKey.replace(/^"|"$/g, '');
+          const entryValueClean = entryValue.replace(/^"|"$/g, '');
+
+          // Check if either the key or value matches our old system name
+          const keyMatches = entryKeyClean === oldNameClean || entryKeyClean === oldSystemName ||
+                            entryKeyClean.toLowerCase() === oldNameClean.toLowerCase();
+          const valueMatches = entryValueClean === oldNameClean || entryValueClean === oldSystemName ||
+                              entryValueClean.endsWith('/' + oldNameClean) || entryValueClean.endsWith('/' + oldSystemName) ||
+                              entryValueClean.toLowerCase() === oldNameClean.toLowerCase() ||
+                              entryValueClean.toLowerCase().endsWith('/' + oldNameClean.toLowerCase());
+
+          if (keyMatches || valueMatches) {
+            // Determine the new key and value
+            let finalEntryKey = entryKey;
+            let finalEntryValue = entryValue;
+
+            // Update key if it matches
+            if (keyMatches) {
+              finalEntryKey = newSystemName;
+            }
+
+            // Update value if it matches
+            if (valueMatches) {
+              finalEntryValue = newSystemName;
+            }
+
+            // Format the entry properly
+            const finalEntryKeyFormatted = finalEntryKey.startsWith('0x') ? finalEntryKey : `"${finalEntryKey}"`;
+            const finalEntryValueFormatted = finalEntryValue.startsWith('0x') ? finalEntryValue : `"${finalEntryValue}"`;
+            
+            // Preserve indentation
+            const indentMatch = line.match(/^(\s*)/);
+            const indent = indentMatch ? indentMatch[1] : '            ';
+            updatedLines[i] = `${indent}${finalEntryKeyFormatted} = ${finalEntryValueFormatted}`;
+          }
+        }
+
+        if (resourceMapDepth <= 0) {
+          inResourceMap = false;
+        }
+      }
+    }
+
+    updatedContent = updatedLines.join('\n');
+
+    // 4. Update the system's rawContent
+    const systemContent = system.rawContent || '';
+    const updatedSystemContent = systemContent
+      .replace(/^(?:"[^"]+"|0x[0-9a-fA-F]+)\s*=\s*VfxSystemDefinitionData/m, `${newKey} = VfxSystemDefinitionData`)
+      .replace(/particleName:\s*string\s*=\s*"[^"]*"/g, `particleName: string = "${newSystemName}"`)
+      .replace(/particlePath:\s*string\s*=\s*"[^"]*"/g, `particlePath: string = "${newSystemName}"`);
+
+    // 5. Update in-memory state
+    const updatedSystems = { ...targetSystems };
+    const oldSystem = updatedSystems[systemKey];
+    
+    // Remove old system and add with new key
+    delete updatedSystems[systemKey];
+    updatedSystems[newSystemName] = {
+      ...oldSystem,
+      key: newSystemName,
+      name: newSystemName,
+      particleName: newSystemName,
+      rawContent: updatedSystemContent
+    };
+
+    setTargetPyContent(updatedContent);
+    try { setFileSaved(false); } catch {}
+
+    // Re-parse systems to update the in-memory state with the new system key
+    try {
+      const reParsedSystems = parseVfxEmitters(updatedContent);
+      setTargetSystems(reParsedSystems);
+    } catch (parseError) {
+      console.warn('Failed to re-parse systems after rename, using manual update:', parseError);
+      // Fallback to manual update if parsing fails
+      setTargetSystems(updatedSystems);
+    }
+
+    // Update selectedTargetSystem if it was the renamed system
+    if (selectedTargetSystem === systemKey) {
+      setSelectedTargetSystem(newSystemName);
+    }
+
+    setStatusMessage(`Renamed system "${oldSystemName}" to "${newSystemName}"`);
+    setRenamingSystem(null);
+  };
+
+  // Function to move an emitter from one target system to another
+  const handleMoveEmitter = async (sourceSystemKey, emitterName, targetSystemKey) => {
+    if (sourceSystemKey === targetSystemKey) {
+      setStatusMessage('Cannot move emitter to the same system');
+      return;
+    }
+
+    const sourceSystem = targetSystems[sourceSystemKey];
+    const targetSystem = targetSystems[targetSystemKey];
+
+    if (!sourceSystem || !targetSystem) {
+      setStatusMessage('Source or target system not found');
+      return;
+    }
+
+    // Load the full emitter data from source system
+    const fullEmitterData = loadEmitterData(sourceSystem, emitterName);
+    if (!fullEmitterData) {
+      setStatusMessage(`Failed to load emitter data for "${emitterName}"`);
+      return;
+    }
+
+    // Check if emitter name already exists in target system and generate unique name if needed
+    let finalEmitterName = emitterName;
+    if (targetSystem.emitters) {
+      const existingNames = new Set(targetSystem.emitters.map(e => e.name));
+      
+      if (existingNames.has(emitterName)) {
+        // Find the next available suffix
+        let suffix = 1;
+        while (existingNames.has(`${emitterName}_${suffix}`)) {
+          suffix++;
+        }
+        finalEmitterName = `${emitterName}_${suffix}`;
+        
+        // Update the emitter name in the data
+        fullEmitterData.name = finalEmitterName;
+        
+        // Update the emitter name in originalContent if it exists
+        if (fullEmitterData.originalContent) {
+          fullEmitterData.originalContent = fullEmitterData.originalContent.replace(
+            /emitterName:\s*string\s*=\s*"([^"]+)"/,
+            `emitterName: string = "${finalEmitterName}"`
+          );
+        }
+      }
+    }
+
+    try {
+      // Save state to history
+      try { saveStateToHistory(`Move emitter "${emitterName}" from "${sourceSystem.name}" to "${targetSystem.name}"`); } catch {}
+
+      // 1. Remove emitter from source system
+      const sourceSystemContent = sourceSystem.rawContent || '';
+      const sourceEmitters = sourceSystem.emitters || [];
+      
+      // Filter out the emitter being moved
+      const remainingEmitters = sourceEmitters.filter(e => e.name !== emitterName);
+      
+      // Build emitter blocks for remaining emitters
+      const remainingEmitterBlocks = remainingEmitters.map(e => {
+        if (e.originalContent) return e.originalContent;
+        // Try to recover from current system content
+        const sysLines = sourceSystemContent.split('\n');
+        for (let k = 0; k < sysLines.length; k++) {
+          const t = (sysLines[k] || '').trim();
+          if (!t.includes('VfxEmitterDefinitionData {')) continue;
+          let depth = 1, startIdx = k, endIdx = k, name = null;
+          for (let m = k + 1; m < sysLines.length; m++) {
+            const ln = sysLines[m];
+            const tr = (ln || '').trim();
+            if (!name && tr.includes('emitterName:')) {
+              const mtn = tr.match(/emitterName:\s*string\s*=\s*"([^"]+)"/);
+              if (mtn) name = mtn[1];
+            }
+            const opens = (ln.match(/\{/g) || []).length;
+            const closes = (ln.match(/\}/g) || []).length;
+            depth += opens - closes;
+            if (depth <= 0) { endIdx = m; break; }
+          }
+          if (name === e.name) {
+            return sysLines.slice(startIdx, endIdx + 1).join('\n');
+          }
+          k = endIdx;
+        }
+        return `VfxEmitterDefinitionData {\n    emitterName: string = "${e.name}"\n}`;
+      });
+
+      const updatedSourceContent = replaceEmittersInSystem(sourceSystemContent, remainingEmitterBlocks);
+      const updatedSourceSystemContent = replaceSystemBlockInFile(targetPyContent || '', sourceSystemKey, updatedSourceContent);
+
+      // 2. Add emitter to target system
+      // Get the updated target system content (it may have been updated if source and target are different)
+      const targetSystemContent = targetSystem.rawContent || '';
+      const targetSys = updatedSourceSystemContent ? 
+        (extractVFXSystem(updatedSourceSystemContent, targetSystemKey)?.fullContent || targetSystemContent) :
+        targetSystemContent;
+      
+      const targetEmitters = targetSystem.emitters || [];
+      const targetEmitterBlocks = targetEmitters.map(e => {
+        if (e.originalContent) return e.originalContent;
+        const sysLines = targetSys.split('\n');
+        for (let k = 0; k < sysLines.length; k++) {
+          const t = (sysLines[k] || '').trim();
+          if (!t.includes('VfxEmitterDefinitionData {')) continue;
+          let depth = 1, startIdx = k, endIdx = k, name = null;
+          for (let m = k + 1; m < sysLines.length; m++) {
+            const ln = sysLines[m];
+            const tr = (ln || '').trim();
+            if (!name && tr.includes('emitterName:')) {
+              const mtn = tr.match(/emitterName:\s*string\s*=\s*"([^"]+)"/);
+              if (mtn) name = mtn[1];
+            }
+            const opens = (ln.match(/\{/g) || []).length;
+            const closes = (ln.match(/\}/g) || []).length;
+            depth += opens - closes;
+            if (depth <= 0) { endIdx = m; break; }
+          }
+          if (name === e.name) {
+            return sysLines.slice(startIdx, endIdx + 1).join('\n');
+          }
+          k = endIdx;
+        }
+        return `VfxEmitterDefinitionData {\n    emitterName: string = "${e.name}"\n}`;
+      });
+
+      // Add the moved emitter
+      targetEmitterBlocks.push(fullEmitterData.originalContent || `VfxEmitterDefinitionData {\n    emitterName: string = "${finalEmitterName}"\n}`);
+
+      const updatedTargetSystemContent = replaceEmittersInSystem(targetSys, targetEmitterBlocks);
+      const updatedTargetContent = replaceSystemBlockInFile(updatedSourceSystemContent || targetPyContent || '', targetSystemKey, updatedTargetSystemContent);
+
+      // Update file content
+      setTargetPyContent(updatedTargetContent);
+      try { setFileSaved(false); } catch {}
+
+      // Re-parse systems to update state
+      try {
+        const reParsedSystems = parseVfxEmitters(updatedTargetContent);
+        setTargetSystems(reParsedSystems);
+      } catch (parseError) {
+        console.warn('Failed to re-parse systems after moving emitter:', parseError);
+      }
+
+      setStatusMessage(`Moved emitter "${emitterName}"${finalEmitterName !== emitterName ? ` (renamed to "${finalEmitterName}")` : ''} from "${sourceSystem.name}" to "${targetSystem.name}"`);
+    } catch (error) {
+      console.error('Error moving emitter:', error);
+      setStatusMessage(`Failed to move emitter: ${error.message}`);
+    }
+  };
+
   const handlePortEmitter = async (donorSystemKey, emitterName) => {
     if (!selectedTargetSystem) {
       setStatusMessage('Please select a target system first');
@@ -1633,6 +2344,36 @@ const Port = () => {
       // Add the information about whether it was first in original system
       fullEmitterData.wasFirstInOriginalSystem = wasFirstInOriginalSystem;
 
+      // Check if emitter name already exists in target system and generate unique name if needed
+      const targetSystem = targetSystems[selectedTargetSystem];
+      let finalEmitterName = emitterName;
+      
+      if (targetSystem && targetSystem.emitters) {
+        const existingNames = new Set(targetSystem.emitters.map(e => e.name));
+        
+        if (existingNames.has(emitterName)) {
+          // Find the next available suffix
+          let suffix = 1;
+          while (existingNames.has(`${emitterName}_${suffix}`)) {
+            suffix++;
+          }
+          finalEmitterName = `${emitterName}_${suffix}`;
+          
+          // Update the emitter name in the data
+          fullEmitterData.name = finalEmitterName;
+          
+          // Update the emitter name in originalContent if it exists
+          if (fullEmitterData.originalContent) {
+            fullEmitterData.originalContent = fullEmitterData.originalContent.replace(
+              /emitterName:\s*string\s*=\s*"([^"]+)"/,
+              `emitterName: string = "${finalEmitterName}"`
+            );
+          }
+          
+          setStatusMessage(`Emitter name "${emitterName}" already exists, renaming to "${finalEmitterName}"`);
+        }
+      }
+
       // Add emitter to selected target system
       const updatedTargetSystems = { ...targetSystems };
       if (updatedTargetSystems[selectedTargetSystem]) {
@@ -1696,7 +2437,7 @@ const Port = () => {
           console.warn('Failed to update targetPyContent after porting emitter (fast path):', error);
         }
         
-        setStatusMessage(`Porting emitter "${emitterName}" to "${updatedTargetSystems[selectedTargetSystem].name}"`);
+        setStatusMessage(`Ported emitter "${finalEmitterName}" to "${updatedTargetSystems[selectedTargetSystem].name}"`);
 
         // Copy associated asset files
         try {
@@ -1711,19 +2452,19 @@ const Port = () => {
             });
             
             if (copiedFiles.length > 0) {
-              setStatusMessage(`Ported emitter "${emitterName}" and copied ${copiedFiles.length} asset files${skippedFiles.length > 0 ? ` (${skippedFiles.length} skipped)` : ''}`);
+              setStatusMessage(`Ported emitter "${finalEmitterName}" and copied ${copiedFiles.length} asset files${skippedFiles.length > 0 ? ` (${skippedFiles.length} skipped)` : ''}`);
             } else if (skippedFiles.length > 0) {
-              setStatusMessage(`Ported emitter "${emitterName}" (${skippedFiles.length} assets already existed)`);
+              setStatusMessage(`Ported emitter "${finalEmitterName}" (${skippedFiles.length} assets already existed)`);
             }
           }
         } catch (assetError) {
           console.error('Error copying assets:', assetError);
-          setStatusMessage(`Ported emitter "${emitterName}" but failed to copy some assets`);
+          setStatusMessage(`Ported emitter "${finalEmitterName}" but failed to copy some assets`);
         }
       }
     } catch (error) {
       console.error('Error porting emitter:', error);
-      setStatusMessage(`Error porting emitter: ${error.message}`);
+      setStatusMessage(`Error porting emitter "${emitterName}": ${error.message}`);
     }
   };
 
@@ -1752,6 +2493,7 @@ const Port = () => {
 
       let portedCount = 0;
       let skippedCount = 0;
+      const existingNames = new Set(targetSystem.emitters.map(e => e.name));
 
       // Port each emitter in the donor system
       for (let i = 0; i < donorSystem.emitters.length; i++) {
@@ -1759,13 +2501,6 @@ const Port = () => {
 
         if (!emitterName) {
           console.warn(`Skipping emitter ${i} - no name found`);
-          skippedCount++;
-          continue;
-        }
-
-        // Check if emitter already exists in target system
-        const existingEmitterIndex = targetSystem.emitters.findIndex(e => e.name === emitterName);
-        if (existingEmitterIndex !== -1) {
           skippedCount++;
           continue;
         }
@@ -1778,13 +2513,37 @@ const Port = () => {
           continue;
         }
 
+        // Check if emitter name already exists and generate unique name if needed
+        let finalEmitterName = emitterName;
+        if (existingNames.has(emitterName)) {
+          // Find the next available suffix
+          let suffix = 1;
+          while (existingNames.has(`${emitterName}_${suffix}`)) {
+            suffix++;
+          }
+          finalEmitterName = `${emitterName}_${suffix}`;
+          
+          // Update the emitter name in the data
+          fullEmitterData.name = finalEmitterName;
+          
+          // Update the emitter name in originalContent if it exists
+          if (fullEmitterData.originalContent) {
+            fullEmitterData.originalContent = fullEmitterData.originalContent.replace(
+              /emitterName:\s*string\s*=\s*"([^"]+)"/,
+              `emitterName: string = "${finalEmitterName}"`
+            );
+          }
+        }
+
         // Add the emitter to the target system
         targetSystem.emitters.push({
-          name: emitterName,
-          originalContent: fullEmitterData.originalContent,
+          name: finalEmitterName,
+          originalContent: fullEmitterData.originalContent || fullEmitterData.rawContent,
           wasFirstInOriginalSystem: false // We'll handle this later if needed
         });
 
+        // Add to existing names set to prevent duplicates in the same batch
+        existingNames.add(finalEmitterName);
         portedCount++;
       }
 
@@ -2208,14 +2967,14 @@ const Port = () => {
     }
   };
 
-  // Optimized search - remove debouncing for immediate response like VFXHub
-  const filterTargetParticles = (value) => {
-    setTargetFilter(value);
-  };
+  // Debounced search for better performance
+  const filterTargetParticles = useCallback((value) => {
+    debouncedSetTargetFilter(value);
+  }, [debouncedSetTargetFilter]);
 
-  const filterDonorParticles = (value) => {
-    setDonorFilter(value);
-  };
+  const filterDonorParticles = useCallback((value) => {
+    debouncedSetDonorFilter(value);
+  }, [debouncedSetDonorFilter]);
 
   // Cache for texture names to avoid repeated processing during search
   const textureNameCache = useRef(new Map());
@@ -2937,7 +3696,15 @@ const Port = () => {
             dragImage.style.position = 'absolute';
             dragImage.style.top = '-1000px';
             e.dataTransfer.setDragImage(dragImage, 0, 0);
-            setTimeout(() => document.body.removeChild(dragImage), 0);
+            setTimeout(() => {
+              try {
+                if (dragImage.parentNode === document.body) {
+                  document.body.removeChild(dragImage);
+                }
+              } catch (e) {
+                // Ignore - may already be removed
+              }
+            }, 0);
           } catch (err) {
             console.error('Drag start failed:', err);
           }
@@ -2949,6 +3716,33 @@ const Port = () => {
         }}
         className={`particle-div ${isTarget && selectedTargetSystem === system.key ? 'selected-system' : ''}`}
         onClick={() => isTarget && setSelectedTargetSystem(selectedTargetSystem === system.key ? null : system.key)}
+        onDragOver={(e) => {
+          if (!isTarget) return;
+          // Allow dropping emitters into target systems
+          if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('application/x-vfxemitter')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+          }
+        }}
+        onDrop={(e) => {
+          if (!isTarget) return;
+          try {
+            e.preventDefault();
+            e.stopPropagation();
+            const data = e.dataTransfer.getData('application/x-vfxemitter');
+            if (!data) return;
+            
+            const emitterData = JSON.parse(data);
+            const { sourceSystemKey, emitterName } = emitterData;
+            
+            if (sourceSystemKey && emitterName && system.key !== sourceSystemKey) {
+              handleMoveEmitter(sourceSystemKey, emitterName, system.key);
+            }
+          } catch (error) {
+            console.error('Error handling emitter drop:', error);
+          }
+        }}
         style={{ 
           cursor: isTarget ? 'pointer' : 'default',
           outline: isPressed ? '2px dashed var(--accent)' : (isDragging ? '2px dashed var(--accent)' : 'none'),
@@ -2959,6 +3753,10 @@ const Port = () => {
           ...(isTarget && system.ported ? {
             background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent-green, #22c55e), transparent 65%), color-mix(in srgb, var(--accent-green, #22c55e), transparent 78%))',
             border: '1px solid color-mix(in srgb, var(--accent-green, #22c55e), transparent 45%)'
+          } : {}),
+          ...(isTarget && draggedEmitter && draggedEmitter.sourceSystemKey !== system.key ? {
+            border: '2px dashed var(--accent)',
+            background: 'rgba(147, 51, 234, 0.1)'
           } : {})
         }}
       >
@@ -3001,17 +3799,69 @@ const Port = () => {
               🗑
             </button>
           )}
-          <div className="label ellipsis flex-1" title={system.particleName || system.name} style={{
-            color: 'var(--accent)',
-            fontWeight: '600',
-            fontSize: '1rem',
-            textShadow: '0 1px 2px rgba(0,0,0,0.5)'
-          }}>
-            {(system.particleName || system.name || system.key).length > (isTarget ? 35 : 60) ? 
-              (system.particleName || system.name || system.key).substring(0, (isTarget ? 32 : 57)) + '...' : 
-              (system.particleName || system.name || system.key)
-            }
-          </div>
+          {isTarget && renamingSystem && renamingSystem.systemKey === system.key ? (
+            <RenameInput
+              initialValue={system.particleName || system.name || system.key}
+              onConfirm={(newName) => {
+                if (newName && newName.trim() !== '' && newName !== (system.particleName || system.name || system.key)) {
+                  handleRenameSystem(system.key, newName);
+                } else {
+                  setRenamingSystem(null);
+                }
+              }}
+              onCancel={() => setRenamingSystem(null)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div className="label ellipsis flex-1" title={system.particleName || system.name} style={{
+              color: 'var(--accent)',
+              fontWeight: '600',
+              fontSize: '1rem',
+              textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+            }}>
+              {(() => {
+                const displayName = system.particleName || system.name || system.key;
+                const shouldTrim = isTarget ? trimTargetNames : trimDonorNames;
+                const maxLength = 35;
+                const trimLength = 32;
+                
+                if (shouldTrim && displayName.length > maxLength) {
+                  return displayName.substring(0, trimLength) + '...';
+                }
+                return displayName;
+              })()}
+            </div>
+          )}
+          
+          {/* Rename button for target systems */}
+          {isTarget && (!renamingSystem || renamingSystem.systemKey !== system.key) && (
+            <button
+              className="rename-system-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRenamingSystem({ systemKey: system.key, newName: system.particleName || system.name || system.key });
+              }}
+              title="Rename VFX system"
+              style={{
+                width: '24px',
+                height: '24px',
+                marginLeft: '6px',
+                flexShrink: 0,
+                background: 'rgba(147, 51, 234, 0.1)',
+                border: '1px solid rgba(147, 51, 234, 0.4)',
+                borderRadius: '4px',
+                color: '#c084fc',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px',
+                padding: 0
+              }}
+            >
+              ✏️
+            </button>
+          )}
           {isTarget && selectedTargetSystem === system.key && (
             <div className="selection-indicator"></div>
           )}
@@ -3138,10 +3988,45 @@ const Port = () => {
           <div 
             key={index} 
             className="emitter-div"
+            draggable={isTarget}
+            onDragStart={(e) => {
+              if (!isTarget) return;
+              e.stopPropagation();
+              setDraggedEmitter({ sourceSystemKey: system.key, emitterName: emitter.name });
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('application/x-vfxemitter', JSON.stringify({
+                sourceSystemKey: system.key,
+                emitterName: emitter.name
+              }));
+              // Create a drag image for better visual feedback
+              const el = e.currentTarget;
+              const dragImage = el.cloneNode(true);
+              dragImage.style.transform = 'rotate(2deg)';
+              dragImage.style.opacity = '0.9';
+              document.body.appendChild(dragImage);
+              dragImage.style.position = 'absolute';
+              dragImage.style.top = '-1000px';
+              e.dataTransfer.setDragImage(dragImage, 0, 0);
+              setTimeout(() => {
+              try {
+                if (dragImage.parentNode === document.body) {
+                  document.body.removeChild(dragImage);
+                }
+              } catch (e) {
+                // Ignore - may already be removed
+              }
+            }, 0);
+            }}
+            onDragEnd={(e) => {
+              if (!isTarget) return;
+              setDraggedEmitter(null);
+            }}
             style={{
               border: isQuartzChild ? '2px solid #3b82f6' : undefined,
               borderRadius: isQuartzChild ? '6px' : undefined,
-              background: isQuartzChild ? 'rgba(59, 130, 246, 0.05)' : undefined
+              background: isQuartzChild ? 'rgba(59, 130, 246, 0.05)' : undefined,
+              cursor: isTarget ? 'grab' : 'default',
+              opacity: draggedEmitter && draggedEmitter.sourceSystemKey === system.key && draggedEmitter.emitterName === emitter.name ? 0.5 : 1
             }}
           >
             {!isTarget && (
@@ -3155,36 +4040,81 @@ const Port = () => {
                 ◄
               </button>
             )}
-            <div
-              className="label flex-1 ellipsis"
-              style={{ 
-                minWidth: 0, 
-                cursor: 'default',
-                color: 'var(--accent)',
-                fontWeight: '600',
-                fontSize: '0.95rem',
-                textShadow: '0 1px 2px rgba(0,0,0,0.5)'
-              }}
-            >
-              {emitter.name || `Emitter ${index + 1}`}
-              {emitter.isChildParticle && (
-                <span 
-                  style={{
-                    marginLeft: '6px',
-                    fontSize: '10px',
-                    background: 'rgba(255, 193, 7, 0.2)',
-                    color: '#ffc107',
-                    padding: '1px 4px',
-                    borderRadius: '3px',
-                    border: '1px solid rgba(255, 193, 7, 0.3)',
-                    fontWeight: 'bold'
-                  }}
-                  title={`Child particle referencing: ${emitter.childSystemKey}`}
-                >
-                  CHILD
-                </span>
-              )}
-            </div>
+            {isTarget && renamingEmitter && renamingEmitter.systemKey === system.key && renamingEmitter.emitterName === emitter.name ? (
+              <RenameInput
+                initialValue={emitter.name}
+                onConfirm={(newName) => {
+                  if (newName && newName.trim() !== '' && newName !== emitter.name) {
+                    handleRenameEmitter(system.key, emitter.name, newName);
+                  } else {
+                    setRenamingEmitter(null);
+                  }
+                }}
+                onCancel={() => setRenamingEmitter(null)}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div
+                className="label flex-1 ellipsis"
+                style={{ 
+                  minWidth: 0, 
+                  cursor: 'default',
+                  color: 'var(--accent)',
+                  fontWeight: '600',
+                  fontSize: '0.95rem',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+                }}
+              >
+                {emitter.name || `Emitter ${index + 1}`}
+                {emitter.isChildParticle && (
+                  <span 
+                    style={{
+                      marginLeft: '6px',
+                      fontSize: '10px',
+                      background: 'rgba(255, 193, 7, 0.2)',
+                      color: '#ffc107',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      border: '1px solid rgba(255, 193, 7, 0.3)',
+                      fontWeight: 'bold'
+                    }}
+                    title={`Child particle referencing: ${emitter.childSystemKey}`}
+                  >
+                    CHILD
+                  </span>
+                )}
+              </div>
+            )}
+            
+            {/* Rename button for target emitters */}
+            {isTarget && !isQuartzChild && (!renamingEmitter || renamingEmitter.systemKey !== system.key || renamingEmitter.emitterName !== emitter.name) && (
+              <button
+                className="rename-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRenamingEmitter({ systemKey: system.key, emitterName: emitter.name, newName: emitter.name });
+                }}
+                title="Rename emitter"
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  marginLeft: '6px',
+                  flexShrink: 0,
+                  background: 'rgba(147, 51, 234, 0.1)',
+                  border: '1px solid rgba(147, 51, 234, 0.4)',
+                  borderRadius: '4px',
+                  color: '#c084fc',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '12px',
+                  padding: 0
+                }}
+              >
+                ✏️
+              </button>
+            )}
             
             {/* Color blocks */}
             {emitter.color && (
@@ -3491,23 +4421,10 @@ const Port = () => {
 
           {/* Target Filter */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input
-              type="text"
+            <SearchInput
+              initialValue={targetFilterInput}
               placeholder={enableTargetEmitterSearch ? "Filter by Particle or Emitter Name" : "Filter by Particle Name Only"}
-              value={targetFilter}
-              onChange={(e) => filterTargetParticles(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '8px 16px',
-                background: 'var(--surface-2)',
-                border: '1px solid #444',
-                borderRadius: '6px',
-                color: 'var(--accent)',
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: '14px',
-                outline: 'none',
-                marginTop: '-4px'
-              }}
+              onChange={filterTargetParticles}
             />
             <button
               onClick={() => setEnableTargetEmitterSearch(!enableTargetEmitterSearch)}
@@ -3705,23 +4622,10 @@ const Port = () => {
 
           {/* Donor Filter */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input
-              type="text"
+            <SearchInput
+              initialValue={donorFilterInput}
               placeholder={enableDonorEmitterSearch ? "Filter by Particle or Emitter Name" : "Filter by Particle Name Only"}
-              value={donorFilter}
-              onChange={(e) => filterDonorParticles(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '8px 16px',
-                background: 'var(--surface-2)',
-                border: '1px solid #444',
-                borderRadius: '6px',
-                color: 'var(--accent)',
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: '14px',
-                outline: 'none',
-                marginTop: '-4px'
-              }}
+              onChange={filterDonorParticles}
             />
             <button
               onClick={() => setEnableDonorEmitterSearch(!enableDonorEmitterSearch)}
@@ -3978,7 +4882,7 @@ const Port = () => {
                   {persistentPreset.type === 'IsAnimationPlaying' && (
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Animation:</span>
-                      <input 
+                      <MemoizedInput 
                         value={persistentPreset.animationName || ''} 
                         onChange={e => setPersistentPreset(p => ({ ...p, animationName: e.target.value }))}
                         style={{
@@ -3996,7 +4900,7 @@ const Port = () => {
                   {persistentPreset.type === 'HasBuffScript' && (
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Script Name:</span>
-                      <input 
+                      <MemoizedInput 
                         value={persistentPreset.scriptName || ''} 
                         onChange={e => setPersistentPreset(p => ({ ...p, scriptName: e.target.value }))}
                         style={{
@@ -4014,7 +4918,7 @@ const Port = () => {
                   {persistentPreset.type === 'LearnedSpell' && (
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Slot (0-3):</span>
-                      <input 
+                      <MemoizedInput 
                         type="number" 
                         min={0} 
                         max={3} 
@@ -4035,7 +4939,7 @@ const Port = () => {
                   {persistentPreset.type === 'HasGear' && (
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Index:</span>
-                      <input 
+                      <MemoizedInput 
                         type="number" 
                         min={0} 
                         value={persistentPreset.index ?? 0} 
@@ -4056,7 +4960,7 @@ const Port = () => {
                     <>
                       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Spell Slot:</span>
-                        <input 
+                        <MemoizedInput 
                           type="number" 
                           min={0} 
                           max={3} 
@@ -4074,7 +4978,7 @@ const Port = () => {
                       </label>
                       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Operator:</span>
-                        <input 
+                        <MemoizedInput 
                           type="number" 
                           value={persistentPreset.operator ?? 3} 
                           onChange={e => setPersistentPreset(p => ({ ...p, operator: Number(e.target.value) }))}
@@ -4090,7 +4994,7 @@ const Port = () => {
                       </label>
                       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Value:</span>
-                        <input 
+                        <MemoizedInput 
                           type="number" 
                           value={persistentPreset.value ?? 1} 
                           onChange={e => setPersistentPreset(p => ({ ...p, value: Number(e.target.value) }))}
@@ -4111,7 +5015,7 @@ const Port = () => {
                     <>
                       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Spell Hash:</span>
-                        <input 
+                        <MemoizedInput 
                           type="text" 
                           placeholder="Characters/Ezreal/Spells/EzrealPassiveAbility/EzrealPassiveStacks"
                           value={persistentPreset.spellHash ?? ''} 
@@ -4128,7 +5032,7 @@ const Port = () => {
                       </label>
                       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Operator:</span>
-                        <input 
+                        <MemoizedInput 
                           type="number" 
                           value={persistentPreset.operator ?? 2} 
                           onChange={e => setPersistentPreset(p => ({ ...p, operator: Number(e.target.value) }))}
@@ -4144,7 +5048,7 @@ const Port = () => {
                       </label>
                       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Value:</span>
-                        <input 
+                        <MemoizedInput 
                           type="number" 
                           value={persistentPreset.value ?? 5} 
                           onChange={e => setPersistentPreset(p => ({ ...p, value: Number(e.target.value) }))}
@@ -4163,7 +5067,7 @@ const Port = () => {
                   
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Delay On:</span>
-                    <input 
+                    <MemoizedInput 
                       type="number" 
                       min={0} 
                       value={persistentPreset.delay?.on ?? 0} 
@@ -4180,7 +5084,7 @@ const Port = () => {
                   </label>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)' }}>Delay Off:</span>
-                    <input 
+                    <MemoizedInput 
                       type="number" 
                       min={0} 
                       value={persistentPreset.delay?.off ?? 0} 
@@ -4219,7 +5123,7 @@ const Port = () => {
                     gap: 8, 
                     marginBottom: 8 
                   }}>
-                    <input 
+                    <MemoizedInput 
                       type="text"
                       value={customShowSubmeshInput}
                       onChange={e => setCustomShowSubmeshInput(e.target.value)}
@@ -4330,7 +5234,7 @@ const Port = () => {
                     gap: 8, 
                     marginBottom: 8 
                   }}>
-                    <input 
+                    <MemoizedInput 
                       type="text"
                       value={customHideSubmeshInput}
                       onChange={e => setCustomHideSubmeshInput(e.target.value)}
@@ -4465,7 +5369,8 @@ const Port = () => {
                               placeholder="Search or select effect key..."
                               value={vfxSearchTerms[idx] || (v.id ? (effectKeyOptions.find(o => o.id === v.id)?.label || '').split(' → ')[0].split(' - ')[0] || '' : '')}
                               onChange={e => {
-                                setVfxSearchTerms(prev => ({ ...prev, [idx]: e.target.value }));
+                                const newValue = e.target.value;
+                                setVfxSearchTerms(prev => ({ ...prev, [idx]: newValue }));
                                 setVfxDropdownOpen(prev => ({ ...prev, [idx]: true }));
                               }}
                               onFocus={() => setVfxDropdownOpen(prev => ({ ...prev, [idx]: true }))}
@@ -4805,91 +5710,150 @@ const Port = () => {
       )}
 
       {/* Child Particle Edit Modal */}
-      {showChildEditModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{
+      <Dialog
+        open={showChildEditModal}
+        onClose={() => {
+          setShowChildEditModal(false);
+          setEditingChildEmitter(null);
+          setEditingChildSystem(null);
+          setSelectedChildSystem('');
+          setChildParticleRate('1');
+          setChildParticleLifetime('9999');
+          setChildParticleBindWeight('1');
+          setChildParticleIsSingle(true);
+          setChildParticleTimeBeforeFirstEmission('0');
+          setAvailableVfxSystems([]);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
             background: 'var(--glass-bg)',
             border: '1px solid var(--glass-border)',
-            borderRadius: '10px',
-            width: '80%',
-            maxWidth: '500px',
-            padding: '20px',
+            backdropFilter: 'saturate(180%) blur(20px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(20px)',
             boxShadow: 'var(--glass-shadow)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)'
+            borderRadius: 3,
+            overflow: 'hidden',
+          }
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent2), var(--accent))',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 3s ease-in-out infinite',
+            '@keyframes shimmer': {
+              '0%': { backgroundPosition: '200% 0' },
+              '100%': { backgroundPosition: '-200% 0' },
+            },
+          }}
+        />
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1.5,
+          pb: 1.5,
+          pt: 2.5,
+          px: 3,
+          borderBottom: '1px solid var(--glass-border)',
+        }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(var(--accent-rgb), 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <WarningIcon sx={{ color: 'var(--accent)', fontSize: '1.5rem' }} />
+          </Box>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 600, 
+            color: 'var(--accent)',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '1rem',
           }}>
-            <h3 style={{ 
-              color: 'var(--accent)', 
-              marginBottom: '15px',
-              fontFamily: 'JetBrains Mono, monospace'
+            Edit Child Particle
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="body2" sx={{ 
+              color: 'var(--accent2)', 
+              lineHeight: 1.6,
+              fontSize: '0.875rem',
             }}>
-              Edit Child Particle
-            </h3>
-
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
-                VFX System: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{editingChildSystem?.name}</strong>
-              </p>
-              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
-                Emitter: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{editingChildEmitter}</strong>
-              </p>
-              
-              {/* VfxSystemDefinitionData Selection */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+              VFX System: <strong style={{ color: 'var(--accent)' }}>{editingChildSystem?.name}</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ 
+              color: 'var(--accent2)', 
+              lineHeight: 1.6,
+              fontSize: '0.875rem',
+            }}>
+              Emitter: <strong style={{ color: 'var(--accent)' }}>{editingChildEmitter}</strong>
+            </Typography>
+            
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Child VFX System:
-              </label>
-              <select
-                value={selectedChildSystem || ''}
-                onChange={(e) => setSelectedChildSystem(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: 'var(--surface)',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
-                }}
-              >
-                <option value="">Select a VFX System...</option>
-                {availableVfxSystems.map(system => (
-                  <option key={system.key} value={system.key}>
-                    {system.name} {system.key.startsWith('0x') ? `(${system.key})` : ''}
-                  </option>
-                ))}
-              </select>
+              </Typography>
+              <FormControl fullWidth size="small">
+                <Select
+                  value={selectedChildSystem || ''}
+                  onChange={(e) => setSelectedChildSystem(e.target.value)}
+                  sx={{
+                    color: 'var(--accent)',
+                    backgroundColor: 'var(--surface)',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--glass-border)',
+                    },
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '& .MuiSvgIcon-root': {
+                      color: 'var(--accent)',
+                    },
+                  }}
+                >
+                  <MenuItem value="" sx={{ color: 'var(--accent2)' }}>
+                    Select a VFX System...
+                  </MenuItem>
+                  {availableVfxSystems.map(system => (
+                    <MenuItem key={system.key} value={system.key} sx={{ color: 'var(--accent2)' }}>
+                      {system.name} {system.key.startsWith('0x') ? `(${system.key})` : ''}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
 
-              {/* Rate Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Rate:
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleRate}
                 onChange={(e) => setChildParticleRate(e.target.value)}
@@ -4897,54 +5861,52 @@ const Port = () => {
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Lifetime Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Lifetime:
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleLifetime}
                 onChange={(e) => setChildParticleLifetime(e.target.value)}
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Bind Weight Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Bind Weight:
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleBindWeight}
                 onChange={(e) => setChildParticleBindWeight(e.target.value)}
@@ -4952,27 +5914,27 @@ const Port = () => {
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Time Before First Emission Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                textShadow: '0 0 6px rgba(255,255,255,0.25)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+                fontWeight: 500,
               }}>
                 Time Before First Emission:
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleTimeBeforeFirstEmission}
                 onChange={(e) => setChildParticleTimeBeforeFirstEmission(e.target.value)}
@@ -4980,172 +5942,184 @@ const Port = () => {
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Translation Override Inputs */}
-              <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                textShadow: '0 0 6px rgba(255,255,255,0.25)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+                fontWeight: 500,
               }}>
                 Translation Override:
-              </label>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '3px',
-                fontSize: '12px',
-                display: 'block',
-                textShadow: '0 0 4px rgba(255,255,255,0.15)'
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1.5 }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" sx={{ 
+                    color: 'var(--accent2)', 
+                    mb: 0.5,
+                    fontSize: '0.75rem',
                   }}>
                     X:
-                  </label>
-                  <input
+                  </Typography>
+                  <MemoizedInput
                     type="number"
                     value={childParticleTranslationOverrideX}
                     onChange={(e) => setChildParticleTranslationOverrideX(e.target.value)}
                     step="0.1"
                     style={{
                       width: '100%',
-                      padding: '6px',
+                      padding: '6px 8px',
                       background: 'var(--surface)',
                       color: 'var(--accent)',
-                      border: '1px solid var(--accent)',
-                      borderRadius: '4px',
-                      fontSize: '12px'
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'JetBrains Mono, monospace',
                     }}
                   />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '3px',
-                fontSize: '12px',
-                display: 'block',
-                textShadow: '0 0 4px rgba(255,255,255,0.15)'
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" sx={{ 
+                    color: 'var(--accent2)', 
+                    mb: 0.5,
+                    fontSize: '0.75rem',
                   }}>
                     Y:
-                  </label>
-                  <input
+                  </Typography>
+                  <MemoizedInput
                     type="number"
                     value={childParticleTranslationOverrideY}
                     onChange={(e) => setChildParticleTranslationOverrideY(e.target.value)}
                     step="0.1"
                     style={{
                       width: '100%',
-                      padding: '6px',
+                      padding: '6px 8px',
                       background: 'var(--surface)',
                       color: 'var(--accent)',
-                      border: '1px solid var(--accent)',
-                      borderRadius: '4px',
-                      fontSize: '12px'
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'JetBrains Mono, monospace',
                     }}
                   />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '3px',
-                fontSize: '12px',
-                display: 'block',
-                textShadow: '0 0 4px rgba(255,255,255,0.15)'
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" sx={{ 
+                    color: 'var(--accent2)', 
+                    mb: 0.5,
+                    fontSize: '0.75rem',
                   }}>
                     Z:
-                  </label>
-                  <input
+                  </Typography>
+                  <MemoizedInput
                     type="number"
                     value={childParticleTranslationOverrideZ}
                     onChange={(e) => setChildParticleTranslationOverrideZ(e.target.value)}
                     step="0.1"
                     style={{
                       width: '100%',
-                      padding: '6px',
+                      padding: '6px 8px',
                       background: 'var(--surface)',
                       color: 'var(--accent)',
-                      border: '1px solid var(--accent)',
-                      borderRadius: '4px',
-                      fontSize: '12px'
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'JetBrains Mono, monospace',
                     }}
                   />
-                </div>
-              </div>
+                </Box>
+              </Box>
+            </Box>
 
-              {/* Is Single Particle Checkbox */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'flex', 
-                alignItems: 'center',
-                marginBottom: '15px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)',
-                fontSize: '14px',
-                cursor: 'pointer'
-              }}>
-                <input
-                  type="checkbox"
+            <FormControlLabel
+              control={
+                <Checkbox
                   checked={childParticleIsSingle}
                   onChange={(e) => setChildParticleIsSingle(e.target.checked)}
-                  style={{
-                    marginRight: '8px',
-                    transform: 'scale(1.2)'
+                  sx={{
+                    color: 'var(--accent2)',
+                    '&.Mui-checked': {
+                      color: 'var(--accent)',
+                    },
                   }}
                 />
-                Is Single Particle
-              </label>
-            </div>
-            
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => {
-                  setShowChildEditModal(false);
-                  setEditingChildEmitter(null);
-                  setEditingChildSystem(null);
-                  setSelectedChildSystem('');
-                  setChildParticleRate('1');
-                  setChildParticleLifetime('9999');
-                  setChildParticleBindWeight('1');
-                  setChildParticleIsSingle(true);
-                  setChildParticleTimeBeforeFirstEmission('0');
-                  setAvailableVfxSystems([]);
-                }}
-                style={{
-                  padding: '8px 16px',
-                  background: 'var(--surface)',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmChildParticleEdit}
-                style={{
-                  padding: '8px 16px',
-                  background: 'var(--accent)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Update
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              }
+              label={
+                <Typography variant="body2" sx={{ 
+                  color: 'var(--accent2)',
+                  fontSize: '0.875rem',
+                }}>
+                  Is Single Particle
+                </Typography>
+              }
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          pt: 2,
+          borderTop: '1px solid var(--glass-border)',
+          gap: 1.5,
+        }}>
+          <Button
+            onClick={() => {
+              setShowChildEditModal(false);
+              setEditingChildEmitter(null);
+              setEditingChildSystem(null);
+              setSelectedChildSystem('');
+              setChildParticleRate('1');
+              setChildParticleLifetime('9999');
+              setChildParticleBindWeight('1');
+              setChildParticleIsSingle(true);
+              setChildParticleTimeBeforeFirstEmission('0');
+              setAvailableVfxSystems([]);
+            }}
+            variant="outlined"
+            sx={{
+              color: 'var(--accent2)',
+              borderColor: 'var(--glass-border)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              px: 2,
+              '&:hover': {
+                borderColor: 'var(--accent)',
+                backgroundColor: 'rgba(var(--accent-rgb), 0.05)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmChildParticleEdit}
+            variant="contained"
+            sx={{
+              backgroundColor: 'var(--accent)',
+              color: 'var(--surface)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              px: 2.5,
+              '&:hover': {
+                backgroundColor: 'var(--accent2)',
+              },
+            }}
+          >
+            Update
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Matrix Editor Modal */}
       {showMatrixModal && (
@@ -5198,52 +6172,152 @@ const Port = () => {
       )}
 
       {/* New VFX System Modal */}
-      {showNewSystemModal && (
-        <div
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-        >
-          <div
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
-              border: '1px solid rgba(255,255,255,0.14)',
-              backdropFilter: 'saturate(200%) blur(20px)',
-              WebkitBackdropFilter: 'saturate(200%) blur(20px)',
-              borderRadius: 12,
-              width: 520,
-              maxWidth: '90%',
+      <Dialog
+        open={showNewSystemModal}
+        onClose={() => setShowNewSystemModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+            backdropFilter: 'saturate(180%) blur(20px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+            boxShadow: 'var(--glass-shadow)',
+            borderRadius: 3,
+            overflow: 'hidden',
+          }
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent2), var(--accent))',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 3s ease-in-out infinite',
+            '@keyframes shimmer': {
+              '0%': { backgroundPosition: '200% 0' },
+              '100%': { backgroundPosition: '-200% 0' },
+            },
+          }}
+        />
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1.5,
+          pb: 1.5,
+          pt: 2.5,
+          px: 3,
+          borderBottom: '1px solid var(--glass-border)',
+        }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(var(--accent-rgb), 0.15)',
               display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ padding: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
-              <h2 style={{ margin: 0, color: 'var(--accent)', fontSize: '1.25rem', fontWeight: 600 }}>New VFX System</h2>
-              <button onClick={() => setShowNewSystemModal(false)} style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', width: 32, height: 32, borderRadius: '50%', color: 'var(--accent)', cursor: 'pointer' }}>×</button>
-            </div>
-            <div style={{ padding: '1rem 1.25rem', display: 'grid', gap: 12 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.85)' }}>System Name</span>
-                <input
-                  autoFocus
-                  value={newSystemName}
-                  onChange={e => setNewSystemName(e.target.value)}
-                  placeholder="Enter a unique name (e.g., testname)"
-                  style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, color: 'var(--accent)', fontSize: '0.95rem' }}
-                />
-              </label>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>
-                This will create a minimal system with empty emitters list and add a resolver mapping.
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, padding: '0 1.25rem 1.25rem' }}>
-              <button onClick={() => setShowNewSystemModal(false)} style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 6, color: 'var(--text)' }}>Cancel</button>
-              <button onClick={handleCreateNewSystem} style={{ padding: '8px 14px', background: 'linear-gradient(135deg, #6aec96, #1e9b50)', border: 'none', borderRadius: 6, color: 'var(--surface)', fontWeight: 700 }}>Create</button>
-            </div>
-          </div>
-        </div>
-      )}
+            <WarningIcon sx={{ color: 'var(--accent)', fontSize: '1.5rem' }} />
+          </Box>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 600, 
+            color: 'var(--accent)',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '1rem',
+          }}>
+            New VFX System
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+              }}>
+                System Name
+              </Typography>
+              <MemoizedInput
+                autoFocus
+                value={newSystemName}
+                onChange={e => setNewSystemName(e.target.value)}
+                placeholder="Enter a unique name (e.g., testname)"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  background: 'var(--surface)',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
+                }}
+              />
+            </Box>
+            <Typography variant="body2" sx={{ 
+              color: 'var(--accent-muted)', 
+              fontSize: '0.75rem',
+              fontStyle: 'italic',
+            }}>
+              This will create a minimal system with empty emitters list and add a resolver mapping.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          pt: 2,
+          borderTop: '1px solid var(--glass-border)',
+          gap: 1.5,
+        }}>
+          <Button
+            onClick={() => setShowNewSystemModal(false)}
+            variant="outlined"
+            sx={{
+              color: 'var(--accent2)',
+              borderColor: 'var(--glass-border)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              px: 2,
+              '&:hover': {
+                borderColor: 'var(--accent)',
+                backgroundColor: 'rgba(var(--accent-rgb), 0.05)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreateNewSystem}
+            variant="contained"
+            sx={{
+              backgroundColor: 'var(--accent)',
+              color: 'var(--surface)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              px: 2.5,
+              '&:hover': {
+                backgroundColor: 'var(--accent2)',
+              },
+            }}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Name Prompt for Drag-and-Drop Full VFX System */}
       {showNamePromptModal && (
@@ -5273,7 +6347,7 @@ const Port = () => {
             <div style={{ padding: '1rem 1.25rem', display: 'grid', gap: 12 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.85)' }}>System Name</span>
-                <input
+                <MemoizedInput
                   autoFocus
                   value={namePromptValue}
                   onChange={e => setNamePromptValue(e.target.value)}
@@ -5379,226 +6453,373 @@ const Port = () => {
       )}
 
       {/* Idle Particles Modal */}
-      {showIdleParticleModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.4)',
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
+      <Dialog
+        open={showIdleParticleModal}
+        onClose={() => {
+          setShowIdleParticleModal(false);
+          setSelectedSystemForIdle(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+            backdropFilter: 'saturate(180%) blur(20px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+            boxShadow: 'var(--glass-shadow)',
+            borderRadius: 3,
+            overflow: 'hidden',
+          }
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent2), var(--accent))',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 3s ease-in-out infinite',
+            '@keyframes shimmer': {
+              '0%': { backgroundPosition: '200% 0' },
+              '100%': { backgroundPosition: '-200% 0' },
+            },
+          }}
+        />
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1.5,
+          pb: 1.5,
+          pt: 2.5,
+          px: 3,
+          borderBottom: '1px solid var(--glass-border)',
         }}>
-          <div style={{
-            background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--bg) 100%)',
-            border: '2px solid var(--accent)',
-            borderRadius: '8px',
-            padding: '20px',
-            minWidth: '400px',
-            maxWidth: '500px'
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(var(--accent-rgb), 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <WarningIcon sx={{ color: 'var(--accent)', fontSize: '1.5rem' }} />
+          </Box>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 600, 
+            color: 'var(--accent)',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '1rem',
           }}>
-            <h3 style={{ color: 'var(--accent)', marginBottom: '15px', textAlign: 'center' }}>
-              Add Idle Particles
-            </h3>
-
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
-                VFX System: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{selectedSystemForIdle?.name}</strong>
-              </p>
-              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
+            {isEditingIdle ? 'Edit Idle Particles' : 'Add Idle Particles'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="body2" sx={{ 
+              color: 'var(--accent2)', 
+              lineHeight: 1.6,
+              fontSize: '0.875rem',
+            }}>
+              VFX System: <strong style={{ color: 'var(--accent)' }}>{selectedSystemForIdle?.name}</strong>
+            </Typography>
+            
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+              }}>
                 {isEditingIdle ? 'Select or enter a new bone for this idle particle:' : 'Select bone to attach particles:'}
-              </p>
-
-                <select
+              </Typography>
+              <FormControl fullWidth size="small">
+                <Select
                   value={selectedBoneName}
                   onChange={(e) => setSelectedBoneName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    background: 'var(--surface)',
+                  sx={{
                     color: 'var(--accent)',
-                    border: '1px solid var(--accent)',
-                    borderRadius: '4px',
-                    fontSize: '14px'
+                    backgroundColor: 'var(--surface)',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--glass-border)',
+                    },
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '& .MuiSvgIcon-root': {
+                      color: 'var(--accent)',
+                    },
                   }}
-              >
-                {BONE_NAMES.map(bone => (
-                  <option key={bone} value={bone}>{bone}</option>
-                ))}
-              </select>
-            </div>
+                >
+                  {BONE_NAMES.map(bone => (
+                    <MenuItem key={bone} value={bone} sx={{ color: 'var(--accent2)' }}>
+                      {bone}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
 
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+              }}>
                 Or type a custom bone name:
-              </p>
-              <input
+              </Typography>
+              <MemoizedInput
                 value={customBoneName}
                 onChange={(e) => setCustomBoneName(e.target.value)}
                 placeholder={isEditingIdle && existingIdleBone ? `Current: ${existingIdleBone}` : 'e.g., r_weapon, C_Head_Jnt, etc.'}
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
-            </div>
+            </Box>
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => {
-                  setShowIdleParticleModal(false);
-                  setSelectedSystemForIdle(null);
-                }}
-                style={{
-                  padding: '8px 16px',
-                  background: '#666',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmIdleParticles}
-                style={{
-                  padding: '8px 16px',
-                  background: 'linear-gradient(135deg, var(--accent), var(--accent))',
-                  color: 'var(--surface)',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
-                }}
-              >
-                {isEditingIdle ? 'Update Idle Bone' : 'Add Idle Particles'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            {isEditingIdle && existingIdleBone && (
+              <Box sx={{ 
+                backgroundColor: 'rgba(var(--accent-rgb), 0.08)',
+                border: '1px solid rgba(var(--accent-rgb), 0.2)',
+                borderRadius: 1.5,
+                p: 2,
+              }}>
+                <Typography variant="body2" sx={{ 
+                  color: 'var(--accent2)', 
+                  fontSize: '0.8rem',
+                }}>
+                  Current bone: <strong style={{ color: 'var(--accent)' }}>{existingIdleBone}</strong>
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          pt: 2,
+          borderTop: '1px solid var(--glass-border)',
+          gap: 1.5,
+        }}>
+          <Button
+            onClick={() => {
+              setShowIdleParticleModal(false);
+              setSelectedSystemForIdle(null);
+            }}
+            variant="outlined"
+            sx={{
+              color: 'var(--accent2)',
+              borderColor: 'var(--glass-border)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              px: 2,
+              '&:hover': {
+                borderColor: 'var(--accent)',
+                backgroundColor: 'rgba(var(--accent-rgb), 0.05)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmIdleParticles}
+            variant="contained"
+            sx={{
+              backgroundColor: 'var(--accent)',
+              color: 'var(--surface)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              px: 2.5,
+              '&:hover': {
+                backgroundColor: 'var(--accent2)',
+              },
+            }}
+          >
+            {isEditingIdle ? 'Update Idle Bone' : 'Add Idle Particles'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Child Particles Modal */}
-      {showChildModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{
+      <Dialog
+        open={showChildModal}
+        onClose={() => {
+          setShowChildModal(false);
+          setSelectedSystemForChild(null);
+          setSelectedChildSystem('');
+          setChildEmitterName('');
+          setAvailableVfxSystems([]);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
             background: 'var(--glass-bg)',
             border: '1px solid var(--glass-border)',
-            borderRadius: '10px',
-            width: '80%',
-            maxWidth: '500px',
-            padding: '20px',
+            backdropFilter: 'saturate(180%) blur(20px)',
+            WebkitBackdropFilter: 'saturate(180%) blur(20px)',
             boxShadow: 'var(--glass-shadow)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)'
+            borderRadius: 3,
+            overflow: 'hidden',
+          }
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent2), var(--accent))',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 3s ease-in-out infinite',
+            '@keyframes shimmer': {
+              '0%': { backgroundPosition: '200% 0' },
+              '100%': { backgroundPosition: '-200% 0' },
+            },
+          }}
+        />
+        <DialogTitle sx={{ 
+          color: 'var(--accent)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1.5,
+          pb: 1.5,
+          pt: 2.5,
+          px: 3,
+          borderBottom: '1px solid var(--glass-border)',
+        }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(var(--accent-rgb), 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <WarningIcon sx={{ color: 'var(--accent)', fontSize: '1.5rem' }} />
+          </Box>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 600, 
+            color: 'var(--accent)',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '1rem',
           }}>
-            <h3 style={{ 
-              color: 'var(--accent)', 
-              marginBottom: '15px',
-              fontFamily: 'JetBrains Mono, monospace'
-            }}>
-              Add Child Particles
-            </h3>
+            Add Child Particles
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ color: '#ffffff', marginBottom: '10px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
-                VFX System: <strong style={{ color: 'var(--accent)', textShadow: '0 0 6px rgba(255,255,255,0.2)' }}>{selectedSystemForChild?.name}</strong>
-              </p>
-              
-              {/* VfxSystemDefinitionData Selection */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+            <Typography variant="body2" sx={{ 
+              color: 'var(--accent2)', 
+              lineHeight: 1.6,
+              fontSize: '0.875rem',
+            }}>
+              VFX System: <strong style={{ color: 'var(--accent)' }}>{selectedSystemForChild?.name}</strong>
+            </Typography>
+            
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Select Child VFX System:
-              </label>
-              <select
-                value={selectedChildSystem || ''}
-                onChange={(e) => setSelectedChildSystem(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: 'var(--surface)',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
-                }}
-              >
-                <option value="">Select a VFX System...</option>
-                {availableVfxSystems.map(system => (
-                  <option key={system.key} value={system.key}>
-                    {system.name} {system.key.startsWith('0x') ? `(${system.key})` : ''}
-                  </option>
-                ))}
-              </select>
-              
-              {/* Emitter Name Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+              </Typography>
+              <FormControl fullWidth size="small">
+                <Select
+                  value={selectedChildSystem || ''}
+                  onChange={(e) => setSelectedChildSystem(e.target.value)}
+                  sx={{
+                    color: 'var(--accent)',
+                    backgroundColor: 'var(--surface)',
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--glass-border)',
+                    },
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                      borderColor: 'var(--accent)',
+                    },
+                    '& .MuiSvgIcon-root': {
+                      color: 'var(--accent)',
+                    },
+                  }}
+                >
+                  <MenuItem value="" sx={{ color: 'var(--accent2)' }}>
+                    Select a VFX System...
+                  </MenuItem>
+                  {availableVfxSystems.map(system => (
+                    <MenuItem key={system.key} value={system.key} sx={{ color: 'var(--accent2)' }}>
+                      {system.name} {system.key.startsWith('0x') ? `(${system.key})` : ''}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+            
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Emitter Name:
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="text"
                 value={childEmitterName}
                 onChange={(e) => setChildEmitterName(e.target.value)}
                 placeholder="Enter emitter name..."
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Rate Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Rate (default: 1):
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleRate}
                 onChange={(e) => setChildParticleRate(e.target.value)}
@@ -5607,27 +6828,26 @@ const Port = () => {
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Lifetime Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Lifetime (default: 9999):
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleLifetime}
                 onChange={(e) => setChildParticleLifetime(e.target.value)}
@@ -5635,27 +6855,26 @@ const Port = () => {
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Bind Weight Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'block', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
               }}>
                 Bind Weight (default: 1):
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleBindWeight}
                 onChange={(e) => setChildParticleBindWeight(e.target.value)}
@@ -5664,27 +6883,27 @@ const Port = () => {
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Time Before First Emission Input */}
-              <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                textShadow: '0 0 6px rgba(255,255,255,0.25)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+                fontWeight: 500,
               }}>
                 Time Before First Emission (default: 0):
-              </label>
-              <input
+              </Typography>
+              <MemoizedInput
                 type="number"
                 value={childParticleTimeBeforeFirstEmission}
                 onChange={(e) => setChildParticleTimeBeforeFirstEmission(e.target.value)}
@@ -5693,38 +6912,36 @@ const Port = () => {
                 min="0"
                 style={{
                   width: '100%',
-                  padding: '8px',
+                  padding: '8px 12px',
                   background: 'var(--surface)',
                   color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  marginBottom: '15px'
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}
               />
+            </Box>
 
-              {/* Translation Override Inputs */}
-              <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '5px',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                textShadow: '0 0 6px rgba(255,255,255,0.25)'
+            <Box>
+              <Typography variant="body2" sx={{ 
+                color: 'var(--accent2)', 
+                mb: 1,
+                fontSize: '0.875rem',
+                fontWeight: 500,
               }}>
                 Translation Override (default: 0, 0, 0):
-              </label>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '3px',
-                fontSize: '12px',
-                display: 'block',
-                textShadow: '0 0 4px rgba(255,255,255,0.15)'
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1.5 }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" sx={{ 
+                    color: 'var(--accent2)', 
+                    mb: 0.5,
+                    fontSize: '0.75rem',
                   }}>
                     X:
-                  </label>
-                  <input
+                  </Typography>
+                  <MemoizedInput
                     type="number"
                     value={childParticleTranslationOverrideX}
                     onChange={(e) => setChildParticleTranslationOverrideX(e.target.value)}
@@ -5732,26 +6949,25 @@ const Port = () => {
                     step="0.1"
                     style={{
                       width: '100%',
-                      padding: '6px',
+                      padding: '6px 8px',
                       background: 'var(--surface)',
                       color: 'var(--accent)',
-                      border: '1px solid var(--accent)',
-                      borderRadius: '4px',
-                      fontSize: '12px'
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'JetBrains Mono, monospace',
                     }}
                   />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '3px',
-                fontSize: '12px',
-                display: 'block',
-                textShadow: '0 0 4px rgba(255,255,255,0.15)'
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" sx={{ 
+                    color: 'var(--accent2)', 
+                    mb: 0.5,
+                    fontSize: '0.75rem',
                   }}>
                     Y:
-                  </label>
-                  <input
+                  </Typography>
+                  <MemoizedInput
                     type="number"
                     value={childParticleTranslationOverrideY}
                     onChange={(e) => setChildParticleTranslationOverrideY(e.target.value)}
@@ -5759,26 +6975,25 @@ const Port = () => {
                     step="0.1"
                     style={{
                       width: '100%',
-                      padding: '6px',
+                      padding: '6px 8px',
                       background: 'var(--surface)',
                       color: 'var(--accent)',
-                      border: '1px solid var(--accent)',
-                      borderRadius: '4px',
-                      fontSize: '12px'
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'JetBrains Mono, monospace',
                     }}
                   />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                color: '#ffffff', 
-                marginBottom: '3px',
-                fontSize: '12px',
-                display: 'block',
-                textShadow: '0 0 4px rgba(255,255,255,0.15)'
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2" sx={{ 
+                    color: 'var(--accent2)', 
+                    mb: 0.5,
+                    fontSize: '0.75rem',
                   }}>
                     Z:
-                  </label>
-                  <input
+                  </Typography>
+                  <MemoizedInput
                     type="number"
                     value={childParticleTranslationOverrideZ}
                     onChange={(e) => setChildParticleTranslationOverrideZ(e.target.value)}
@@ -5786,86 +7001,98 @@ const Port = () => {
                     step="0.1"
                     style={{
                       width: '100%',
-                      padding: '6px',
+                      padding: '6px 8px',
                       background: 'var(--surface)',
                       color: 'var(--accent)',
-                      border: '1px solid var(--accent)',
-                      borderRadius: '4px',
-                      fontSize: '12px'
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'JetBrains Mono, monospace',
                     }}
                   />
-                </div>
-              </div>
+                </Box>
+              </Box>
+            </Box>
 
-              {/* Is Single Particle Checkbox */}
-              <label style={{ 
-                color: '#ffffff', 
-                display: 'flex', 
-                alignItems: 'center',
-                marginBottom: '15px',
-                textShadow: '0 0 6px rgba(255,255,255,0.2)',
-                fontSize: '14px',
-                cursor: 'pointer'
-              }}>
-                <input
-                  type="checkbox"
+            <FormControlLabel
+              control={
+                <Checkbox
                   checked={childParticleIsSingle}
                   onChange={(e) => setChildParticleIsSingle(e.target.checked)}
-                  style={{
-                    marginRight: '8px',
-                    transform: 'scale(1.2)'
+                  sx={{
+                    color: 'var(--accent2)',
+                    '&.Mui-checked': {
+                      color: 'var(--accent)',
+                    },
                   }}
                 />
-                Is Single Particle (default: true)
-              </label>
-            </div>
-            
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => {
-                  setShowChildModal(false);
-                  setSelectedSystemForChild(null);
-                  setSelectedChildSystem('');
-                  setChildEmitterName('');
-                  setAvailableVfxSystems([]);
-                }}
-                style={{
-                  padding: '8px 16px',
-                  background: '#666',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '14px'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmChildParticles}
-                disabled={!selectedChildSystem || !childEmitterName.trim()}
-                style={{
-                  padding: '8px 16px',
-                  background: (!selectedChildSystem || !childEmitterName.trim()) 
-                    ? '#666' 
-                    : 'linear-gradient(135deg, #ffc107, #ff8f00)',
-                  color: 'var(--surface)',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: (!selectedChildSystem || !childEmitterName.trim()) 
-                    ? 'not-allowed' 
-                    : 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '14px',
-                  opacity: (!selectedChildSystem || !childEmitterName.trim()) ? 0.6 : 1
-                }}
-              >
-                Add Child Particles
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              }
+              label={
+                <Typography variant="body2" sx={{ 
+                  color: 'var(--accent2)',
+                  fontSize: '0.875rem',
+                }}>
+                  Is Single Particle (default: true)
+                </Typography>
+              }
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          pt: 2,
+          borderTop: '1px solid var(--glass-border)',
+          gap: 1.5,
+        }}>
+          <Button
+            onClick={() => {
+              setShowChildModal(false);
+              setSelectedSystemForChild(null);
+              setSelectedChildSystem('');
+              setChildEmitterName('');
+              setAvailableVfxSystems([]);
+            }}
+            variant="outlined"
+            sx={{
+              color: 'var(--accent2)',
+              borderColor: 'var(--glass-border)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              px: 2,
+              '&:hover': {
+                borderColor: 'var(--accent)',
+                backgroundColor: 'rgba(var(--accent-rgb), 0.05)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmChildParticles}
+            disabled={!selectedChildSystem || !childEmitterName.trim()}
+            variant="contained"
+            sx={{
+              backgroundColor: 'var(--accent)',
+              color: 'var(--surface)',
+              textTransform: 'none',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              px: 2.5,
+              '&:hover': {
+                backgroundColor: 'var(--accent2)',
+              },
+              '&:disabled': {
+                backgroundColor: '#666',
+                color: 'rgba(255,255,255,0.6)',
+              },
+            }}
+          >
+            Add Child Particles
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Thin Status Bar */}
       <div style={{
@@ -6098,6 +7325,10 @@ const Port = () => {
         }}
         filePath={targetPath !== 'This will show target bin' ? targetPath.replace('.bin', '.py') : null}
         component="port"
+        trimTargetNames={trimTargetNames}
+        trimDonorNames={trimDonorNames}
+        onTrimTargetNamesChange={setTrimTargetNames}
+        onTrimDonorNamesChange={setTrimDonorNames}
       />
 
       {/* Unsaved Changes Dialog */}

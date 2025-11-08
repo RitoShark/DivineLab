@@ -1568,7 +1568,24 @@ const BinEditor = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
-
+  // Clean up large state objects on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Clear large state objects to prevent memory leaks when switching pages
+      setPyContent('');
+      setOriginalPyContent('');
+      setBinData(null);
+      setSelectedEmitters(new Set());
+      setExpandedSystems(new Set());
+      setLockedSystems(new Set());
+      setMatchingEmitters([]);
+      setUndoHistory([]);
+      undoHistoryRef.current = [];
+      undoIndexRef.current = -1;
+      
+      console.log('🧹 Cleaned up BinEditor.js memory on unmount');
+    };
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!currentPyPath || !pyContent || !currentBinPath) {

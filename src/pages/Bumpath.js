@@ -59,6 +59,87 @@ import {
 } from '@mui/icons-material';
 import electronPrefs from '../utils/electronPrefs.js';
 
+// Memoized TextField component to prevent parent re-renders on every keystroke
+const MemoizedPrefixInput = React.memo(({
+  value,
+  onChange,
+  sx,
+  ...otherProps
+}) => {
+  const [localValue, setLocalValue] = useState(value || '');
+  const valueRef = useRef(value || '');
+  const debounceTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    setLocalValue(value || '');
+    valueRef.current = value || '';
+  }, [value]);
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    setLocalValue(newValue);
+    valueRef.current = newValue;
+
+    // Debounce the onChange call to prevent parent re-renders on every keystroke
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    // Call onChange after user stops typing
+    debounceTimeoutRef.current = setTimeout(() => {
+      onChange(e);
+    }, 100);
+  };
+
+  const handleBlur = () => {
+    // Clear any pending debounced call
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+      debounceTimeoutRef.current = null;
+    }
+    // Sync with parent on blur
+    if (valueRef.current !== value) {
+      const syntheticEvent = {
+        target: { value: valueRef.current }
+      };
+      onChange(syntheticEvent);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    // Also sync on Enter
+    if (e.key === 'Enter') {
+      // Clear any pending debounced call
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+      handleBlur();
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <TextField
+      size="small"
+      value={localValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyPress={handleKeyPress}
+      sx={sx}
+      {...otherProps}
+    />
+  );
+});
+
 const Bumpath = () => {
   const [sourceDirs, setSourceDirs] = useState([]);
   const [sourceFiles, setSourceFiles] = useState({});
@@ -1462,8 +1543,7 @@ const Bumpath = () => {
           </Button>
 
 
-          <TextField
-            size="small"
+          <MemoizedPrefixInput
             value={prefixText}
             onChange={handlePrefixTextChange}
             data-bumpath-prefix
@@ -2378,6 +2458,7 @@ const Bumpath = () => {
         <CelestiaGuide
           id="bumpath-guide"
           onStepChange={(stepIndex) => setCelestiaStepIndex(stepIndex)}
+          enableTopRightForSteps={[4, 5, 6]} // Steps 5, 6, and 7 (0-based indices 4, 5, 6)
           steps={[
             {
               title: "Source Directories",

@@ -15,7 +15,10 @@ import {
   Chip,
   Tooltip,
   Alert,
-  LinearProgress
+  LinearProgress,
+  Switch,
+  FormControlLabel,
+  FormGroup
 } from '@mui/material';
 import {
   Restore as RestoreIcon,
@@ -26,7 +29,7 @@ import {
 import { listBackups, restoreBackup, formatFileSize } from '../utils/backupManager.js';
 import { glassButton, glassButtonOutlined, glassPanel } from '../utils/glassStyles';
 
-const BackupViewer = ({ open, onClose, filePath, component }) => {
+const BackupViewer = ({ open, onClose, filePath, component, trimTargetNames, trimDonorNames, onTrimTargetNamesChange, onTrimDonorNamesChange }) => {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -145,6 +148,78 @@ const BackupViewer = ({ open, onClose, filePath, component }) => {
         }}>
           {filePath ? `File: ${filePath.split('\\').pop() || filePath.split('/').pop()}` : 'No file selected'}
         </Typography>
+        {component === 'port' && (onTrimTargetNamesChange || onTrimDonorNamesChange) && (
+          <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(147,51,234,0.2)' }}>
+            <Typography variant="body2" sx={{ 
+              color: 'rgba(255,255,255,0.8)',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '0.8rem',
+              mb: 1,
+              fontWeight: 'bold'
+            }}>
+              Display Options:
+            </Typography>
+            <FormGroup>
+              {onTrimTargetNamesChange && (
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={trimTargetNames !== false}
+                      onChange={(e) => onTrimTargetNamesChange(e.target.checked)}
+                      size="small"
+                      sx={{
+                        '& .MuiSwitch-switchBase.Mui-checked': {
+                          color: '#c084fc',
+                        },
+                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                          backgroundColor: '#c084fc',
+                        },
+                      }}
+                    />
+                  }
+                  label={
+                    <Typography sx={{ 
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: '0.75rem',
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      Trim Target Container Names
+                    </Typography>
+                  }
+                  sx={{ mb: 0.5 }}
+                />
+              )}
+              {onTrimDonorNamesChange && (
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={trimDonorNames !== false}
+                      onChange={(e) => onTrimDonorNamesChange(e.target.checked)}
+                      size="small"
+                      sx={{
+                        '& .MuiSwitch-switchBase.Mui-checked': {
+                          color: '#c084fc',
+                        },
+                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                          backgroundColor: '#c084fc',
+                        },
+                      }}
+                    />
+                  }
+                  label={
+                    <Typography sx={{ 
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: '0.75rem',
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      Trim Donor Container Names
+                    </Typography>
+                  }
+                />
+              )}
+            </FormGroup>
+          </Box>
+        )}
       </DialogTitle>
 
       <DialogContent sx={{

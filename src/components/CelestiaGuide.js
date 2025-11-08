@@ -20,8 +20,9 @@ import SpotlightOverlay from './SpotlightOverlay';
  *   }>
  * - onClose?: () => void
  * - onStepChange?: (stepIndex: number) => void
+ * - enableTopRightForSteps?: number[] - Array of step indices (0-based) that should position at top-right instead of bottom-right
  */
-const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop, onStepChange }) => {
+const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop, onStepChange, enableTopRightForSteps = [] }) => {
   const [entered, setEntered] = useState(false);
   const [exiting, setExiting] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
@@ -197,8 +198,8 @@ const CelestiaGuide = ({ id, steps = [], onClose, onSkipToTop, onStepChange }) =
     };
   }, [stepIndex, steps]);
 
-  // Determine if we should position at top-right (for steps 5, 6, and 7, indices 4, 5, and 6)
-  const isTopRight = stepIndex === 4 || stepIndex === 5 || stepIndex === 6;
+  // Determine if we should position at top-right (only if enabled for this step index)
+  const isTopRight = enableTopRightForSteps.includes(stepIndex);
   
   const guideContent = (
     <div
