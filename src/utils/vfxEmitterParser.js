@@ -975,6 +975,7 @@ const generateVector3Python = (vector3Data, indentLevel, propertyName) => {
  * Safely replace the emitter definition data block within a single VFX system
  * using a provided list of emitter python snippets. Preserves all other fields.
  * Handles both simpleEmitterDefinitionData and complexEmitterDefinitionData patterns.
+ * IMPORTANT: This function now handles BOTH sections separately to prevent duplication.
  *
  * @param {string} systemContent - Original python text for a single VfxSystemDefinitionData block
  * @param {Array<string>} emittersPython - Array of emitter blocks (already valid python) to insert
@@ -982,9 +983,122 @@ const generateVector3Python = (vector3Data, indentLevel, propertyName) => {
  */
 const replaceEmittersInSystem = (systemContent, emittersPython) => {
   const lines = systemContent.split('\n');
-  const result = [];
-
-  // Find the emitter definition data line (handle both simple and complex)
+  
+  // First, we need to determine which emitters belong to which section
+  // by checking the original system content
+  const complexEmitters = [];
+  const simpleEmitters = [];
+  
+  // Find both sections and their emitters in the original content
+  let inComplexSection = false;
+  let inSimpleSection = false;
+  let complexSectionStart = -1;
+  let simpleSectionStart = -1;
+  let complexSectionDepth = 0;
+  let simpleSectionDepth = 0;
+  const originalEmitterSections = new Map(); // Map emitter name to section type
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    
+    // Track section starts
+    if (trimmed.includes('complexEmitterDefinitionData: list[pointer] =')) {
+      inComplexSection = true;
+      complexSectionStart = i;
+      complexSectionDepth = 1;
+    } else if (trimmed.includes('simpleEmitterDefinitionData: list[pointer] =')) {
+      inSimpleSection = true;
+      simpleSectionStart = i;
+      simpleSectionDepth = 1;
+    }
+    
+    // Track emitters within sections
+    if ((inComplexSection || inSimpleSection) && trimmed.includes('VfxEmitterDefinitionData {')) {
+      // Find the emitter name
+      for (let j = i + 1; j < lines.length && j < i + 50; j++) {
+        const emitterLine = lines[j];
+        if (/emitterName:\s*string\s*=\s*"/i.test(emitterLine)) {
+          const match = emitterLine.match(/emitterName:\s*string\s*=\s*"([^"]+)"/i);
+          if (match) {
+            const emitterName = match[1];
+            originalEmitterSections.set(emitterName, inComplexSection ? 'complex' : 'simple');
+            break;
+          }
+        }
+      }
+    }
+    
+    // Track section depth
+    if (inComplexSection) {
+      const opens = (line.match(/\{/g) || []).length;
+      const closes = (line.match(/\}/g) || []).length;
+      complexSectionDepth += opens - closes;
+      if (complexSectionDepth <= 0) {
+        inComplexSection = false;
+      }
+    }
+    
+    if (inSimpleSection) {
+      const opens = (line.match(/\{/g) || []).length;
+      const closes = (line.match(/\}/g) || []).length;
+      simpleSectionDepth += opens - closes;
+      if (simpleSectionDepth <= 0) {
+        inSimpleSection = false;
+      }
+    }
+  }
+  
+  // Now categorize the new emitters based on their original section
+  // If we can't determine, check if they exist in the original content
+  for (const emitterBlock of emittersPython) {
+    // Extract emitter name from the block
+    let emitterName = null;
+    const emitterLines = emitterBlock.split('\n');
+    for (const emitterLine of emitterLines) {
+      if (/emitterName:\s*string\s*=\s*"/i.test(emitterLine)) {
+        const match = emitterLine.match(/emitterName:\s*string\s*=\s*"([^"]+)"/i);
+        if (match) {
+          emitterName = match[1];
+          break;
+        }
+      }
+    }
+    
+    // Determine which section this emitter belongs to
+    const sectionType = originalEmitterSections.get(emitterName);
+    if (sectionType === 'simple') {
+      simpleEmitters.push(emitterBlock);
+    } else {
+      // Default to complex if unknown (for new emitters or if we can't determine)
+      complexEmitters.push(emitterBlock);
+    }
+  }
+  
+  // If we have both sections, we need to replace both separately
+  if (complexSectionStart !== -1 && simpleSectionStart !== -1) {
+    // Replace complex section first
+    const complexResultLines = replaceEmittersInSection(lines, complexSectionStart, complexEmitters);
+    
+    // Recalculate simpleSectionStart after complex section replacement (line numbers may have shifted)
+    let newSimpleSectionStart = -1;
+    for (let i = 0; i < complexResultLines.length; i++) {
+      if (complexResultLines[i].includes('simpleEmitterDefinitionData: list[pointer] =')) {
+        newSimpleSectionStart = i;
+        break;
+      }
+    }
+    
+    if (newSimpleSectionStart !== -1) {
+      // Replace simple section in the result
+      return replaceEmittersInSection(complexResultLines, newSimpleSectionStart, simpleEmitters).join('\n');
+    } else {
+      // If we can't find simple section after complex replacement, just return complex result
+      return complexResultLines.join('\n');
+    }
+  }
+  
+  // If only one section exists, use the original logic
   let sectionStartLine = -1;
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes('complexEmitterDefinitionData: list[pointer] =') || 
@@ -995,10 +1109,27 @@ const replaceEmittersInSystem = (systemContent, emittersPython) => {
   }
 
   if (sectionStartLine === -1) {
-    // No emitter section found; return original content untouched
     return systemContent;
   }
+  
+  // Use all emitters if we couldn't categorize them
+  const emittersToUse = complexSectionStart !== -1 ? complexEmitters : 
+                        simpleSectionStart !== -1 ? simpleEmitters : 
+                        emittersPython;
+  
+  return replaceEmittersInSection(lines, sectionStartLine, emittersToUse).join('\n');
+};
 
+/**
+ * Helper function to replace emitters in a specific section
+ * @param {Array<string>} lines - Array of file lines
+ * @param {number} sectionStartLine - Line number where the section starts
+ * @param {Array<string>} emittersPython - Array of emitter blocks to insert
+ * @returns {Array<string>} - Updated lines array
+ */
+const replaceEmittersInSection = (lines, sectionStartLine, emittersPython) => {
+  const result = [];
+  
   // Determine indentation
   const headerLine = lines[sectionStartLine];
   const headerIndentMatch = headerLine.match(/^(\s*)/);
@@ -1066,7 +1197,7 @@ const replaceEmittersInSystem = (systemContent, emittersPython) => {
     result.push(lines[i]);
   }
 
-  return result.join('\n');
+  return result;
 };
 
 /**
